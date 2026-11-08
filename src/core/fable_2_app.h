@@ -57,6 +57,7 @@ void record_a_press(std::int64_t ms);
 #endif  // FABLE2_REMOTE_CONTROL
 #include "xex_verify.h"
 #include "game_branding.h"
+#include "shader_prebuild.h"
 
 namespace {
 // The `screenshot` command reads the game's rendered frame from the renderer's
@@ -441,6 +442,15 @@ class Fable2App : public rex::ReXApp {
   // decrypted default.xex into the guest arena, before the module launches.
   // Each patch is switched on by a [patches] key in fable2_config.toml
   // (loaded earlier, in OnPostInitLogging).
+  // Fills the shader cache from the pre-build list just before the SDK loads it
+  // (it does so right after this), so known pipelines are built at boot instead
+  // of stuttering in game. The xex image is loaded, for its built-in shaders.
+  void OnPreLaunchModule() override {
+    fable2::shaderprebuild::MergeIntoCache(
+        rex::filesystem::GetExecutableFolder() / "shader_prebuild.txt", game_data_root(),
+        cache_root(), runtime()->memory());
+  }
+
   void OnPostLoadXexImage() override {
     fable2::patches::ApplyAll(runtime()->memory(), PPCImageConfig);
     // Lets the address-scan hook (src/core/fable2_address_scan.cpp) read the

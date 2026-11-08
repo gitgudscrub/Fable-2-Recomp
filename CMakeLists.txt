@@ -77,6 +77,7 @@ set(FABLE2_SOURCES
     src/core/fable2_patches.cpp
     src/core/fable2_hooks.cpp
     src/core/fable2_address_scan.cpp
+    src/core/shader_prebuild.cpp
     src/menu/main_menu.cpp
     ${HOTFUNC_SOURCES}
 )
@@ -110,6 +111,19 @@ add_custom_command(TARGET fable_2 POST_BUILD
         "$<TARGET_FILE_DIR:fable_2>/fable2_build.json"
     COMMENT "Staging supported game profiles for the launcher"
     VERBATIM)
+
+# Shader pre-build list (src/core/shader_prebuild.cpp): read next to the exe at
+# startup to fill the shader cache, so known pipelines are built at boot.
+add_custom_command(TARGET fable_2 POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/config/shader_prebuild.txt"
+        "$<TARGET_FILE_DIR:fable_2>/shader_prebuild.txt"
+    COMMENT "Staging the shader pre-build list"
+    VERBATIM)
+# xxHash (header-only, inlined) for checking rebuilt shaders the way the SDK does.
+target_include_directories(fable_2 SYSTEM PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/rexglue-sdk/thirdparty/xxHash)
+
 
 # The app's probe/diagnostic headers (src/diagnostics/*.h) use the standard CRT
 # functions (fopen, getenv, strcat, strncat, ...), which the MSVC/UCRT headers

@@ -15,10 +15,20 @@ usage:
 
 --xex-image is the decrypted guest image made by tools/xex_image.py; it is only
 needed for the few built-in shaders that live in default.xex, not in the banks.
+
+The list is a text file (config/shader_prebuild.txt) that the game reads at
+startup (src/core/shader_prebuild.cpp), one item per line:
+  fable2-shader-prebuild 1
+  title 4D5307F1
+  xsh-header <hex>              .xsh file header
+  xpso-header <hex>             .xpso file header
+  shader <hash> <packed> bank <bank path> <entry> <offset> [<dword>:<xor> ...]
+  shader <hash> <packed> xex <guest address> [<dword>:<xor> ...]
+  pipeline <hex>                one 72-byte pipeline description
+<hash> and <packed> are the .xsh record header (ucode XXH3 and dword count |
+type << 31); the patches XOR big-endian ucode dwords.
 """
 import argparse
-import base64
-import json
 import os
 import struct
 import sys
@@ -29,6 +39,9 @@ TITLE_ID = "4D5307F1"
 BANKS = ("data/Shaders/ShadersRelease.sbk", "data/Shaders/Shaders.sbk")
 XSH_HEADER_SIZE = 8  # "XESH" + version
 FORMAT = 1
+XPSO_HEADER_SIZE = 12
+XPSO_RECORD_SIZE = 72
+XEX_BASE = 0x82000000
 
 
 # --- game data sources -------------------------------------------------------
@@ -159,6 +172,57 @@ def apply(source_bytes, offset, dword_count, patches):
     return bytes(ucode)
 
 
+# --- list file ---------------------------------------------------------------
+
+def source_token(name, offset):
+    if name == "xex":
+        return "xex %08X" % (XEX_BASE + offset)
+    bank, entry = name.rsplit("#", 1)
+    return "bank %s %s %d" % (bank, entry, offset)
+
+
+def write_list(path, xsh_header, shaders, xpso):
+    lines = ["fable2-shader-prebuild %d" % FORMAT, "title " + TITLE_ID,
+             "xsh-header " + xsh_header.hex(), "xpso-header " + xpso[:XPSO_HEADER_SIZE].hex()]
+    for s in shaders:
+        if s.get("missing"):
+            continue
+        patches = " ".join("%d:%08X" % (i, x) for i, x in s["patches"])
+        lines.append(("shader %016X %08X %s %s" % (s["hash"], s["packed"],
+                                                  source_token(s["source"], s["offset"]),
+                                                  patches)).rstrip())
+    for off in range(XPSO_HEADER_SIZE, len(xpso) - XPSO_RECORD_SIZE + 1, XPSO_RECORD_SIZE):
+        lines.append("pipeline " + xpso[off:off + XPSO_RECORD_SIZE].hex())
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def read_list(path):
+    lst = {"shaders": [], "pipelines": []}
+    for line in open(path):
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == "fable2-shader-prebuild" and int(f[1]) != FORMAT:
+            raise SystemExit("unsupported list format %s" % f[1])
+        elif f[0] == "xsh-header":
+            lst["xsh_header"] = bytes.fromhex(f[1])
+        elif f[0] == "xpso-header":
+            lst["xpso_header"] = bytes.fromhex(f[1])
+        elif f[0] == "pipeline":
+            lst["pipelines"].append(bytes.fromhex(f[1]))
+        elif f[0] == "shader":
+            entry = {"hash": int(f[1], 16), "packed": int(f[2], 16)}
+            if f[3] == "bank":
+                entry["source"], entry["offset"], rest = "%s#%s" % (f[4], f[5]), int(f[6]), f[7:]
+            else:
+                entry["source"], entry["offset"], rest = "xex", int(f[4], 16) - XEX_BASE, f[5:]
+            entry["patches"] = [[int(a), int(b, 16)] for a, b in (t.split(":") for t in rest)]
+            lst["shaders"].append(entry)
+    return lst
+
+
 # --- commands ----------------------------------------------------------------
 
 def cmd_build(args):
@@ -168,62 +232,54 @@ def cmd_build(args):
     shaders, missing = [], 0
     for r in records:
         found = index.locate(r["ucode"])
-        entry = {"hash": "%016X" % r["hash"], "packed": r["packed"]}
+        entry = {"hash": r["hash"], "packed": r["packed"]}
         if found is None:
             entry["missing"] = True
             missing += 1
+            print("not found in the game data: %016X" % r["hash"])
         else:
             entry["source"], entry["offset"], entry["patches"] = found
         shaders.append(entry)
-    prebuild = {
-        "format": FORMAT,
-        "title": TITLE_ID,
-        "xsh_header": header.hex(),
-        "shaders": shaders,
-        # Pipeline descriptions: render state and shader hashes only.
-        "pipelines": base64.b64encode(open(xpso_path, "rb").read()).decode(),
-    }
-    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
-    with open(args.out, "w") as f:
-        json.dump(prebuild, f, indent=0)
+    xpso = open(xpso_path, "rb").read()
+    write_list(args.out, header, shaders, xpso)
     patched = sum(1 for s in shaders if s.get("patches"))
     print("shaders: %d (%d exact, %d with vertex-layout patches, %d not in the game data)"
           % (len(shaders), len(shaders) - patched - missing, patched, missing))
-    print("pipelines: %d" % ((os.path.getsize(xpso_path) - 12) // 72))
+    print("pipelines: %d" % ((len(xpso) - XPSO_HEADER_SIZE) // XPSO_RECORD_SIZE))
     print("wrote", args.out)
 
 
-def rebuild_records(prebuild, sources):
+def rebuild_records(lst, sources):
     records, skipped = [], 0
-    for s in prebuild["shaders"]:
-        if s.get("missing") or s["source"] not in sources:
+    for s in lst["shaders"]:
+        if s["source"] not in sources:
             skipped += 1
             continue
         count = s["packed"] & 0x7FFFFFFF
         ucode = apply(sources[s["source"]], s["offset"], count, s["patches"])
-        records.append({"hash": int(s["hash"], 16), "packed": s["packed"], "ucode": ucode})
+        records.append({"hash": s["hash"], "packed": s["packed"], "ucode": ucode})
     return records, skipped
 
 
 def cmd_restore(args):
-    prebuild = json.load(open(args.prebuild))
+    lst = read_list(args.prebuild)
     xsh_path, xpso_path = cache_paths(args.cache)
     if not args.force and (os.path.exists(xsh_path) or os.path.exists(xpso_path)):
         raise SystemExit("cache files already exist in %s (use --force to replace)" % args.cache)
-    records, skipped = rebuild_records(prebuild, load_sources(args.game_root, args.xex_image))
+    records, skipped = rebuild_records(lst, load_sources(args.game_root, args.xex_image))
     os.makedirs(args.cache, exist_ok=True)
-    write_xsh(xsh_path, bytes.fromhex(prebuild["xsh_header"]), records)
-    open(xpso_path, "wb").write(base64.b64decode(prebuild["pipelines"]))
-    print("restored %d shaders (%d skipped) and the pipeline list into %s"
-          % (len(records), skipped, args.cache))
+    write_xsh(xsh_path, lst["xsh_header"], records)
+    open(xpso_path, "wb").write(lst["xpso_header"] + b"".join(lst["pipelines"]))
+    print("restored %d shaders (%d skipped) and %d pipelines into %s"
+          % (len(records), skipped, len(lst["pipelines"]), args.cache))
 
 
 def cmd_verify(args):
     """Checks that restore reproduces the cache's shaders byte for byte."""
-    prebuild = json.load(open(args.prebuild))
+    lst = read_list(args.prebuild)
     _, original = read_xsh(cache_paths(args.cache)[0])
     by_hash = {r["hash"]: r["ucode"] for r in original}
-    records, skipped = rebuild_records(prebuild, load_sources(args.game_root, args.xex_image))
+    records, skipped = rebuild_records(lst, load_sources(args.game_root, args.xex_image))
     bad = [r for r in records if by_hash.get(r["hash"]) != r["ucode"]]
     print("verified %d shaders, %d mismatched, %d skipped" % (len(records), len(bad), skipped))
     return 1 if bad else 0

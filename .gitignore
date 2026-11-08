@@ -4,6 +4,10 @@ default.xex
 /nxeart/
 /$SystemUpdate/
 /Gamefiles/
+*.iso
+
+# --- Developer console file transport (written next to the game data) ------
+/console/
 
 # --- Build artifacts --------------------------------------------------------
 out

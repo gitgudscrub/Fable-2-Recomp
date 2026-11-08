@@ -1,6 +1,6 @@
 # Windows runtime fixes
 
-The source SDK is `himdo/rexglue-sdk`, pinned through the `thirdparty/rexglue-sdk`
+The source SDK is `gitgudscrub/rexglue-sdk` (branch `fable2`, a fork of `himdo/rexglue-sdk`), pinned through the `thirdparty/rexglue-sdk`
 submodule. The audio, frame-pacing, Release FPS-counter and Windows export
 changes are part of that fork, as are the performance-counter and cvar exports
 needed by Debug's GPU plugin, shutdown path and debug control server.

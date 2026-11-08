@@ -1627,6 +1627,7 @@ inline void poll(PPCContext& ctx, uint8_t* base) {
   // Video letterboxing (fit-window) needs a per-frame tick; it does not
   // depend on the console being on.
   fable2::fitwindow::ui::TickVideo();
+  fable2::fitwindow::ui::TickVideoMemoryRefresh();
   State& s = S();
   const bool file_mode = enabled();
   if (!file_mode && !s.active.load(std::memory_order_relaxed)) return;

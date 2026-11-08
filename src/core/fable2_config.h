@@ -216,6 +216,9 @@ struct Values {
   // [perf] refresh_gpu_memory_each_frame: false seeds the SDK cvar
   // clear_memory_page_state off (see the config file).
   bool refresh_gpu_memory_each_frame = false;
+  // [perf] refresh_gpu_memory_during_videos: turn clear_memory_page_state on
+  // while a Bink video plays (see the config file).
+  bool refresh_gpu_memory_during_videos = true;
 };
 
 // Load the config from `path`.

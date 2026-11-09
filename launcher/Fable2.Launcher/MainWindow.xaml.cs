@@ -2,902 +2,869 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace Fable2Launcher;
 
 public partial class MainWindow : Window
 {
-    private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
-    private string? _gameDirectory;
-    private string? _executableDirectory;
-    private string? _updatePage;
+    private enum LauncherState { NeedsDisc, Extracting, Ready, UpdateReady, Problem }
+
+    private readonly LauncherHome _home;
+    private readonly Dictionary<string, string> _graphics = new(StringComparer.OrdinalIgnoreCase);
+    private Fable2ConfigValues _recomp = new();
+    private LauncherState _state;
+    private bool _applyingTheme;
     private bool _loading = true;
-
-    // Advanced Options page state.
-    private Fable2ConfigValues _advanced = new();
-    private readonly List<Border> _keyFields = new();
-    private readonly List<ComboBox> _buttonCombos = new();
-    private readonly List<(string key, CheckBox check)> _patchChecks = new();
-    private Border? _activeKeyField;
-    private static readonly SolidColorBrush MutedBrush = new(Color.FromRgb(0x8A, 0x99, 0x92));
-    // Red accent for unstable/experimental patches.
-    private static readonly SolidColorBrush UnstableBrush = new(Color.FromRgb(0xE0, 0x66, 0x66));
-
-    // Keybind capture field: the press-to-set host key box.
-    private sealed class KeyCaptureField
-    {
-        public Border Border = null!;
-        public TextBlock Text = null!;
-        public string Value = "";
-    }
-
-    private static readonly Brush KeyIdleBackground = new SolidColorBrush(Color.FromRgb(0xF3, 0xEE, 0xE4));
-    private static readonly Brush KeyIdleBorder = new SolidColorBrush(Color.FromArgb(0x88, 0x7C, 0x6A, 0x48));
-    private static readonly Brush KeyListeningBackground = new SolidColorBrush(Color.FromRgb(0xE8, 0xF0, 0xF8));
-    private static readonly Brush KeyListeningBorder = new SolidColorBrush(Color.FromRgb(0x4A, 0x90, 0xD9));
-    private static readonly Brush KeyFieldText = new SolidColorBrush(Color.FromRgb(0x17, 0x20, 0x20));
+    private bool _dirty;
+    private string _version = "dev build";
+    private readonly Updater _updater;
+    private bool _checkingUpdates;
+    private bool _gameLaunched;
+    private string? _updateError;
+    private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.5) };
 
     public MainWindow()
     {
         InitializeComponent();
-        PreviewKeyDown += MainWindow_PreviewKeyDown;
-        SetDefaults();
-        DetectGameDirectory();
-        _loading = false;
-        RefreshSummary();
-        Loaded += async (_, _) => await ShowAvailableUpdateAsync();
-    }
+        _home = LauncherHome.ForCurrentUser();
+        _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast.Visibility = Visibility.Collapsed; };
+        PreviewKeyDown += WindowPreviewKeyDown;
+        StateChanged += (_, _) => Root.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
 
-    private async Task ShowAvailableUpdateAsync()
-    {
-        string? installed = UpdateChecker.ReadInstalledVersion(AppContext.BaseDirectory);
-        if (installed is null) return;
-        AvailableUpdate? update = await UpdateChecker.CheckAsync(installed);
-        if (update is null) return;
-        _updatePage = update.PageUrl;
-        UpdateButton.Content = $"Update available: {update.Version}";
-        UpdateButton.ToolTip = "Open the release page";
-        UpdateButton.Visibility = Visibility.Visible;
-    }
+        foreach (var option in Constants.GraphicsOptions.FrameLimits)
+            FrameLimitCombo.Items.Add(new ComboBoxItem { Tag = option.Value, Content = option.Label });
+        foreach (var option in Constants.GraphicsOptions.HostFrameLimits)
+            HostFrameLimitCombo.Items.Add(new ComboBoxItem { Tag = option.Value, Content = option.Label });
 
-    private void UpdateClicked(object sender, RoutedEventArgs e)
-    {
-        if (_updatePage is not null)
-            Process.Start(new ProcessStartInfo(_updatePage) { UseShellExecute = true });
-    }
-
-    private void SetDefaults()
-    {
-        SelectByTag(ResolutionCombo, "1080p");
-        SelectByTag(RenderScaleCombo, "2");
-        SelectByTag(AnisotropicCombo, "5");
-        SelectByTag(AntiAliasingCombo, "none");
-        SelectByTag(DisplayModeCombo, "borderless");
-        if (FrameLimitCombo.Items.Count == 0)
-            foreach (var option in Constants.GraphicsOptions.FrameLimits)
-                FrameLimitCombo.Items.Add(new ComboBoxItem { Tag = option.Value, Content = option.Label });
-        SelectByTag(FrameLimitCombo, "0");
-        if (HostFrameLimitCombo.Items.Count == 0)
-            foreach (var option in Constants.GraphicsOptions.HostFrameLimits)
-                HostFrameLimitCombo.Items.Add(new ComboBoxItem { Tag = option.Value, Content = option.Label });
-        SelectByTag(HostFrameLimitCombo, "0");
-        VsyncCheck.IsChecked = true;
-    }
-
-    private void DetectGameDirectory()
-    {
-        string launcherDirectory = AppContext.BaseDirectory;
-        string? configuredPath = LauncherState.LoadGameDirectory();
-        if (!string.IsNullOrWhiteSpace(configuredPath) &&
-            File.Exists(Path.Combine(configuredPath, "default.xex")) &&
-            (File.Exists(Path.Combine(launcherDirectory, "fable_2.exe")) ||
-             File.Exists(Path.Combine(configuredPath, "fable_2.exe"))))
-        {
-            SetGameDirectory(configuredPath);
-            return;
-        }
-        // No saved (or no longer valid) game folder: default the selected location
-        // to the folder the launcher is running from, so it is never empty on first
-        // launch. The status line then explains what is still missing (e.g. that
-        // default.xex has not been extracted yet).
-        SetGameDirectory(launcherDirectory);
-    }
-
-    private void SetGameDirectory(string directory)
-    {
-        _gameDirectory = Path.GetFullPath(directory);
-        _executableDirectory = File.Exists(Path.Combine(AppContext.BaseDirectory, "fable_2.exe"))
-            ? AppContext.BaseDirectory : _gameDirectory;
-        GamePathText.Text = _gameDirectory;
-        LauncherState.SaveGameDirectory(_gameDirectory);
+        string? note = null;
         try
         {
-            LoadConfiguration();
-            GameCompatibility compatibility = GameCompatibilityInspector.Inspect(_gameDirectory);
-            GameLaunchPlanner.Create(_executableDirectory, _gameDirectory, compatibility);
-            StatusText.Text = compatibility.Message;
-            ConfigStateText.Text = compatibility.Label;
+            _home.EnsureFolders();
+            note = _home.MigrateFromPortableFolder();
+            _home.SeedRecompConfig();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            note = "Could not prepare the data folder: " + exception.Message;
+        }
+
+        _updater = new Updater(_home.Settings.Channel);
+        // A fresh install follows the installer it came from (beta Setup -> Beta channel).
+        if (!_home.Settings.ChannelChosen && _updater.InstalledChannel is "stable" or "beta"
+            && _updater.InstalledChannel != _home.Settings.Channel)
+        {
+            _home.Settings.Channel = _updater.InstalledChannel;
+            _updater.SetChannel(_home.Settings.Channel);
+        }
+        _version = _updater.CurrentVersion ?? ReadVersion();
+        _updater.LoadPending();
+        if (Environment.GetCommandLineArgs().Contains("--preview=update-ready")) _updater.PreviewPending("9.9.9");
+        LoadSettings();
+        _loading = false;
+        UpdateVersionText();
+        RefreshGameState();
+        if (note is not null) ShowToast(note);
+
+        Loaded += (_, _) =>
+        {
+            if (AnimationsOn) ((Storyboard)FindResource("Fireflies")).Begin(this, true);
+            CheckForUpdates(quiet: true);
+            // --page=settings|controls|updates|help opens the parchment page on start.
+            string? page = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--page=", StringComparison.OrdinalIgnoreCase))?[7..];
+            RadioButton? tab = page?.ToLowerInvariant() switch
+            {
+                "settings" => TabSettings, "controls" => TabControls,
+                "updates" => TabUpdates, "help" => TabHelp, _ => null
+            };
+            if (tab is not null) OpenPage(tab);
+        };
+        Closing += (_, _) =>
+        {
+            if (_dirty) SaveAll(quiet: true);
+            // Install a downloaded update once the launcher closes, unless the game is
+            // (about to be) running from the folder the update replaces.
+            if (_updater.Pending is not null && !_gameLaunched && !Updater.IsGameRunning(_home.InstallFolder))
+                try { _updater.ApplyOnExit(); } catch (Exception) { }
+        };
+    }
+
+    private static bool AnimationsOn => SystemParameters.ClientAreaAnimation;
+
+    private string ReadVersion()
+    {
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(_home.InstallFolder, "fable2_build.json")));
+            if (doc.RootElement.TryGetProperty("version", out JsonElement v) && v.GetString() is { Length: > 0 } text)
+                return text;
+        }
+        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException) { }
+        return "dev build";
+    }
+
+    private void UpdateVersionText()
+    {
+        bool beta = _home.Settings.Channel == "beta";
+        VersionText.Text = $"{_version} · {(beta ? "Beta" : "Stable")}";
+        ChannelNote.Text = beta
+            ? "Newest fixes first, less tested. Back up your saves before switching back to Stable."
+            : "Tested releases. Updates download in the background; restart the launcher to install them.";
+        UpdateActions.Visibility = _updater.IsInstalled ? Visibility.Visible : Visibility.Collapsed;
+        CheckUpdatesButton.IsEnabled = !_checkingUpdates;
+        RestartUpdateButton.Visibility = _updater.Pending is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateStatusText.Text =
+            !_updater.IsInstalled ? "Automatic updates start once Project Sparrow is installed with its installer. "
+                                    + (_version == "dev build" ? "This is a dev build." : $"You're running {_version}.")
+            : _updater.Pending is not null ? $"Version {_updater.Pending.Version} is ready. Restart to install it; your saves and settings stay as they are."
+            : _checkingUpdates ? "Checking for updates…"
+            : _updateError is not null ? _updateError
+            : $"You're up to date ({_version}).";
+    }
+
+    // ---------------------------------------------------------------- updates
+
+    private async void CheckForUpdates(bool quiet)
+    {
+        if (!_updater.IsInstalled || _checkingUpdates) return;
+        _checkingUpdates = true;
+        _updateError = null;
+        UpdateVersionText();
+        try
+        {
+            string? ready = await _updater.CheckAndDownloadAsync(percent => Dispatcher.BeginInvoke(() =>
+            {
+                UpdateBar.Visibility = percent is > 0 and < 100 ? Visibility.Visible : Visibility.Collapsed;
+                UpdateBar.Value = percent;
+            }));
+            if (!quiet) ShowToast(ready is not null ? $"Update {ready} is ready." : "You're up to date.");
+        }
+        catch (UpdateSignatureException exception)
+        {
+            _updateError = exception.Message + " Please report this.";
         }
         catch (Exception exception)
         {
-            StatusText.Text = exception.Message;
-            ConfigStateText.Text = "Not ready to launch";
+            _updateError = "Couldn't check for updates. Check your internet connection and try again. (" + exception.Message + ")";
+            if (!quiet) ShowToast("Couldn't check for updates.");
+        }
+        finally
+        {
+            _checkingUpdates = false;
+            UpdateBar.Visibility = Visibility.Collapsed;
+            UpdateVersionText();
+            if (_state is LauncherState.Ready or LauncherState.UpdateReady) RefreshGameState();
         }
     }
 
-    private void LoadConfiguration()
-    {
-        if (_gameDirectory is null) return;
+    private void CheckUpdatesClicked(object sender, RoutedEventArgs e) => CheckForUpdates(quiet: false);
 
+    private void RestartToUpdateClicked(object sender, RoutedEventArgs e) => RestartToUpdate();
+
+    private void RestartToUpdate()
+    {
+        if (Updater.IsGameRunning(_home.InstallFolder))
+        {
+            ShowToast("Close Fable II first, then restart to update.");
+            return;
+        }
+        if (_dirty) SaveAll(quiet: true);
+        try { _updater.ApplyAndRestart(); }
+        catch (Exception exception) { ShowToast("Couldn't install the update: " + exception.Message); }
+    }
+
+    private void PlayWithoutUpdateClicked(object sender, RoutedEventArgs e) => LaunchGame();
+
+    // ---------------------------------------------------------------- state
+
+    private string ExecutableDirectory =>
+        File.Exists(_home.ExecutablePath) ? _home.InstallFolder
+        : File.Exists(Path.Combine(_home.GameFolder, "fable_2.exe")) ? _home.GameFolder   // dev: launcher outside the build folder
+        : _home.InstallFolder;
+
+    private void RefreshGameState()
+    {
+        DataFolderHint.Text = _home.DataFolder;
+        if (!File.Exists(Path.Combine(ExecutableDirectory, "fable_2.exe")))
+        {
+            SetState(LauncherState.Problem, "Game program missing",
+                "fable_2.exe isn't in the install folder. Reinstall Project Sparrow to fix this.", "Choose", "DISC IMAGE");
+            return;
+        }
+        if (!File.Exists(Path.Combine(_home.GameFolder, "default.xex")))
+        {
+            SetState(LauncherState.NeedsDisc, "Choose your Fable II disc image",
+                "Pick the .iso you made from your own Fable II Game of the Year disc. It's checked, then about 7 GB is copied into your data folder. The disc image is never uploaded.",
+                "Choose", "DISC IMAGE");
+            return;
+        }
+        try
+        {
+            GameCompatibility compatibility = GameCompatibilityInspector.Inspect(_home.GameFolder);
+            GameLaunchPlanner.Create(ExecutableDirectory, _home.GameFolder, compatibility);
+            if (_updater.Pending is not null)
+                SetState(LauncherState.UpdateReady, $"Update {_updater.Pending.Version} is ready",
+                    "Restarting installs it and keeps your saves and settings. It takes a few seconds.", "Restart", "TO UPDATE");
+            else
+                SetState(LauncherState.Ready, "Ready to play",
+                    compatibility.Label + ". Keyboard: WASD to move, E or Shift to interact, Esc to pause.", "Play", null);
+        }
+        catch (Exception exception)
+        {
+            SetState(LauncherState.Problem, "This copy can't be played", exception.Message, "Choose", "ANOTHER DISC");
+        }
+    }
+
+    private void SetState(LauncherState state, string title, string text, string seal, string? sealSub, bool warn = false)
+    {
+        _state = state;
+        StatusTitle.Text = title;
+        StatusText.Text = text;
+        SealText.Text = seal;
+        SealText.FontSize = sealSub is null ? 30 : 24;
+        SealSubText.Text = sealSub ?? "";
+        SealSubText.Visibility = sealSub is null ? Visibility.Collapsed : Visibility.Visible;
+        SealButton.IsEnabled = state != LauncherState.Extracting;
+        bool attention = warn || state is LauncherState.NeedsDisc or LauncherState.Problem;
+        StatusDot.Fill = (Brush)FindResource(attention ? "Ember" : "Gold");
+        ExtractBar.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
+        ExtractActions.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
+        PlayWithoutUpdateButton.Visibility = state == LauncherState.UpdateReady ? Visibility.Visible : Visibility.Collapsed;
+        // States with a row of buttons under the status need the space above the seal.
+        bool compact = state is LauncherState.UpdateReady or LauncherState.Extracting;
+        CentreStack.Margin = new Thickness(24, compact ? 20 : 40, 24, compact ? 6 : 12);
+        SealButton.Margin = new Thickness(0, compact ? 12 : 30, 0, 0);
+    }
+
+    private void SealClicked(object sender, RoutedEventArgs e)
+    {
+        switch (_state)
+        {
+            case LauncherState.Ready: LaunchGame(); break;
+            case LauncherState.UpdateReady: RestartToUpdate(); break;
+            case LauncherState.NeedsDisc:
+            case LauncherState.Problem: ExtractFromIso(); break;
+        }
+    }
+
+    // ---------------------------------------------------------------- settings
+
+    private void LoadSettings()
+    {
         _loading = true;
         try
         {
-            _values.Clear();
-            SetDefaults();
-            foreach ((string key, string value) in LauncherConfigFile.ReadLauncherValues(_executableDirectory!))
-                _values[key] = value;
+            _graphics.Clear();
+            foreach ((string key, string value) in LauncherConfigFile.ReadLauncherValues(_home.DataFolder))
+                _graphics[key] = value;
+            _recomp = Fable2ConfigFile.Read(_home.RecompConfigPath);
 
-            string outputResolution = (GetValue("window_width", ""), GetValue("window_height", "")) switch
+            string resolution = (Get("window_width", ""), Get("window_height", "")) switch
             {
-                ("1280", "720") => "720p",
-                ("1920", "1080") => "1080p",
-                ("2560", "1440") => "1440p",
-                ("3840", "2160") => "4k",
-                _ => Unquote(GetValue("resolution", "1080p"))
+                ("1280", "720") => "720p", ("1920", "1080") => "1080p",
+                ("2560", "1440") => "1440p", ("3840", "2160") => "4k",
+                _ => "720p"
             };
-            SelectByTag(ResolutionCombo, outputResolution);
-            SelectByTag(RenderScaleCombo, GetValue("resolution_scale", "2"));
-            SelectByTag(AnisotropicCombo, GetValue("anisotropic_override", "5"));
-            SelectByTag(AntiAliasingCombo, Unquote(GetValue("swap_post_effect", "none")));
-            SelectByTag(FrameLimitCombo, GetValue("frame_limit", "0"));
-            SelectByTag(HostFrameLimitCombo, GetValue("host_frame_limit", "0"));
-
-            bool fullscreen = ParseBool(GetValue("fullscreen", "true"), true);
-            bool exclusive = ParseBool(GetValue("fullscreen_exclusive", "false"), false);
+            Edition edition = Edition.Find(_home.Settings.Edition);
+            bool fresh = !_graphics.ContainsKey("resolution_scale");
+            SelectByTag(ResolutionCombo, fresh ? edition.Resolution : resolution);
+            SelectByTag(RenderScaleCombo, fresh ? edition.RenderScale : Get("resolution_scale", "1"));
+            SelectByTag(AnisotropicCombo, fresh ? edition.Anisotropic : Get("anisotropic_override", "-1"));
+            SelectByTag(AntiAliasingCombo, fresh ? edition.AntiAliasing : Unquote(Get("swap_post_effect", "none")));
+            SelectByTag(FrameLimitCombo, fresh ? edition.FrameLimit : Get("frame_limit", "30"));
+            SelectByTag(HostFrameLimitCombo, Get("host_frame_limit", "0"));
+            bool fullscreen = ParseBool(Get("fullscreen", "true"), true);
+            bool exclusive = ParseBool(Get("fullscreen_exclusive", "false"), false);
             SelectByTag(DisplayModeCombo, !fullscreen ? "windowed" : exclusive ? "exclusive" : "borderless");
-            VsyncCheck.IsChecked = ParseBool(GetValue("vsync", "true"), true);
+            VsyncCheck.IsChecked = ParseBool(Get("vsync", "true"), true);
 
+            SkipIntroCheck.IsChecked = _recomp.SkipIntroVideos;
+            MotionBlurCheck.IsChecked = !_recomp.DisableMotionBlur;
+            UnlockWebsiteCheck.IsChecked = _recomp.UnlockWebsite;
+            UnlockCeCheck.IsChecked = _recomp.UnlockCe;
+            HighTickCheck.IsChecked = _recomp.HighTickRate;
+            HigherHfTickCheck.IsChecked = _recomp.HigherHfTickRate;
+            MorphingCheck.IsChecked = _recomp.RealtimeTextureMorphing;
+            ReadbackCheck.IsChecked = _recomp.HeroDogTextureReadback;
+            YieldSlider.Value = Math.Clamp(_recomp.HotFuncYieldEvery, 0, 16);
+            YieldValueText.Text = _recomp.HotFuncYieldEvery.ToString(CultureInfo.InvariantCulture);
+            MouseLookCheck.IsChecked = _recomp.MouseLook;
+            DirectMouseCheck.IsChecked = _recomp.DirectMouseLook;
+            SensitivitySlider.Value = Math.Clamp(_recomp.MouseLookScale, 1, 4096);
+            SensitivityBox.Text = _recomp.MouseLookScale.ToString(CultureInfo.InvariantCulture);
+            BuildKeybindRows(Fable2ConfigFile.ParseKeybinds(_recomp.KeyboardGamepadMap));
+
+            (edition.Id switch { "enhanced" => EditionEnhanced, "experimental" => EditionExperimental, _ => EditionOriginal })
+                .IsChecked = true;
+            (_home.Settings.Channel == "beta" ? ChannelBeta : ChannelStable).IsChecked = true;
+        SetTheme(_home.Settings.Theme, save: false);
+            if (fresh) _dirty = true;   // write the edition's settings on first save
         }
         finally { _loading = false; }
-        RefreshSummary();
-        ConfigStateText.Text = "Settings loaded";
+        UpdateCustomMarker();
     }
 
-    private string GetValue(string key, string fallback) =>
-        _values.TryGetValue(key, out string? value) ? value : fallback;
-
+    private string Get(string key, string fallback) => _graphics.TryGetValue(key, out string? value) ? value : fallback;
     private static string Unquote(string value) => value.Trim().Trim('"', '\'');
-
-    private static bool ParseBool(string value, bool fallback) =>
-        bool.TryParse(Unquote(value), out bool parsed) ? parsed : fallback;
-
-    private static string? SelectedTag(ComboBox combo) =>
-        (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+    private static bool ParseBool(string value, bool fallback) => bool.TryParse(Unquote(value), out bool parsed) ? parsed : fallback;
+    private static string TagOf(ComboBox combo, string fallback) => (combo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? fallback;
 
     private static void SelectByTag(ComboBox combo, string tag)
     {
         foreach (object item in combo.Items)
-        {
-            if (item is ComboBoxItem comboItem &&
-                string.Equals(comboItem.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
+            if (item is ComboBoxItem comboItem && string.Equals(comboItem.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
             {
                 combo.SelectedItem = comboItem;
                 return;
             }
-        }
-        // An unknown/missing value must not silently select the first (lowest)
-        // resolution or render scale. Keep the explicit default/current choice.
     }
 
-    private Dictionary<string, string> CollectSettings()
+    private void CollectRecomp()
     {
-        return GraphicsSettings.Create(SelectedTag(ResolutionCombo) ?? "1080p",
-            SelectedTag(RenderScaleCombo) ?? "2", SelectedTag(AnisotropicCombo) ?? "5",
-            SelectedTag(AntiAliasingCombo) ?? "none", SelectedTag(DisplayModeCombo) ?? "borderless",
-            VsyncCheck.IsChecked == true, SelectedTag(FrameLimitCombo) ?? "0",
-            SelectedTag(HostFrameLimitCombo) ?? "0");
+        _recomp.SkipIntroVideos = SkipIntroCheck.IsChecked == true;
+        _recomp.DisableMotionBlur = MotionBlurCheck.IsChecked != true;
+        _recomp.UnlockWebsite = UnlockWebsiteCheck.IsChecked == true;
+        _recomp.UnlockCe = UnlockCeCheck.IsChecked == true;
+        _recomp.HighTickRate = HighTickCheck.IsChecked == true;
+        _recomp.HigherHfTickRate = HigherHfTickCheck.IsChecked == true;
+        _recomp.RealtimeTextureMorphing = MorphingCheck.IsChecked == true;
+        _recomp.HeroDogTextureReadback = ReadbackCheck.IsChecked == true;
+        _recomp.HotFuncYieldEvery = (int)YieldSlider.Value;
+        _recomp.MouseLook = MouseLookCheck.IsChecked == true;
+        _recomp.DirectMouseLook = DirectMouseCheck.IsChecked == true;
+        _recomp.MouseLookScale = (int)SensitivitySlider.Value;
+        _recomp.KeyboardGamepadMap = CollectKeybinds();
     }
 
-    private bool SaveConfiguration()
+    private bool SaveAll(bool quiet = false)
     {
-        if (_gameDirectory is null || _executableDirectory is null || !File.Exists(Path.Combine(_executableDirectory, "fable_2.exe")))
-        {
-            MessageBox.Show(this, "Choose the folder containing fable_2.exe first.",
-                "Game not found", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return false;
-        }
-
-        string path = Path.Combine(_executableDirectory, "fable_2.toml");
-        Dictionary<string, string> settings = CollectSettings();
         try
         {
-            LauncherConfigFile.WriteValues(path, settings, GraphicsSettings.ManagedKeys);
-            LauncherConfigFile.WriteValues(Path.Combine(_executableDirectory,
-                "launcher-settings.toml"), settings, GraphicsSettings.ManagedKeys);
-            _values.Clear();
-            foreach ((string key, string value) in settings) _values[key] = value;
+            Dictionary<string, string> graphics = GraphicsSettings.Create(TagOf(ResolutionCombo, "720p"),
+                TagOf(RenderScaleCombo, "1"), TagOf(AnisotropicCombo, "-1"), TagOf(AntiAliasingCombo, "none"),
+                TagOf(DisplayModeCombo, "borderless"), VsyncCheck.IsChecked == true,
+                TagOf(FrameLimitCombo, "30"), TagOf(HostFrameLimitCombo, "0"));
+            LauncherConfigFile.WriteValues(_home.GraphicsConfigPath, graphics, GraphicsSettings.ManagedKeys);
+            LauncherConfigFile.WriteValues(_home.LauncherGraphicsPath, graphics, GraphicsSettings.ManagedKeys);
+            CollectRecomp();
+            Fable2ConfigFile.Write(_home.RecompConfigPath, _recomp);
+            _home.Save();
+            _dirty = false;
+            return true;
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Could not save settings",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            if (!quiet)
+                MessageBox.Show(this, exception.Message, "Could not save settings", MessageBoxButton.OK, MessageBoxImage.Error);
             return false;
         }
-
-        StatusText.Text = $"Saved {Path.GetFileName(path)}.";
-        ConfigStateText.Text = "Settings saved";
-        return true;
     }
+
+    private void SettingChanged(object sender, SelectionChangedEventArgs e) => SettingChanged(sender, (RoutedEventArgs)e);
+
+    private void SettingChanged(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _dirty = true;
+        UpdateCustomMarker();
+    }
+
+    private void HighTickUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (!_loading) HigherHfTickCheck.IsChecked = false;   // the faster animation tick needs it
+        SettingChanged(sender, e);
+    }
+
+    private void HigherHfTickChecked(object sender, RoutedEventArgs e)
+    {
+        if (!_loading) HighTickCheck.IsChecked = true;
+        SettingChanged(sender, e);
+    }
+
+    private void YieldChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (YieldValueText is null) return;
+        YieldValueText.Text = ((int)e.NewValue).ToString(CultureInfo.InvariantCulture);
+        SettingChanged(sender, e);
+    }
+
+    private void SensitivityChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (SensitivityBox is null) return;
+        SensitivityBox.Text = ((int)e.NewValue).ToString(CultureInfo.InvariantCulture);
+        SettingChanged(sender, e);
+    }
+
+    private void SensitivityBoxLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (int.TryParse(SensitivityBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+            SensitivitySlider.Value = Math.Clamp(value, 1, 4096);
+        SensitivityBox.Text = ((int)SensitivitySlider.Value).ToString(CultureInfo.InvariantCulture);
+    }
+
+    // ---------------------------------------------------------------- editions
+
+    private void EditionChecked(object sender, RoutedEventArgs e)
+    {
+        if (_loading || sender is not RadioButton { IsChecked: true } choice) return;
+        Edition edition = choice == EditionEnhanced ? Edition.Enhanced
+                        : choice == EditionExperimental ? Edition.Experimental : Edition.Original;
+        _loading = true;
+        try
+        {
+            SelectByTag(ResolutionCombo, edition.Resolution);
+            SelectByTag(RenderScaleCombo, edition.RenderScale);
+            SelectByTag(AnisotropicCombo, edition.Anisotropic);
+            SelectByTag(AntiAliasingCombo, edition.AntiAliasing);
+            SelectByTag(FrameLimitCombo, edition.FrameLimit);
+            MotionBlurCheck.IsChecked = !edition.DisableMotionBlur;
+            HighTickCheck.IsChecked = edition.HighTickRate;
+            HigherHfTickCheck.IsChecked = edition.HigherHfTickRate;
+        }
+        finally { _loading = false; }
+        _home.Settings.Edition = edition.Id;
+        if (SaveAll()) ShowToast($"{edition.Name} edition selected.");
+        UpdateCustomMarker();
+    }
+
+    private void UpdateCustomMarker()
+    {
+        if (CustomMarker is null) return;
+        CollectRecomp();
+        bool matches = Edition.Find(_home.Settings.Edition).Matches(TagOf(ResolutionCombo, ""), TagOf(RenderScaleCombo, ""),
+            TagOf(AnisotropicCombo, ""), TagOf(AntiAliasingCombo, ""), TagOf(FrameLimitCombo, ""), _recomp);
+        CustomMarker.Visibility = matches ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ThemeChecked(object sender, RoutedEventArgs e)
+    {
+        if (_applyingTheme || sender is not RadioButton { Tag: string theme }) return;
+        SetTheme(theme, save: !_loading);
+    }
+
+    /// <summary>Applies a theme and keeps the corner buttons and the Settings row in step.</summary>
+    private void SetTheme(string theme, bool save)
+    {
+        theme = Themes.Normalize(theme);
+        _applyingTheme = true;
+        try
+        {
+            Themes.Apply(this, theme);
+            (theme == Themes.Night ? QuickNight : theme == Themes.Day ? QuickDay : QuickDusk).IsChecked = true;
+            (theme == Themes.Night ? ThemeNight : theme == Themes.Day ? ThemeDay : ThemeDusk).IsChecked = true;
+        }
+        finally { _applyingTheme = false; }
+        if (_home.Settings.Theme == theme) return;
+        _home.Settings.Theme = theme;
+        if (save) try { _home.Save(); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    private void ChannelChecked(object sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        _home.Settings.Channel = ChannelBeta.IsChecked == true ? "beta" : "stable";
+        _home.Settings.ChannelChosen = true;
+        try { _home.Save(); } catch (IOException) { }
+        _updater.SetChannel(_home.Settings.Channel);
+        RefreshGameState();
+        CheckForUpdates(quiet: true);
+        UpdateVersionText();
+        ShowToast(_home.Settings.Channel == "beta"
+            ? "Switched to Beta. Checking for beta updates…"
+            : "Switched to Stable.");
+    }
+
+    // ---------------------------------------------------------------- launch
 
     private void LaunchGame()
     {
-        if (_extracting) return;
-        if (_gameDirectory is null || _executableDirectory is null) return;
-
         try
         {
-            var plan = GameLaunchPlanner.Create(_executableDirectory, _gameDirectory,
-                GameCompatibilityInspector.Inspect(_gameDirectory));
-            if (!SaveConfiguration()) return;
+            GameLaunchPlan plan = GameLaunchPlanner.Create(ExecutableDirectory, _home.GameFolder,
+                GameCompatibilityInspector.Inspect(_home.GameFolder));
+            if (!SaveAll()) return;
+            _home.SyncScripts();
+            Directory.CreateDirectory(_home.DataFolder);
             var startInfo = new ProcessStartInfo
             {
                 FileName = plan.Executable,
-                WorkingDirectory = plan.WorkingDirectory,
+                // Logs and traces land in the data folder, never the install folder.
+                WorkingDirectory = _home.DataFolder,
                 UseShellExecute = false
             };
             startInfo.ArgumentList.Add("--game_data_root=" + plan.GameRoot);
+            startInfo.ArgumentList.Add("--user_root=" + _home.DataFolder);
             Process.Start(startInfo);
-            StatusText.Text = "Fable II launched.";
-            ConfigStateText.Text = "Game running";
-            // The game is a separate process, so the launcher can close itself
-            // now that it has started. Only close on a successful launch.
+            _gameLaunched = true;
             Close();
         }
         catch (Exception exception)
         {
-            MessageBox.Show(this, exception.Message, "Could not launch Fable II",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, exception.Message, "Could not start Fable II", MessageBoxButton.OK, MessageBoxImage.Error);
+            RefreshGameState();
         }
     }
 
-    private void RefreshSummary(bool markDirty = false)
-    {
-        int scale = int.TryParse(SelectedTag(RenderScaleCombo), NumberStyles.Integer,
-            CultureInfo.InvariantCulture, out int parsedScale) ? parsedScale : 1;
-        InternalResolutionText.Text = $"Internal: {1280 * scale:N0} × {720 * scale:N0}";
+    // ---------------------------------------------------------------- disc extraction
 
-        string output = SelectedTag(ResolutionCombo) switch
-        {
-            "720p" => "1280 × 720",
-            "1080p" => "1920 × 1080",
-            "1440p" => "2560 × 1440",
-            "4k" => "3840 × 2160",
-            _ => "Automatic"
-        };
-        OutputResolutionText.Text = $"Output: {output}";
-
-        if (!_loading && markDirty)
-        {
-            ConfigStateText.Text = "Unsaved changes";
-        }
-    }
-
-    private void SettingChanged(object sender, RoutedEventArgs e)
-    {
-        if (!_loading) RefreshSummary(markDirty: true);
-    }
-
-    private void SettingChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (!_loading) RefreshSummary(markDirty: true);
-    }
-
-    private void PresetClicked(object sender, RoutedEventArgs e)
-    {
-        string preset = (sender as Button)?.Tag?.ToString() ?? "balanced";
-        switch (preset)
-        {
-            case "original":
-                SelectByTag(ResolutionCombo, "720p");
-                SelectByTag(RenderScaleCombo, "1");
-                SelectByTag(AnisotropicCombo, "-1");
-                PresetDescription.Text = "Original Xbox 360 rendering: 720p internal and game-controlled texture filtering.";
-                break;
-            case "balanced":
-                SelectByTag(ResolutionCombo, "1080p");
-                SelectByTag(RenderScaleCombo, "2");
-                SelectByTag(AnisotropicCombo, "4");
-                PresetDescription.Text = "1440p internal rendering with 8× anisotropic filtering, presented at 1080p.";
-                break;
-            case "enhanced":
-                SelectByTag(ResolutionCombo, "4k");
-                SelectByTag(RenderScaleCombo, "3");
-                SelectByTag(AnisotropicCombo, "5");
-                PresetDescription.Text = "True 4K internal rendering with 16× anisotropic filtering. Recommended for modern GPUs.";
-                break;
-            case "ultra":
-                SelectByTag(ResolutionCombo, "4k");
-                SelectByTag(RenderScaleCombo, "4");
-                SelectByTag(AnisotropicCombo, "5");
-                PresetDescription.Text = "5K internal supersampling down to 4K. Experimental and very GPU-memory intensive.";
-                break;
-        }
-        SelectByTag(DisplayModeCombo, "borderless");
-        SelectByTag(AntiAliasingCombo, "none");
-        VsyncCheck.IsChecked = true;
-        RefreshSummary(markDirty: true);
-    }
-
-    private void BrowseClicked(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog
-        {
-            Title = "Choose original gamefiles (default.xex and data)",
-            Multiselect = false
-        };
-        if (dialog.ShowDialog(this) == true)
-        {
-            if (!File.Exists(Path.Combine(dialog.FolderName, "default.xex")))
-            {
-                MessageBox.Show(this, "This folder does not contain default.xex.",
-                    "Game not found", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            SetGameDirectory(dialog.FolderName);
-        }
-    }
-
-    private bool _extracting;
     private volatile bool _stopRequested;
-    // Non-null while the "unrecognized XEX" prompt is on screen; the worker
-    // awaits its Task so the user can choose to extract anyways or stop.
     private TaskCompletionSource<bool>? _hashDecision;
-    private readonly Dictionary<string, CheckBox> _rootChecks = new(StringComparer.OrdinalIgnoreCase);
     private long _lastUiPush;
     private double _lastPushedPercent = -1;
-    private static readonly SolidColorBrush DoneBrush = new(Color.FromRgb(0x7F, 0xE0, 0xA6));
-    private static readonly SolidColorBrush ItemBrush = new(Color.FromRgb(0xD0, 0xD8, 0xD2));
 
-    private void ExtractClicked(object sender, RoutedEventArgs e)
+    private void ExtractFromIso()
     {
-        if (_extracting) return;
-
-        var isoDialog = new OpenFileDialog
+        if (_state == LauncherState.Extracting) return;
+        var dialog = new OpenFileDialog
         {
-            Title = "Choose an ISO",
-            Filter = "ISO (*.iso)|*.iso",
+            Title = "Choose your Fable II disc image",
+            Filter = "Disc image (*.iso)|*.iso",
             CheckFileExists = true
         };
-        if (isoDialog.ShowDialog(this) != true) return;
-        string isoPath = isoDialog.FileName;
+        if (dialog.ShowDialog(this) != true) return;
+        string isoPath = dialog.FileName;
 
-        // No destination prompt: extract straight into the folder the launcher is
-        // running from, so the game data lands beside fable_2.exe and becomes
-        // launchable in place.
-        string outDir = AppContext.BaseDirectory;
+        // New disc images always go into the data folder's own game folder.
+        string? previousGameFolder = _home.Settings.GameFolder;
+        _home.Settings.GameFolder = null;
+        string outDir = _home.GameFolder;
+        try { Directory.CreateDirectory(outDir); }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(this, exception.Message, "Could not create the game folder", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
+        }
 
-        _extracting = true;
         _stopRequested = false;
-        ExtractButton.IsEnabled = false;
-        LaunchButton.IsEnabled = false;
+        SetState(LauncherState.Extracting, "Reading the disc image", "Looking for the Xbox 360 file system…", "…", "READING");
+        ExtractBar.IsIndeterminate = true;
+        ExtractAnywayButton.Visibility = Visibility.Collapsed;
         StopButton.IsEnabled = true;
-
-        // Show the overlay immediately (indeterminate) so there is no perceptible
-        // delay; the folder checklist and byte total fill in once the disc layout
-        // has been read on the worker thread.
-        ExtractionOverlay.Visibility = Visibility.Visible;
-        ExtractionProgressBar.IsIndeterminate = true;
-        ExtractionPercentText.Text = "…";
-        ExtractionBytesText.Text = "Scanning…";
-        ExtractionPhaseText.Text = "Scanning disc…";
-        ExtractionFileText.Text = "Scanning for the GDFX header…";
-        ExtractionFolderList.Children.Clear();
-        _rootChecks.Clear();
-        HashPrompt.Visibility = Visibility.Collapsed;
 
         Task.Run(async () =>
         {
             string? error = null;
+            bool cancelled = false;
             int files = 0;
             long bytes = 0;
-            bool cancelled = false;
             try
             {
                 using DiscExtraction disc = DiscExtraction.Open(isoPath, _ => { });
-                List<RootItem> plan = disc.Plan.ToList();
+                List<RootItem> layout = disc.Plan.ToList();
+                var progress = new ExtractionProgress(layout, () => _stopRequested);
+                progress.Changed += p => Dispatcher.BeginInvoke(() => PushProgress(p));
+                if (_stopRequested) throw new ExtractionCancelledException();
+                Dispatcher.Invoke(() => { ExtractBar.IsIndeterminate = false; ExtractBar.Value = 0; _lastPushedPercent = -1; });
 
-                var progress = new ExtractionProgress(plan, () => _stopRequested);
-                progress.Changed += p => Dispatcher.BeginInvoke(() => PushExtractionUi(p));
-                progress.RootCompleted += name =>
-                    Dispatcher.BeginInvoke(new Action(() => MarkRootDone(name)));
-
-                // If Stop was pressed while the layout was being read, bail now.
-                if (_stopRequested)
-                    throw new ExtractionCancelledException();
-
-                // The overlay is already on screen (indeterminate); now that the
-                // layout is known, build the checklist and switch to the byte-
-                // accurate determinate bar.
-                Dispatcher.Invoke(() =>
-                {
-                    BuildFolderChecklist(plan);
-                    ResetExtractionUi(progress);
-                });
-
-                // Extract the XEX under a temporary name so that a failed hash
-                // check (or a user declining to extract) never clobbers an
-                // existing default.xex already in the launcher folder.
-                const string xexNewName = "default_new.xex";
-                string xexNew = Path.Combine(outDir, xexNewName);
-                string hash = disc.ExtractXex(outDir, _ => { }, progress, xexNewName);
-                progress.SetPhase("Checking default.xex SHA-256…");
+                // Extract under a temporary name so a rejected disc never replaces a good default.xex.
+                const string tempName = "default_new.xex";
+                string tempXex = Path.Combine(outDir, tempName);
+                string hash = disc.ExtractXex(outDir, _ => { }, progress, tempName);
                 (bool ok, string message) = GameCompatibilityInspector.CheckHash(hash);
                 if (!ok)
                 {
-                    // The XEX is not a supported version. Instead of bailing out
-                    // with a message box, show the reason on the overlay and let
-                    // the user choose to extract the disc anyways (keeping the
-                    // XEX) or stop.
-                    var decision = new TaskCompletionSource<bool>(
-                        TaskCreationOptions.RunContinuationsAsynchronously);
+                    var decision = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                     _hashDecision = decision;
                     Dispatcher.Invoke(() => ShowHashPrompt(message));
-                    bool extractAnyways = await decision.Task;
-                    if (ReferenceEquals(_hashDecision, decision))
-                        _hashDecision = null;
-                    if (!extractAnyways)
+                    bool goOn = await decision.Task;
+                    _hashDecision = null;
+                    if (!goOn)
                     {
-                        // Declined: remove the temporary XEX, leaving any existing
-                        // default.xex in the launcher folder untouched.
-                        try { File.Delete(xexNew); }
-                        catch { /* best effort */ }
+                        try { File.Delete(tempXex); } catch (IOException) { }
                         throw new ExtractionCancelledException();
                     }
                 }
-
-                // Promote the temporary XEX to default.xex (overwriting any
-                // existing one) now that the extraction will continue.
-                try
-                {
-                    File.Move(xexNew, Path.Combine(outDir, "default.xex"), overwrite: true);
-                }
-                catch (Exception moveEx)
-                {
-                    throw new InvalidDataException(
-                        "Could not place default.xex: " + moveEx.Message);
-                }
-
+                File.Move(tempXex, Path.Combine(outDir, "default.xex"), overwrite: true);
                 (files, bytes) = disc.ExtractRemaining(outDir, _ => { }, progress);
-                progress.SetPhase("Finalizing…");
             }
-            catch (ExtractionCancelledException)
-            {
-                cancelled = true;
-            }
-            catch (Exception exception)
-            {
-                error = exception.Message;
-            }
+            catch (ExtractionCancelledException) { cancelled = true; }
+            catch (Exception exception) { error = exception.Message; }
 
             Dispatcher.Invoke(() =>
             {
-                _extracting = false;
-                _stopRequested = false;
-                ExtractButton.IsEnabled = true;
-                LaunchButton.IsEnabled = true;
-                if (cancelled)
-                {
-                    ExtractionOverlay.Visibility = Visibility.Collapsed;
-                    ExtractionStatusText.Visibility = Visibility.Visible;
-                    ExtractionStatusText.Text = "Extraction stopped.";
-                    return;
-                }
-                if (error is not null)
-                {
-                    ExtractionOverlay.Visibility = Visibility.Collapsed;
-                    ExtractionStatusText.Visibility = Visibility.Visible;
-                    ExtractionStatusText.Text = "Extraction failed.";
-                    MessageBox.Show(this, error, "Could not extract ISO",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-                ExtractionProgressBar.Value = 100;
-                ExtractionPercentText.Text = "100%";
-                ExtractionPhaseText.Text = "Done";
-                ExtractionStatusText.Visibility = Visibility.Visible;
-                ExtractionStatusText.Text =
-                    $"Extracted {files:N0} files ({DiscExtraction.FormatSize(bytes)}) from {Path.GetFileName(isoPath)}.";
-                // SetGameDirectory reports readiness (including whether fable_2.exe
-                // is staged) in the status line and configuration badge.
-                SetGameDirectory(outDir);
-                HideOverlayAfter(900);
+                if (cancelled || error is not null) _home.Settings.GameFolder = previousGameFolder;
+                try { _home.Save(); } catch (IOException) { }
+                RefreshGameState();
+                if (cancelled) ShowToast("Stopped copying the disc.");
+                else if (error is not null)
+                    MessageBox.Show(this, error, "Could not read the disc image", MessageBoxButton.OK, MessageBoxImage.Error);
+                else ShowToast($"Copied {files:N0} files ({DiscExtraction.FormatSize(bytes)}) from {Path.GetFileName(isoPath)}.");
             });
         });
     }
 
-    private void StopClicked(object sender, RoutedEventArgs e)
+    private void PushProgress(ExtractionProgress progress)
     {
-        if (!_extracting) return;
-        if (_hashDecision is not null)
-        {
-            DeclineHashDecision();
-            return;
-        }
-        _stopRequested = true;
-        StopButton.IsEnabled = false;
-        ExtractionPhaseText.Text = "Stopping…";
-    }
-
-    // The large "Cancel" button on the "unrecognized XEX" prompt: declines the
-    // extraction (same as the top Stop button while the prompt is showing).
-    private void CancelClicked(object sender, RoutedEventArgs e)
-    {
-        DeclineHashDecision();
-    }
-
-    // Decline the "unrecognized XEX" prompt: the worker deletes the XEX and
-    // reports the extraction as stopped.
-    private void DeclineHashDecision()
-    {
-        if (_hashDecision is null) return;
-        _hashDecision.TrySetResult(false);
-        StopButton.IsEnabled = false;
-        HashPrompt.Visibility = Visibility.Collapsed;
-        ExtractionPhaseText.Text = "Stopping…";
-    }
-
-    private void ExtractAnywaysClicked(object sender, RoutedEventArgs e)
-    {
-        if (_hashDecision is null) return;
-        _hashDecision.TrySetResult(true);
-        HashPrompt.Visibility = Visibility.Collapsed;
-        ExtractionPhaseText.Text = "Extracting…";
-    }
-
-    // Show the "unrecognized XEX" prompt on the overlay (called on the UI
-    // thread via Dispatcher.Invoke from the worker).
-    private void ShowHashPrompt(string message)
-    {
-        HashPromptText.Text = message;
-        ExtractionPhaseText.Text = "Unrecognized default.xex";
-        StopButton.IsEnabled = true;   // the user can still abort
-        HashPrompt.Visibility = Visibility.Visible;
-    }
-
-    private void BuildFolderChecklist(List<RootItem> plan)
-    {
-        ExtractionFolderList.Children.Clear();
-        _rootChecks.Clear();
-        foreach (RootItem item in plan)
-        {
-            var box = new CheckBox
-            {
-                Content = item.Name,
-                IsChecked = false,
-                IsHitTestVisible = false,   // display-only progress checkbox
-                FontSize = 14,
-                FontWeight = item.IsDirectory ? FontWeights.SemiBold : FontWeights.Normal,
-                Foreground = ItemBrush,
-                Margin = new Thickness(0, 3, 0, 3),
-                VerticalContentAlignment = VerticalAlignment.Center
-            };
-            ExtractionFolderList.Children.Add(box);
-            _rootChecks[item.Name] = box;
-        }
-    }
-
-    private void ResetExtractionUi(ExtractionProgress progress)
-    {
-        _lastPushedPercent = -1;
-        ExtractionProgressBar.IsIndeterminate = false;
-        ExtractionProgressBar.Value = 0;
-        ExtractionPercentText.Text = "0%";
-        ExtractionBytesText.Text =
-            $"{DiscExtraction.FormatSize(0)} / {DiscExtraction.FormatSize(progress.TotalBytes)}";
-        ExtractionPhaseText.Text = "Reading disc…";
-        ExtractionFileText.Text = "Reading disc…";
-    }
-
-    private void PushExtractionUi(ExtractionProgress progress)
-    {
+        if (_state != LauncherState.Extracting || _hashDecision is not null) return;
         long now = Environment.TickCount64;
         double pct = progress.Percent;
-        bool force = pct >= 100.0 || now - _lastUiPush >= 80 || pct - _lastPushedPercent >= 0.25;
-        if (!force) return;
+        if (pct < 100 && now - _lastUiPush < 80 && pct - _lastPushedPercent < 0.25) return;
         _lastUiPush = now;
         _lastPushedPercent = pct;
-
-        ExtractionProgressBar.Value = pct;
-        ExtractionPercentText.Text = $"{pct:0}%";
-        ExtractionBytesText.Text =
-            $"{DiscExtraction.FormatSize(progress.CompletedBytes + progress.CurrentFileWritten)}"
-            + $" / {DiscExtraction.FormatSize(progress.TotalBytes)}";
-        ExtractionPhaseText.Text = progress.Phase;
-        ExtractionFileText.Text = progress.CurrentFile ?? "…";
+        ExtractBar.Value = pct;
+        SealText.Text = $"{pct:0}%";
+        SealSubText.Text = "COPYING";
+        StatusTitle.Text = "Copying game files";
+        StatusText.Text = $"{DiscExtraction.FormatSize(progress.CompletedBytes + progress.CurrentFileWritten)} of "
+                          + $"{DiscExtraction.FormatSize(progress.TotalBytes)} · {progress.CurrentFile ?? progress.Phase}";
     }
 
-    private void MarkRootDone(string name)
+    private void ShowHashPrompt(string message)
     {
-        if (!_rootChecks.TryGetValue(name, out CheckBox? box)) return;
-        box.IsChecked = true;
-        box.Foreground = DoneBrush;
+        StatusTitle.Text = "This disc isn't a known Fable II GOTY copy";
+        StatusText.Text = message + " It probably won't run. You can stop, or copy it anyway.";
+        StatusDot.Fill = (Brush)FindResource("Ember");
+        ExtractAnywayButton.Visibility = Visibility.Visible;
     }
 
-    private void HideOverlayAfter(int delayMs)
+    private void ExtractAnywayClicked(object sender, RoutedEventArgs e)
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(delayMs) };
-        timer.Tick += (_, _) =>
+        ExtractAnywayButton.Visibility = Visibility.Collapsed;
+        StatusDot.Fill = (Brush)FindResource("Gold");
+        _hashDecision?.TrySetResult(true);
+    }
+
+    private void StopClicked(object sender, RoutedEventArgs e)
+    {
+        StopButton.IsEnabled = false;
+        StatusTitle.Text = "Stopping…";
+        if (_hashDecision is not null) _hashDecision.TrySetResult(false);
+        else _stopRequested = true;
+    }
+
+    // ---------------------------------------------------------------- parchment page
+
+    private bool _pageOpen;
+
+    private void OpenSettingsClicked(object sender, RoutedEventArgs e) => OpenPage(TabSettings);
+    private void OpenHelpClicked(object sender, RoutedEventArgs e) => OpenPage(TabHelp);
+    private void ClosePageClicked(object sender, RoutedEventArgs e) => ClosePage();
+    private void ScrimMouseDown(object sender, MouseButtonEventArgs e) => ClosePage();
+
+    private void OpenPage(RadioButton tab)
+    {
+        _turnOnTabChange = false;
+        tab.IsChecked = true;
+        ShowPanel(tab);
+        _turnOnTabChange = true;
+        if (_pageOpen) return;
+        _pageOpen = true;
+        Scrim.Visibility = Visibility.Visible;
+        PageHost.Visibility = Visibility.Visible;
+        if (!AnimationsOn)
         {
-            timer.Stop();
-            if (!_extracting)   // a new extraction may have started in the meantime
-                ExtractionOverlay.Visibility = Visibility.Collapsed;
-        };
-        timer.Start();
-    }
-
-    private void SaveClicked(object sender, RoutedEventArgs e) => SaveConfiguration();
-    private void LaunchClicked(object sender, RoutedEventArgs e) => LaunchGame();
-
-    // ---- Advanced Options page ----
-
-    private string AdvancedConfigPath() =>
-        Path.Combine(_executableDirectory ?? AppContext.BaseDirectory, "fable2_config.toml");
-
-    private void SetPage(bool advanced)
-    {
-        MainContent.Visibility = advanced ? Visibility.Collapsed : Visibility.Visible;
-        AdvancedContent.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
-        MainFooter.Visibility = advanced ? Visibility.Collapsed : Visibility.Visible;
-        AdvancedFooter.Visibility = advanced ? Visibility.Visible : Visibility.Collapsed;
-        AdvancedOptionsButton.Visibility = advanced ? Visibility.Collapsed : Visibility.Visible;
-    }
-
-    private void AdvancedOptionsClicked(object sender, RoutedEventArgs e)
-    {
-        LoadAdvanced();
-        SetPage(true);
-    }
-
-    private void BackClicked(object sender, RoutedEventArgs e) => SetPage(false);
-
-    private void LoadAdvanced()
-    {
-        _advanced = Fable2ConfigFile.Read(AdvancedConfigPath());
-        _loading = true;
-        try
-        {
-            MouseLookCheck.IsChecked = _advanced.MouseLook;
-            DirectMouseLookCheck.IsChecked = _advanced.DirectMouseLook;
-            MouseSensitivitySlider.Value = _advanced.MouseLookScale;
-            MouseSensitivityBox.Text = _advanced.MouseLookScale.ToString(CultureInfo.InvariantCulture);
-            HotFuncYieldSlider.Value = Math.Clamp(_advanced.HotFuncYieldEvery, 0, 16);
-            HotFuncYieldBox.Text = _advanced.HotFuncYieldEvery.ToString(CultureInfo.InvariantCulture);
-            BuildKeybindRows(Fable2ConfigFile.ParseKeybinds(_advanced.KeyboardGamepadMap));
-            BuildPatchRows();
-        }
-        finally { _loading = false; }
-        AdvancedStatusText.Text = "Editing fable2_config.toml (unsaved)";
-    }
-
-    // Build one "press-to-capture host key -> guest input" row in the KeybindList.
-    private void AddKeybindRow(string key, string button)
-    {
-        var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        // Press-to-capture host key field: click it, then press the key or mouse
-        // button you want to bind (Escape cancels the capture).
-        var capture = new KeyCaptureField { Value = key };
-        var keyField = new Border
-        {
-            Background = KeyIdleBackground,
-            BorderBrush = KeyIdleBorder,
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(4),
-            MinHeight = 38,
-            Padding = new Thickness(10, 4, 10, 4),
-            Cursor = Cursors.Hand,
-            SnapsToDevicePixels = true,
-            Tag = capture,
-        };
-        capture.Border = keyField;
-        capture.Text = new TextBlock
-        {
-            Text = string.IsNullOrWhiteSpace(key) ? "press a key…" : key,
-            Foreground = KeyFieldText,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 14,
-        };
-        keyField.Child = capture.Text;
-        // A single MouseDown handler captures every mouse button via
-        // e.ChangedButton (WPF doesn't expose per-button routed events for the
-        // middle and X buttons on a plain Border). The first LMB press enters
-        // listening mode; any press while listening sets that button as the key.
-        keyField.MouseDown += (s, e) =>
-        {
-            string? button = e.ChangedButton switch
-            {
-                MouseButton.Left => "LMB",
-                MouseButton.Right => "RMB",
-                MouseButton.Middle => "MMB",
-                MouseButton.XButton1 => "XMB1",
-                MouseButton.XButton2 => "XMB2",
-                _ => null
-            };
-            if (button == null) return;
-
-            if (button == "LMB" && !ReferenceEquals(_activeKeyField, keyField))
-            {
-                BeginKeyCapture(keyField);   // first LMB click enters listening mode
-                return;
-            }
-            if (ReferenceEquals(_activeKeyField, keyField))
-                SetKeyCaptureValue(keyField, button);
-        };
-
-
-        var buttonCombo = BuildKeyCombo(Fable2ConfigFile.ButtonNames, button);
-
-        var removeButton = new Button
-        {
-            Content = "✕",
-            MinWidth = 30,
-            ToolTip = "Remove this binding",
-            Style = (Style)FindResource("SecondaryButton"),
-        };
-        removeButton.Click += (s, e) =>
-        {
-            KeybindList.Children.Remove(grid);
-            _keyFields.Remove(keyField);
-            _buttonCombos.Remove(buttonCombo);
-            if (ReferenceEquals(_activeKeyField, keyField)) _activeKeyField = null;
-        };
-
-        Grid.SetColumn(keyField, 0);
-        Grid.SetColumn(buttonCombo, 2);
-        Grid.SetColumn(removeButton, 3);
-        grid.Children.Add(keyField);
-        grid.Children.Add(buttonCombo);
-        grid.Children.Add(removeButton);
-
-        KeybindList.Children.Add(grid);
-        _keyFields.Add(keyField);
-        _buttonCombos.Add(buttonCombo);
-    }
-
-    // Enter listening mode on the host key field: the next key or mouse button
-    // press sets the binding. Only one field listens at a time.
-    private void BeginKeyCapture(Border field)
-    {
-        if (_activeKeyField != null && _activeKeyField != field) SetKeyCaptureIdle(_activeKeyField);
-        _activeKeyField = field;
-        field.Background = KeyListeningBackground;
-        field.BorderBrush = KeyListeningBorder;
-        var capture = (KeyCaptureField)field.Tag!;
-        capture.Text.Text = "listening…";
-        capture.Text.Foreground = KeyFieldText;
-    }
-
-    private void SetKeyCaptureValue(Border field, string name)
-    {
-        var capture = (KeyCaptureField)field.Tag!;
-        capture.Value = name;
-        capture.Text.Text = name;
-        capture.Text.Foreground = KeyFieldText;
-        field.Background = KeyIdleBackground;
-        field.BorderBrush = KeyIdleBorder;
-        _activeKeyField = null;
-    }
-
-    private static void SetKeyCaptureIdle(Border field)
-    {
-        var capture = (KeyCaptureField)field.Tag!;
-        capture.Text.Text = string.IsNullOrWhiteSpace(capture.Value) ? "press a key…" : capture.Value;
-        capture.Text.Foreground = KeyFieldText;
-        field.Background = KeyIdleBackground;
-        field.BorderBrush = KeyIdleBorder;
-    }
-
-    // Map a WPF Key to the host-key name rex::ui::ParseVirtualKey expects (see
-    // Fable2ConfigFile.KeyNames). Returns null for keys that cannot be bound.
-    private static string? KeyToName(Key key)
-    {
-        if (key >= Key.A && key <= Key.Z) return ((char)('A' + (key - Key.A))).ToString();
-        if (key >= Key.D0 && key <= Key.D9) return ((char)('0' + (key - Key.D0))).ToString();
-        if (key >= Key.F1 && key <= Key.F24) return "F" + (int)(key - Key.F1 + 1);
-        if (key >= Key.NumPad0 && key <= Key.NumPad9) return "Numpad" + (int)(key - Key.NumPad0);
-        return key switch
-        {
-            Key.Add => "NumpadPlus",
-            Key.Subtract => "NumpadMinus",
-            Key.Multiply => "NumpadStar",
-            Key.Divide => "NumpadSlash",
-            Key.Left => "Left",
-            Key.Right => "Right",
-            Key.Up => "Up",
-            Key.Down => "Down",
-            Key.Home => "Home",
-            Key.End => "End",
-            Key.PageUp => "PageUp",
-            Key.PageDown => "PageDown",
-            Key.Delete => "Delete",
-            Key.Insert => "Insert",
-            Key.Back => "Backspace",
-            Key.Return => "Return",
-            Key.Space => "Space",
-            Key.Tab => "Tab",
-            Key.LeftShift => "Shift",
-            Key.RightShift => "Shift",
-            Key.LeftCtrl => "Control",
-            Key.RightCtrl => "Control",
-            Key.LeftAlt => "Alt",
-            Key.RightAlt => "Alt",
-            Key.PrintScreen => "PrintScreen",
-            Key.Pause => "Pause",
-            Key.CapsLock => "CapsLock",
-            Key.NumLock => "NumLock",
-            Key.Scroll => "ScrollLock",
-            Key.OemTilde => "Backtick",
-            Key.OemMinus => "Minus",
-            Key.OemPlus => "Plus",
-            Key.OemComma => "Comma",
-            Key.OemPeriod => "Period",
-            Key.OemSemicolon => "Semicolon",
-            Key.OemQuestion => "Slash",
-            Key.OemBackslash => "Backslash",
-            Key.OemOpenBrackets => "LBracket",
-            Key.OemCloseBrackets => "RBracket",
-            Key.OemQuotes => "Quote",
-            _ => null,
-        };
-    }
-
-    private void MainWindow_PreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (_activeKeyField == null) return;
-        if (e.Key == Key.Escape)
-        {
-            SetKeyCaptureIdle(_activeKeyField);
-            _activeKeyField = null;
-            e.Handled = true;
+            PageScale.ScaleX = 1;
+            Scrim.Opacity = 1;
             return;
         }
-        Key key = e.Key == Key.System ? e.SystemKey : e.Key;
-        string? name = KeyToName(key);
-        if (name != null)
+        // The page swings in from the window's right edge, like a page being turned onto the scene.
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(650);
+        PageScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.02, 1, duration) { EasingFunction = ease });
+        PageSkew.BeginAnimation(SkewTransform.AngleYProperty, new DoubleAnimation(-9, 0, duration) { EasingFunction = ease });
+        PageShade.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, duration));
+        Scrim.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(300)));
+    }
+
+    private void ClosePage()
+    {
+        if (!_pageOpen) return;
+        _pageOpen = false;
+        if (_dirty) SaveAll();
+        _activeKeyField = null;
+        if (!AnimationsOn)
         {
-            SetKeyCaptureValue(_activeKeyField, name);
-            e.Handled = true;
+            PageHost.Visibility = Visibility.Collapsed;
+            Scrim.Visibility = Visibility.Collapsed;
+            return;
+        }
+        var ease = new CubicEase { EasingMode = EasingMode.EaseIn };
+        var duration = TimeSpan.FromMilliseconds(420);
+        var fold = new DoubleAnimation(1, 0.02, duration) { EasingFunction = ease };
+        fold.Completed += (_, _) =>
+        {
+            if (_pageOpen) return;
+            PageHost.Visibility = Visibility.Collapsed;
+            Scrim.Visibility = Visibility.Collapsed;
+        };
+        PageScale.BeginAnimation(ScaleTransform.ScaleXProperty, fold);
+        PageSkew.BeginAnimation(SkewTransform.AngleYProperty, new DoubleAnimation(0, -9, duration) { EasingFunction = ease });
+        PageShade.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 0.8, duration));
+        Scrim.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, duration));
+    }
+
+    private bool _turnOnTabChange = true;
+
+    private void TabChecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not RadioButton tab || PanelSettings is null) return;
+        ShowPanel(tab);
+        if (!_turnOnTabChange || !_pageOpen || !AnimationsOn) return;
+        // A new page turns in from the right edge.
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var duration = TimeSpan.FromMilliseconds(480);
+        ContentScale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(0.05, 1, duration) { EasingFunction = ease });
+        PageShade.BeginAnimation(OpacityProperty, new DoubleAnimation(0.9, 0, duration));
+    }
+
+    private void ShowPanel(RadioButton tab)
+    {
+        PanelSettings.Visibility = tab == TabSettings ? Visibility.Visible : Visibility.Collapsed;
+        PanelControls.Visibility = tab == TabControls ? Visibility.Visible : Visibility.Collapsed;
+        PanelUpdates.Visibility = tab == TabUpdates ? Visibility.Visible : Visibility.Collapsed;
+        PanelHelp.Visibility = tab == TabHelp ? Visibility.Visible : Visibility.Collapsed;
+        PageScroll.ScrollToTop();
+    }
+
+    // ---------------------------------------------------------------- help actions
+
+    private void ReportToggleClicked(object sender, RoutedEventArgs e) => Toggle(ReportPanel);
+
+    private void FolderToggleClicked(object sender, RoutedEventArgs e)
+    {
+        FolderPanelText.Text = $"Your saves, settings and logs live in {_home.DataFolder}. "
+            + (LauncherHome.IsInside(_home.GameFolder, _home.DataFolder)
+                ? "The game files (about 7 GB) are in there too. "
+                : $"The game files are read from {_home.GameFolder}. ")
+            + "Updates never touch this folder.";
+        Toggle(FolderPanel);
+    }
+
+    private static void Toggle(UIElement element) =>
+        element.Visibility = element.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+
+    private void CreateReportClicked(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string zip = ProblemReport.Create(_home, _version, _home.Settings.Edition, desktop);
+            OpenInShell(ProblemReport.IssueUrl(_version, _home.Settings.Edition));
+            ShowToast($"Saved {Path.GetFileName(zip)} to your desktop. Attach it to the GitHub issue that just opened.");
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Could not create the report", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    private static ComboBox BuildKeyCombo(string[] names, string selected)
+    private async void CheckFilesClicked(object sender, RoutedEventArgs e)
     {
-        var combo = new ComboBox();
-        foreach (string name in names)
-            combo.Items.Add(new ComboBoxItem { Content = name, Tag = name });
-        combo.SelectedItem = FindTag(combo, selected) ?? combo.Items[0] as ComboBoxItem;
-        return combo;
+        if (!File.Exists(Path.Combine(_home.GameFolder, "default.xex")))
+        {
+            ShowToast("No game files yet. Choose your disc image first.");
+            return;
+        }
+        ShowToast("Checking game files…");
+        string folder = _home.GameFolder;
+        GameCompatibility result = await Task.Run(() => GameCompatibilityInspector.Inspect(folder));
+        ShowToast(result.Supported ? $"Game files look good: {result.Label}." : $"{result.Label}: {result.Message}");
+        RefreshGameState();
     }
 
-    private static ComboBoxItem? FindTag(ComboBox combo, string tag)
+    private void OpenSavesClicked(object sender, RoutedEventArgs e)
     {
-        foreach (object item in combo.Items)
-            if (item is ComboBoxItem comboItem &&
-                string.Equals(comboItem.Tag?.ToString(), tag, StringComparison.OrdinalIgnoreCase))
-                return comboItem;
-        return null;
+        Directory.CreateDirectory(_home.SavesFolder);
+        OpenInShell(_home.SavesFolder);
     }
+
+    private async void MoveDataClicked(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose an empty folder for your Project Sparrow data" };
+        if (dialog.ShowDialog(this) != true) return;
+        string target = dialog.FolderName;
+        MoveDataButton.IsEnabled = false;
+        ShowToast("Moving your data. This can take a few minutes for the game files…");
+        try
+        {
+            if (_dirty) SaveAll();
+            await Task.Run(() => _home.MoveDataFolder(target));
+            ShowToast($"Moved. Your data now lives in {_home.DataFolder}.");
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(this, exception.Message, "Could not move the data folder", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            MoveDataButton.IsEnabled = true;
+            FolderPanel.Visibility = Visibility.Collapsed;
+            RefreshGameState();
+        }
+    }
+
+    private void UseGameFolderClicked(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Choose a folder with default.xex and data" };
+        if (dialog.ShowDialog(this) != true) return;
+        if (!File.Exists(Path.Combine(dialog.FolderName, "default.xex")) ||
+            !Directory.Exists(Path.Combine(dialog.FolderName, "data")))
+        {
+            ShowToast("That folder doesn't have default.xex and a data folder.");
+            return;
+        }
+        _home.Settings.GameFolder = dialog.FolderName;
+        try { _home.Save(); } catch (IOException) { }
+        FolderPanel.Visibility = Visibility.Collapsed;
+        RefreshGameState();
+        ShowToast($"Using the game files in {dialog.FolderName}.");
+    }
+
+    private void ClearShaderCacheClicked(object sender, RoutedEventArgs e)
+    {
+        string shaders = Path.Combine(_home.CacheFolder, "shaders");
+        try
+        {
+            if (Directory.Exists(shaders)) Directory.Delete(shaders, recursive: true);
+            ShowToast("Shader cache cleared. The first few minutes may stutter while it rebuilds.");
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            ShowToast("Couldn't clear the cache. Close the game first, then try again.");
+        }
+    }
+
+    private static void OpenInShell(string target) =>
+        Process.Start(new ProcessStartInfo(target) { UseShellExecute = true });
+
+    private void ShowToast(string message)
+    {
+        ToastText.Text = message;
+        Toast.Visibility = Visibility.Visible;
+        _toastTimer.Stop();
+        _toastTimer.Start();
+    }
+
+    // ---------------------------------------------------------------- window chrome
+
+    private void MinimizeClicked(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+    private void MaximizeClicked(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+    private void CloseClicked(object sender, RoutedEventArgs e) => Close();
+
+    // ---------------------------------------------------------------- keyboard keys editor
+
+    private sealed class KeyCaptureField
+    {
+        public TextBlock Text = null!;
+        public string Value = "";
+    }
+
+    private readonly List<Border> _keyFields = new();
+    private readonly List<ComboBox> _buttonCombos = new();
+    private Border? _activeKeyField;
+    private static readonly Brush KeyIdleBackground = new SolidColorBrush(Color.FromRgb(0xF6, 0xEE, 0xD6));
+    private static readonly Brush KeyIdleBorder = new SolidColorBrush(Color.FromRgb(0xBF, 0xAE, 0x80));
+    private static readonly Brush KeyListeningBackground = new SolidColorBrush(Color.FromRgb(0xE4, 0xEF, 0xE4));
+    private static readonly Brush KeyListeningBorder = new SolidColorBrush(Color.FromRgb(0x1F, 0x4A, 0x37));
+    private static readonly Brush KeyText = new SolidColorBrush(Color.FromRgb(0x2B, 0x24, 0x14));
 
     private void BuildKeybindRows(List<KeybindEntry> entries)
     {
@@ -905,17 +872,129 @@ public partial class MainWindow : Window
         _keyFields.Clear();
         _buttonCombos.Clear();
         _activeKeyField = null;
-        foreach (KeybindEntry entry in entries)
-            AddKeybindRow(entry.Key, entry.Button);
+        foreach (KeybindEntry entry in entries) AddKeybindRow(entry.Key, entry.Button);
     }
 
-    private void AddKeybindClicked(object sender, RoutedEventArgs e) =>
+    private void AddKeybindClicked(object sender, RoutedEventArgs e)
+    {
         AddKeybindRow("", Fable2ConfigFile.ButtonNames[0]);
+        SettingChanged(sender, e);
+    }
 
-    // Restore the built-in default keyboard -> gamepad map (rebuilds the rows
-    // from the C++ default). The user still has to press Save to persist it.
     private void ResetKeybindsClicked(object sender, RoutedEventArgs e)
-        => BuildKeybindRows(Fable2ConfigFile.ParseKeybinds(Fable2ConfigValues.DefaultKeyboardGamepadMap));
+    {
+        BuildKeybindRows(Fable2ConfigFile.ParseKeybinds(Fable2ConfigValues.DefaultKeyboardGamepadMap));
+        SettingChanged(sender, e);
+    }
+
+    private void AddKeybindRow(string key, string button)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var capture = new KeyCaptureField { Value = key };
+        var field = new Border
+        {
+            Background = KeyIdleBackground, BorderBrush = KeyIdleBorder, BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6), MinHeight = 34, Padding = new Thickness(10, 4, 10, 4),
+            Cursor = Cursors.Hand, Tag = capture
+        };
+        capture.Text = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(key) ? "press a key…" : key, Foreground = KeyText,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 14
+        };
+        field.Child = capture.Text;
+        field.MouseDown += (_, e) =>
+        {
+            string? mouse = e.ChangedButton switch
+            {
+                MouseButton.Left => "LMB", MouseButton.Right => "RMB", MouseButton.Middle => "MMB",
+                MouseButton.XButton1 => "XMB1", MouseButton.XButton2 => "XMB2", _ => null
+            };
+            if (mouse is null) return;
+            if (mouse == "LMB" && !ReferenceEquals(_activeKeyField, field)) { BeginKeyCapture(field); return; }
+            if (ReferenceEquals(_activeKeyField, field)) SetKeyCaptureValue(field, mouse);
+        };
+
+        var combo = new ComboBox { MinWidth = 0 };
+        foreach (string name in Fable2ConfigFile.ButtonNames)
+            combo.Items.Add(new ComboBoxItem { Content = name, Tag = name });
+        SelectByTag(combo, button);
+        if (combo.SelectedItem is null) combo.SelectedIndex = 0;
+        combo.SelectionChanged += (s, e) => SettingChanged(s, (RoutedEventArgs)e);
+
+        var remove = new Button { Content = "✕", Style = (Style)FindResource("PageButton"), Margin = new Thickness(8, 0, 0, 0), ToolTip = "Remove this key" };
+        remove.Click += (s, e) =>
+        {
+            KeybindList.Children.Remove(grid);
+            _keyFields.Remove(field);
+            _buttonCombos.Remove(combo);
+            if (ReferenceEquals(_activeKeyField, field)) _activeKeyField = null;
+            SettingChanged(s, e);
+        };
+
+        Grid.SetColumn(field, 0);
+        Grid.SetColumn(combo, 2);
+        Grid.SetColumn(remove, 3);
+        grid.Children.Add(field);
+        grid.Children.Add(combo);
+        grid.Children.Add(remove);
+        KeybindList.Children.Add(grid);
+        _keyFields.Add(field);
+        _buttonCombos.Add(combo);
+    }
+
+    private void BeginKeyCapture(Border field)
+    {
+        if (_activeKeyField is not null && _activeKeyField != field) SetKeyCaptureIdle(_activeKeyField);
+        _activeKeyField = field;
+        field.Background = KeyListeningBackground;
+        field.BorderBrush = KeyListeningBorder;
+        ((KeyCaptureField)field.Tag!).Text.Text = "listening…";
+    }
+
+    private void SetKeyCaptureValue(Border field, string name)
+    {
+        var capture = (KeyCaptureField)field.Tag!;
+        capture.Value = name;
+        capture.Text.Text = name;
+        field.Background = KeyIdleBackground;
+        field.BorderBrush = KeyIdleBorder;
+        _activeKeyField = null;
+        _dirty = true;
+    }
+
+    private static void SetKeyCaptureIdle(Border field)
+    {
+        var capture = (KeyCaptureField)field.Tag!;
+        capture.Text.Text = string.IsNullOrWhiteSpace(capture.Value) ? "press a key…" : capture.Value;
+        field.Background = KeyIdleBackground;
+        field.BorderBrush = KeyIdleBorder;
+    }
+
+    private void WindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (_activeKeyField is null)
+        {
+            if (e.Key == Key.Escape && _pageOpen) { ClosePage(); e.Handled = true; }
+            return;
+        }
+        if (e.Key == Key.Escape)
+        {
+            SetKeyCaptureIdle(_activeKeyField);
+            _activeKeyField = null;
+            e.Handled = true;
+            return;
+        }
+        string? name = KeyToName(e.Key == Key.System ? e.SystemKey : e.Key);
+        if (name is null) return;
+        SetKeyCaptureValue(_activeKeyField, name);
+        e.Handled = true;
+    }
 
     private string CollectKeybinds()
     {
@@ -930,215 +1009,28 @@ public partial class MainWindow : Window
         return Fable2ConfigFile.BuildKeybinds(entries);
     }
 
-    // Build one "checkbox + label + description" row in the PatchList.
-    private void AddPatchRow(string name, string key, string description, bool value,
-        bool unstable = false, Action? onChecked = null, Action? onUnchecked = null)
+    // Host-key names understood by rex::ui::ParseVirtualKey (see Fable2ConfigFile.KeyNames).
+    private static string? KeyToName(Key key)
     {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-        var labelStack = new StackPanel();
-        var nameBlock = new TextBlock
+        if (key >= Key.A && key <= Key.Z) return ((char)('A' + (key - Key.A))).ToString();
+        if (key >= Key.D0 && key <= Key.D9) return ((char)('0' + (key - Key.D0))).ToString();
+        if (key >= Key.F1 && key <= Key.F24) return "F" + (int)(key - Key.F1 + 1);
+        if (key >= Key.NumPad0 && key <= Key.NumPad9) return "Numpad" + (int)(key - Key.NumPad0);
+        return key switch
         {
-            Text = unstable ? name + "  (unstable)" : name,
-            FontWeight = FontWeights.SemiBold,
+            Key.Add => "NumpadPlus", Key.Subtract => "NumpadMinus", Key.Multiply => "NumpadStar",
+            Key.Divide => "NumpadSlash", Key.Left => "Left", Key.Right => "Right", Key.Up => "Up",
+            Key.Down => "Down", Key.Home => "Home", Key.End => "End", Key.PageUp => "PageUp",
+            Key.PageDown => "PageDown", Key.Delete => "Delete", Key.Insert => "Insert",
+            Key.Back => "Backspace", Key.Return => "Return", Key.Space => "Space", Key.Tab => "Tab",
+            Key.LeftShift or Key.RightShift => "Shift", Key.LeftCtrl or Key.RightCtrl => "Control",
+            Key.LeftAlt or Key.RightAlt => "Alt", Key.PrintScreen => "PrintScreen", Key.Pause => "Pause",
+            Key.CapsLock => "CapsLock", Key.NumLock => "NumLock", Key.Scroll => "ScrollLock",
+            Key.OemTilde => "Backtick", Key.OemMinus => "Minus", Key.OemPlus => "Plus",
+            Key.OemComma => "Comma", Key.OemPeriod => "Period", Key.OemSemicolon => "Semicolon",
+            Key.OemQuestion => "Slash", Key.OemBackslash => "Backslash", Key.OemOpenBrackets => "LBracket",
+            Key.OemCloseBrackets => "RBracket", Key.OemQuotes => "Quote",
+            _ => null,
         };
-        if (unstable) nameBlock.Foreground = UnstableBrush;
-        labelStack.Children.Add(nameBlock);
-        labelStack.Children.Add(new TextBlock
-        {
-            Text = description,
-            FontSize = 12,
-            Foreground = MutedBrush,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 2, 0, 0),
-        });
-
-        var check = new CheckBox
-        {
-            IsChecked = value,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(10, 0, 0, 0),
-        };
-        if (onChecked != null) check.Checked += (s, e) => onChecked();
-        if (onUnchecked != null) check.Unchecked += (s, e) => onUnchecked();
-
-        Grid.SetColumn(labelStack, 0);
-        Grid.SetColumn(check, 1);
-        grid.Children.Add(labelStack);
-        grid.Children.Add(check);
-
-        var border = new Border
-        {
-            // Reddish tint for unstable patches, subtle green for the rest.
-            Background = unstable
-                ? new SolidColorBrush(Color.FromArgb(0x26, 0x4A, 0x2C, 0x2C))
-                : new SolidColorBrush(Color.FromArgb(0x22, 0x2F, 0x49, 0x41)),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(14, 10, 14, 10),
-            Margin = new Thickness(0, 0, 0, 10),
-            Child = grid,
-        };
-        PatchList.Children.Add(border);
-        _patchChecks.Add((key, check));
-    }
-
-    // Set a patch checkbox by key (used to satisfy the higher_hf_tick_rate ->
-    // high_tick_rate requirement).
-    private void SetPatchChecked(string key, bool isChecked)
-    {
-        foreach (var (k, check) in _patchChecks)
-            if (k == key) { check.IsChecked = isChecked; return; }
-    }
-
-    private void BuildPatchRows()
-    {
-        PatchList.Children.Clear();
-        _patchChecks.Clear();
-        AddPatchRow("Unlock Website Items", "unlock_website",
-            "Force-grant the Fable 2 website items at save load.", _advanced.UnlockWebsite);
-        AddPatchRow("Unlock Collectors Edition", "unlock_ce",
-            "Force-grant the Collectors Edition chest content at save load.", _advanced.UnlockCe);
-        AddPatchRow("Skip Intro Videos", "skip_intro_videos",
-            "Skip the Microsoft and Lionhead logo videos at boot.", _advanced.SkipIntroVideos);
-        AddPatchRow("High Tick Rate", "high_tick_rate",
-            "Double the LF tick from 15 to 30 Hz (Xenia \"High Tick Rate\").",
-            _advanced.HighTickRate, unstable: true,
-            onUnchecked: () => SetPatchChecked("higher_hf_tick_rate", false));
-        AddPatchRow("Higher HF Tick Rate", "higher_hf_tick_rate",
-            "Double the HF tick from 30 to 60 Hz (Xenia \"Higher HF Tick Rate\"). Requires High Tick Rate.",
-            _advanced.HigherHfTickRate, unstable: true,
-            onChecked: () => SetPatchChecked("high_tick_rate", true));
-        AddPatchRow("Disable Motion Blur", "disable_motion_blur",
-            "Zero the camera's full-screen motion blur amount each frame.", _advanced.DisableMotionBlur);
-        AddPatchRow("Realtime Texture Morphing", "realtime_texture_morphing",
-            "Render the hero/dog morphed skin textures on the GPU (fixes the black hero/dog).",
-            _advanced.RealtimeTextureMorphing);
-        AddPatchRow("Hero/Dog Texture Readback", "hero_dog_texture_readback",
-            "CPU readback of the hero/dog texture resolve. Superseded by realtime morphing.",
-            _advanced.HeroDogTextureReadback);
-    }
-
-    private void CollectPatches()
-    {
-        foreach (var (key, check) in _patchChecks)
-        {
-            bool value = check.IsChecked == true;
-            switch (key)
-            {
-                case "unlock_website": _advanced.UnlockWebsite = value; break;
-                case "unlock_ce": _advanced.UnlockCe = value; break;
-                case "skip_intro_videos": _advanced.SkipIntroVideos = value; break;
-                case "high_tick_rate": _advanced.HighTickRate = value; break;
-                case "higher_hf_tick_rate": _advanced.HigherHfTickRate = value; break;
-                case "disable_motion_blur": _advanced.DisableMotionBlur = value; break;
-                case "realtime_texture_morphing": _advanced.RealtimeTextureMorphing = value; break;
-                case "hero_dog_texture_readback": _advanced.HeroDogTextureReadback = value; break;
-            }
-        }
-    }
-
-    private void MouseSensitivitySliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (MouseSensitivityBox is not null)
-            MouseSensitivityBox.Text = ((int)e.NewValue).ToString(CultureInfo.InvariantCulture);
-    }
-
-    private void MouseSensitivityBoxLostFocus(object sender, RoutedEventArgs e)
-    {
-        if (int.TryParse(MouseSensitivityBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture,
-            out int value))
-        {
-            value = Math.Clamp(value, 1, 4096);
-            MouseSensitivitySlider.Value = value;
-            MouseSensitivityBox.Text = value.ToString(CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            MouseSensitivityBox.Text = ((int)MouseSensitivitySlider.Value).ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    private void HotFuncYieldSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        if (HotFuncYieldBox is not null)
-            HotFuncYieldBox.Text = ((int)e.NewValue).ToString(CultureInfo.InvariantCulture);
-    }
-
-    private void HotFuncYieldBoxLostFocus(object sender, RoutedEventArgs e)
-    {
-        if (int.TryParse(HotFuncYieldBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture,
-            out int value))
-        {
-            value = Math.Clamp(value, 0, 4096);
-            HotFuncYieldSlider.Value = Math.Clamp(value, 0, 16);
-            HotFuncYieldBox.Text = value.ToString(CultureInfo.InvariantCulture);
-        }
-        else
-        {
-            HotFuncYieldBox.Text = ((int)HotFuncYieldSlider.Value).ToString(CultureInfo.InvariantCulture);
-        }
-    }
-
-    private void SaveAdvancedClicked(object sender, RoutedEventArgs e)
-    {
-        if (_executableDirectory is null)
-        {
-            MessageBox.Show(this, "Choose the game folder first.", "Game not found",
-                MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
-        }
-
-        _advanced.MouseLook = MouseLookCheck.IsChecked == true;
-        _advanced.DirectMouseLook = DirectMouseLookCheck.IsChecked == true;
-        _advanced.MouseLookScale = (int)MouseSensitivitySlider.Value;
-        _advanced.HotFuncYieldEvery = int.TryParse(HotFuncYieldBox.Text, NumberStyles.Integer,
-            CultureInfo.InvariantCulture, out int yieldEvery)
-            ? Math.Clamp(yieldEvery, 0, 4096) : (int)HotFuncYieldSlider.Value;
-        _advanced.KeyboardGamepadMap = CollectKeybinds();
-        CollectPatches();
-
-        string path = AdvancedConfigPath();
-        try
-        {
-            Fable2ConfigFile.Write(path, _advanced);
-            AdvancedStatusText.Text = $"Saved {Path.GetFileName(path)}.";
-        }
-        catch (Exception exception)
-        {
-            MessageBox.Show(this, exception.Message, "Could not save advanced settings",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-}
-
-internal static class LauncherState
-{
-    private static readonly string LocalStatePath = Path.Combine(AppContext.BaseDirectory,
-        "launcher-game-path.txt");
-
-    public static string? LoadGameDirectory()
-    {
-        try
-        {
-            if (File.Exists(LocalStatePath)) return File.ReadAllText(LocalStatePath).Trim();
-            return null;
-        }
-        catch { return null; }
-    }
-
-    public static void SaveGameDirectory(string directory)
-    {
-        try
-        {
-            File.WriteAllText(LocalStatePath, directory);
-            return;
-        }
-        catch
-        {
-            // Graphics saving reports write failures separately. No global
-            // fallback: different installations must not inherit other paths.
-        }
     }
 }

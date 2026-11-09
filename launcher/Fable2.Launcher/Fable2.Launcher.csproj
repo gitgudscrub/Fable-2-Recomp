@@ -6,10 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Fable2Launcher</AssemblyName>
-    <AssemblyTitle>Fable 2 Recompiled Launcher</AssemblyTitle>
-    <Product>Fable 2 Recompiled</Product>
+    <AssemblyTitle>Project Sparrow</AssemblyTitle>
+    <Product>Project Sparrow</Product>
     <ApplicationIcon>..\..\assets\app-icon.ico</ApplicationIcon>
     <RootNamespace>Fable2Launcher</RootNamespace>
+    <!-- Program.Main runs Velopack before WPF starts. -->
+    <StartupObject>Fable2Launcher.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\constants\GameVersions.cs" Link="Constants\GameVersions.cs" />
@@ -17,5 +19,13 @@
          with tools/x360extract. Consumed as a project reference; produces X360ExtractCore.dll. -->
     <ProjectReference Include="..\..\tools\x360extract\lib\X360Extract.Core.csproj" />
     <Resource Include="..\..\assets\app-icon.png" Link="Assets\app-icon.png" />
+    <!-- IM FELL English and Alegreya Sans, SIL Open Font License (Fonts/OFL-*.txt). -->
+    <Resource Include="Fonts\*.ttf" />
+    <None Include="Fonts\OFL-*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 </Project>

@@ -306,28 +306,27 @@ try
         GameCompatibilityInspector.Classify(malformedProbe.Hash, p => HasFile(malformedProbe, p), p => HasDirectory(malformedProbe, p))), "malformed descriptor accepted");
     Console.WriteLine("Catalogue-driven allow/deny, marker, extra-locale and native-profile tests passed.");
 
-    // UpdateChecker: only a newer release from this repo counts as an update.
-    static string ReleaseJson(string tag, string page = "https://github.com/himdo/Fable-2-Recomp/releases/tag/x") =>
-        System.Text.Json.JsonSerializer.Serialize(new { tag_name = tag, html_url = page });
-    Require(UpdateChecker.FindUpdate("1.5.0", ReleaseJson("1.6.0"))?.Version == "1.6.0", "newer release was missed");
-    Require(UpdateChecker.FindUpdate("1.5.0", ReleaseJson("v1.10.0")) is not null, "versions were compared as text");
-    Require(UpdateChecker.FindUpdate("1.5.0", ReleaseJson("1.5.0")) is null, "same release counted as an update");
-    Require(UpdateChecker.FindUpdate("1.5", ReleaseJson("1.5.0")) is null, "1.5 and 1.5.0 were treated as different");
-    Require(UpdateChecker.FindUpdate("1.6.0", ReleaseJson("1.5.0")) is null, "older release counted as an update");
-    Require(UpdateChecker.FindUpdate("1.5.0-16-g55e38c4", ReleaseJson("1.5.0")) is null, "git describe version was misread");
-    Require(UpdateChecker.FindUpdate("1.5.0-16-g55e38c4", ReleaseJson("1.5.1")) is not null, "git describe version missed an update");
-    Require(UpdateChecker.FindUpdate("unknown", ReleaseJson("1.6.0")) is null, "unreadable version counted as outdated");
-    Require(UpdateChecker.FindUpdate("1.5.0", ReleaseJson("1.6.0", "https://example.com/releases/")) is null, "link outside the repo was accepted");
-    string versionFolder = Path.Combine(testDirectory, "version");
-    Directory.CreateDirectory(versionFolder);
-    Require(UpdateChecker.ReadInstalledVersion(versionFolder) is null, "missing build file gave a version");
-    File.WriteAllText(Path.Combine(versionFolder, "fable2_build.json"), "{\"profiles\":[]}");
-    Require(UpdateChecker.ReadInstalledVersion(versionFolder) is null, "local build gave a version");
-    File.WriteAllText(Path.Combine(versionFolder, "fable2_build.json"), "{\"version\":\"1.5.0\"}");
-    Require(UpdateChecker.ReadInstalledVersion(versionFolder) == "1.5.0", "packaged version was not read");
-    File.WriteAllText(Path.Combine(versionFolder, "fable2_build.json"), "{bad");
-    Require(UpdateChecker.ReadInstalledVersion(versionFolder) is null, "malformed build file gave a version");
-    Console.WriteLine("Update check tests passed.");
+    // UpdateSignature: only packages signed by the release key, for that exact file, verify.
+    {
+        using var key = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        string publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        string package = Path.Combine(testDirectory, "ProjectSparrow-1.8.0-full.nupkg");
+        File.WriteAllText(package, "package bytes");
+        string signature = UpdateSignature.Sign(key, "ProjectSparrow-1.8.0-full.nupkg", UpdateSignature.Sha256File(package));
+        Require(UpdateSignature.VerifyFile(publicKey, package, "ProjectSparrow-1.8.0-full.nupkg", signature), "valid signature rejected");
+        Require(UpdateSignature.VerifyFile(publicKey, package, "ProjectSparrow-1.8.0-full.nupkg", signature + "\n"), "trailing newline rejected");
+        Require(!UpdateSignature.VerifyFile(publicKey, package, "ProjectSparrow-1.9.0-full.nupkg", signature), "signature reused for another file name");
+        File.WriteAllText(package, "tampered bytes");
+        Require(!UpdateSignature.VerifyFile(publicKey, package, "ProjectSparrow-1.8.0-full.nupkg", signature), "tampered package accepted");
+        using var other = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        string forged = UpdateSignature.Sign(other, "ProjectSparrow-1.8.0-full.nupkg", UpdateSignature.Sha256File(package));
+        Require(!UpdateSignature.VerifyFile(publicKey, package, "ProjectSparrow-1.8.0-full.nupkg", forged), "signature from another key accepted");
+        Require(!UpdateSignature.Verify(publicKey, "x", "00", "not base64!"), "garbage signature accepted");
+        Require(!UpdateSignature.Verify(publicKey, "x", "00", ""), "empty signature accepted");
+        Require(!UpdateSignature.Verify(UpdateSignature.ReleasePublicKey, "x", "00", forged), "test key matched the release key");
+        Convert.FromBase64String(UpdateSignature.ReleasePublicKey); // release key is embedded and well formed
+    }
+    Console.WriteLine("Update signature tests passed.");
 
     // Fable2ConfigFile (the Advanced Options page config, fable2_config.toml).
     string advPath = Path.Combine(testDirectory, "fable2_config.toml");
@@ -380,6 +379,69 @@ try
     Require(Fable2ConfigFile.Read(advPath).MouseLookScale == 1024, "mouse scale re-read failed");
     Require(File.Exists(advPath + ".launcher-backup"), "fable2_config backup missing");
     Console.WriteLine("Advanced options (fable2_config.toml) roundtrip and preservation passed.");
+
+    // LauncherHome: player data lives outside the install folder, which updates replace.
+    string install = Path.Combine(testDirectory, "install");
+    string homeDir = Path.Combine(testDirectory, "home");
+    Directory.CreateDirectory(Path.Combine(install, "data", "scripts", "recomp"));
+    Directory.CreateDirectory(Path.Combine(install, "saves", "profile"));
+    File.WriteAllText(Path.Combine(install, "default.xex"), "xex");
+    Directory.CreateDirectory(Path.Combine(install, "data", "levels"));
+    File.WriteAllText(Path.Combine(install, "saves", "profile", "save1.dat"), "save");
+    File.WriteAllText(Path.Combine(install, "fable_2.toml"), "vsync = false\n");
+    File.WriteAllText(Path.Combine(install, "fable2_config.toml"), "# shipped template\n");
+    File.WriteAllText(Path.Combine(install, "data", "scripts", "recomp", "a.lua"), "print(1)");
+
+    var home = new LauncherHome(homeDir, install);
+    Require(LauncherHome.PathsEqual(home.GameFolder, Path.Combine(homeDir, "game")), "default game folder");
+    home.EnsureFolders();
+    home.MigrateFromPortableFolder();
+    Require(LauncherHome.PathsEqual(home.GameFolder, install), "portable game files were not adopted in place");
+    Require(File.Exists(Path.Combine(home.SavesFolder, "profile", "save1.dat")), "portable saves were not copied");
+    Require(File.Exists(Path.Combine(install, "saves", "profile", "save1.dat")), "migration must not delete the old saves");
+    Require(File.ReadAllText(home.GraphicsConfigPath).Contains("vsync = false"), "graphics settings were not copied");
+    Require(!File.Exists(home.RecompConfigPath), "untouched shipped template counted as player settings");
+    home.SeedRecompConfig();
+    Require(File.Exists(home.RecompConfigPath), "recomp config was not seeded");
+    Require(new LauncherHome(homeDir, install).Settings.Migrated, "migration ran but was not remembered");
+    Require(new LauncherHome(homeDir, install).MigrateFromPortableFolder() is null, "migration ran twice");
+
+    // Scripts are copied into a separate game folder, and only when changed.
+    home.Settings.GameFolder = Path.Combine(testDirectory, "gamecopy");
+    Require(home.SyncScripts() == 1, "script was not copied");
+    Require(home.SyncScripts() == 0, "unchanged script was copied again");
+    File.WriteAllText(Path.Combine(install, "data", "scripts", "recomp", "a.lua"), "print(2)");
+    Require(home.SyncScripts() == 1, "updated script was not copied");
+
+    // Moving the data folder keeps launcher.json in the home folder.
+    home.Settings.GameFolder = null;
+    home.Save();
+    string moved = Path.Combine(testDirectory, "moved");
+    home.MoveDataFolder(moved);
+    Require(File.Exists(Path.Combine(moved, "saves", "profile", "save1.dat")), "saves did not move");
+    Require(File.Exists(home.SettingsPath) && !File.Exists(Path.Combine(moved, "launcher.json")), "launcher.json moved");
+    Require(LauncherHome.PathsEqual(new LauncherHome(homeDir, install).DataFolder, moved), "new data folder not remembered");
+    RequireThrows(() => home.MoveDataFolder(Path.Combine(moved, "inner")), "moved the data folder into itself");
+    Directory.CreateDirectory(Path.Combine(testDirectory, "busy"));
+    File.WriteAllText(Path.Combine(testDirectory, "busy", "x.txt"), "x");
+    RequireThrows(() => home.MoveDataFolder(Path.Combine(testDirectory, "busy")), "moved into a non-empty folder");
+    // Theme defaults to Dusk and is remembered.
+    Require(new LauncherSettings().Theme == "dusk", "default theme is not dusk");
+    home.Settings.Theme = "night";
+    home.Save();
+    Require(new LauncherHome(homeDir, install).Settings.Theme == "night", "theme was not remembered");
+    Console.WriteLine("Data folder migration, script sync and folder moves passed.");
+
+    // Editions: matching decides whether the ribbon shows "Custom changes".
+    var stock = new Fable2ConfigValues();
+    Require(Edition.Original.Matches("720p", "1", "-1", "none", "30", stock), "Original defaults should match");
+    stock.DisableMotionBlur = true;
+    Require(!Edition.Original.Matches("720p", "1", "-1", "none", "30", stock), "motion blur change not detected");
+    Require(Edition.Find("nonsense") == Edition.Original && Edition.Find("enhanced") == Edition.Enhanced, "edition lookup");
+    foreach (Edition edition in Edition.All)
+        GraphicsSettings.Create(edition.Resolution, edition.RenderScale, edition.Anisotropic, edition.AntiAliasing,
+            "borderless", true, edition.FrameLimit);   // throws if an edition uses an unsupported value
+    Console.WriteLine("Edition matching and validity passed.");
 
     if (args.Length > 0)
     {

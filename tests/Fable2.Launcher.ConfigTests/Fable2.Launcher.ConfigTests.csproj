@@ -21,6 +21,9 @@
     <Compile Include="..\..\launcher\Fable2.Launcher\Editions.cs" Link="Editions.cs" />
     <Compile Include="..\..\launcher\Fable2.Launcher\Constants\GraphicsOptions.cs" Link="GraphicsOptions.cs" />
     <Compile Include="..\..\constants\GameVersions.cs" Link="GameVersions.cs" />
+    <!-- Disc reference lists for "Check game files" (made with x360extract, manifest option). -->
+    <EmbeddedResource Include="..\..\constants\disc-manifests\*.txt" LogicalName="DiscManifests/%(Filename)%(Extension)" />
+    <Compile Include="..\..\launcher\Fable2.Launcher\DiscManifest.cs" Link="DiscManifest.cs" />
     <None Include="..\..\launcher\Fable2.Launcher\App.xaml" Link="TestData\App.xaml" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

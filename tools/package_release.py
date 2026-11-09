@@ -47,6 +47,9 @@ def release_files(root, build, launcher):
         files[f"licenses/{licence.name}"] = licence
     # From the repo: the build folder's copy may hold a developer's own settings.
     files["fable2_config.toml"] = require(root / "config/fable2_config.toml")
+    # Shader pre-build list (shader hashes only, no game content): the game reads it
+    # next to its exe so first-time pipeline builds happen at startup, not mid-game.
+    files["shader_prebuild.txt"] = require(root / "config/shader_prebuild.txt")
     # dir.manifest stays out: the real one comes from the disc, and the game lists these scripts itself.
     scripts = sorted((build / "data/scripts/recomp").glob("*.lua"))
     if not scripts:

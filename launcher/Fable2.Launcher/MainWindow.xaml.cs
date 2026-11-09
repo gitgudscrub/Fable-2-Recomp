@@ -85,6 +85,12 @@ public partial class MainWindow : Window
                 "updates" => TabUpdates, "help" => TabHelp, _ => null
             };
             if (tab is not null) OpenPage(tab);
+            // --preview=check-files runs Help > Check game files straight away (for screenshots).
+            if (Environment.GetCommandLineArgs().Contains("--preview=check-files"))
+            {
+                OpenPage(TabHelp);
+                CheckFilesClicked(this, new RoutedEventArgs());
+            }
         };
         Closing += (_, _) =>
         {
@@ -402,7 +408,18 @@ public partial class MainWindow : Window
         SettingChanged(sender, e);
     }
 
-    private void SensitivityBoxLostFocus(object sender, RoutedEventArgs e)
+    private void SensitivityBoxLostFocus(object sender, RoutedEventArgs e) => ApplySensitivityText();
+
+    private void SensitivityBoxKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Return)) return;
+        ApplySensitivityText();
+        SensitivityBox.SelectAll();
+        e.Handled = true;
+    }
+
+    // Typed values apply on Enter, when focus leaves, or when the page closes.
+    private void ApplySensitivityText()
     {
         if (int.TryParse(SensitivityBox.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
             SensitivitySlider.Value = Math.Clamp(value, 1, 4096);
@@ -677,6 +694,7 @@ public partial class MainWindow : Window
     {
         if (!_pageOpen) return;
         _pageOpen = false;
+        if (SensitivityBox.IsKeyboardFocusWithin) ApplySensitivityText();
         if (_dirty) SaveAll();
         _activeKeyField = null;
         if (!AnimationsOn)
@@ -755,18 +773,114 @@ public partial class MainWindow : Window
         }
     }
 
+    private CancellationTokenSource? _checkCancel;
+
     private async void CheckFilesClicked(object sender, RoutedEventArgs e)
     {
-        if (!File.Exists(Path.Combine(_home.GameFolder, "default.xex")))
-        {
-            ShowToast("No game files yet. Choose your disc image first.");
-            return;
-        }
-        ShowToast("Checking game files…");
+        if (_checkCancel is not null) return;
         string folder = _home.GameFolder;
-        GameCompatibility result = await Task.Run(() => GameCompatibilityInspector.Inspect(folder));
-        ShowToast(result.Supported ? $"Game files look good: {result.Label}." : $"{result.Label}: {result.Message}");
-        RefreshGameState();
+        CheckPanel.Visibility = Visibility.Visible;
+        CheckDetailText.Visibility = Visibility.Collapsed;
+        CheckRepairButton.Visibility = Visibility.Collapsed;
+        CheckBar.Visibility = Visibility.Visible;
+        CheckBar.Value = 0;
+        CheckCancelButton.Visibility = Visibility.Visible;
+        CheckFilesButton.IsEnabled = false;
+        CheckStatusText.Text = "Checking game files…";
+        _checkCancel = new CancellationTokenSource();
+        CancellationToken cancel = _checkCancel.Token;
+        bool finished = false;   // late progress updates must not overwrite the result
+        try
+        {
+            string xex = Path.Combine(folder, "default.xex");
+            if (!File.Exists(xex))
+            {
+                ShowCheckResult("No game files yet. Choose your disc image to copy them.", null, repair: true);
+                return;
+            }
+            string xexHash = await Task.Run(() => DiscManifest.HashFile(xex, cancel: cancel), cancel);
+            DiscManifest? manifest = DiscManifest.ForXex(xexHash);
+            if (manifest is null)
+            {
+                // No reference list for this version: fall back to the version check.
+                GameCompatibility compatibility = await Task.Run(() => GameCompatibilityInspector.Inspect(folder), cancel);
+                ShowCheckResult(compatibility.Supported
+                        ? $"{compatibility.Label}. There's no file list for this version yet, so only the game version and key files were checked."
+                        : $"{compatibility.Label}: {compatibility.Message}",
+                    null, repair: !compatibility.Supported);
+                return;
+            }
+
+            long lastPush = 0;
+            DiscCheckResult result = await Task.Run(() => manifest.Verify(folder, (done, total) =>
+            {
+                long now = Environment.TickCount64;
+                if (now - lastPush < 100 && done < total) return;
+                lastPush = now;
+                double percent = total == 0 ? 100 : done * 100.0 / total;
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (finished) return;
+                    CheckBar.Value = percent;
+                    CheckStatusText.Text = $"Checking game files… {percent:F0}%";
+                });
+            }, cancel), cancel);
+            finished = true;
+
+            if (result.AllGood)
+            {
+                ShowCheckResult($"All {result.Checked} game files match the original disc.", null, repair: false);
+            }
+            else
+            {
+                var lines = result.Missing.Select(path => "Missing: " + path)
+                    .Concat(result.Damaged.Select(path => "Damaged: " + path)).ToList();
+                const int shown = 8;
+                string detail = string.Join("\n", lines.Take(shown)) +
+                    (lines.Count > shown ? $"\n…and {lines.Count - shown} more." : "");
+                int problems = lines.Count;
+                ShowCheckResult(
+                    $"{problems} of {result.Checked} game files {(problems == 1 ? "doesn't" : "don't")} match the original disc. " +
+                    "Choose your disc image again to copy fresh files; your saves and settings stay as they are.",
+                    detail, repair: true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            finished = true;
+            ShowCheckResult("Check stopped.", null, repair: false);
+        }
+        catch (Exception exception)
+        {
+            finished = true;
+            ShowCheckResult("Couldn't check the game files: " + exception.Message, null, repair: false);
+        }
+        finally
+        {
+            _checkCancel.Dispose();
+            _checkCancel = null;
+            CheckFilesButton.IsEnabled = true;
+            RefreshGameState();
+        }
+    }
+
+    private void ShowCheckResult(string status, string? detail, bool repair)
+    {
+        CheckStatusText.Text = status;
+        CheckBar.Visibility = Visibility.Collapsed;
+        CheckCancelButton.Visibility = Visibility.Collapsed;
+        CheckDetailText.Text = detail ?? "";
+        CheckDetailText.Visibility = detail is null ? Visibility.Collapsed : Visibility.Visible;
+        CheckRepairButton.Visibility = repair ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CheckCancelClicked(object sender, RoutedEventArgs e) => _checkCancel?.Cancel();
+
+    private void CheckRepairClicked(object sender, RoutedEventArgs e)
+    {
+        CheckPanel.Visibility = Visibility.Collapsed;
+        ClosePage();
+        ExtractFromIso();
     }
 
     private void OpenSavesClicked(object sender, RoutedEventArgs e)
@@ -860,11 +974,12 @@ public partial class MainWindow : Window
     private readonly List<Border> _keyFields = new();
     private readonly List<ComboBox> _buttonCombos = new();
     private Border? _activeKeyField;
-    private static readonly Brush KeyIdleBackground = new SolidColorBrush(Color.FromRgb(0xF6, 0xEE, 0xD6));
-    private static readonly Brush KeyIdleBorder = new SolidColorBrush(Color.FromRgb(0xBF, 0xAE, 0x80));
-    private static readonly Brush KeyListeningBackground = new SolidColorBrush(Color.FromRgb(0xE4, 0xEF, 0xE4));
-    private static readonly Brush KeyListeningBorder = new SolidColorBrush(Color.FromRgb(0x1F, 0x4A, 0x37));
-    private static readonly Brush KeyText = new SolidColorBrush(Color.FromRgb(0x2B, 0x24, 0x14));
+    // Key fields use theme brushes by name so they follow Night/Dusk/Day.
+    private static void SetKeyFieldLook(Border field, bool listening)
+    {
+        field.SetResourceReference(Border.BackgroundProperty, listening ? "KeyListen" : "WellPage");
+        field.SetResourceReference(Border.BorderBrushProperty, listening ? "InkGreen" : "CtlLine");
+    }
 
     private void BuildKeybindRows(List<KeybindEntry> entries)
     {
@@ -898,15 +1013,17 @@ public partial class MainWindow : Window
         var capture = new KeyCaptureField { Value = key };
         var field = new Border
         {
-            Background = KeyIdleBackground, BorderBrush = KeyIdleBorder, BorderThickness = new Thickness(1),
+            BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(6), MinHeight = 34, Padding = new Thickness(10, 4, 10, 4),
             Cursor = Cursors.Hand, Tag = capture
         };
         capture.Text = new TextBlock
         {
-            Text = string.IsNullOrWhiteSpace(key) ? "press a key…" : key, Foreground = KeyText,
+            Text = string.IsNullOrWhiteSpace(key) ? "press a key…" : key,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 14
         };
+        capture.Text.SetResourceReference(TextBlock.ForegroundProperty, "Ink");
+        SetKeyFieldLook(field, listening: false);
         field.Child = capture.Text;
         field.MouseDown += (_, e) =>
         {
@@ -952,8 +1069,7 @@ public partial class MainWindow : Window
     {
         if (_activeKeyField is not null && _activeKeyField != field) SetKeyCaptureIdle(_activeKeyField);
         _activeKeyField = field;
-        field.Background = KeyListeningBackground;
-        field.BorderBrush = KeyListeningBorder;
+        SetKeyFieldLook(field, listening: true);
         ((KeyCaptureField)field.Tag!).Text.Text = "listening…";
     }
 
@@ -962,8 +1078,7 @@ public partial class MainWindow : Window
         var capture = (KeyCaptureField)field.Tag!;
         capture.Value = name;
         capture.Text.Text = name;
-        field.Background = KeyIdleBackground;
-        field.BorderBrush = KeyIdleBorder;
+        SetKeyFieldLook(field, listening: false);
         _activeKeyField = null;
         _dirty = true;
     }
@@ -972,8 +1087,7 @@ public partial class MainWindow : Window
     {
         var capture = (KeyCaptureField)field.Tag!;
         capture.Text.Text = string.IsNullOrWhiteSpace(capture.Value) ? "press a key…" : capture.Value;
-        field.Background = KeyIdleBackground;
-        field.BorderBrush = KeyIdleBorder;
+        SetKeyFieldLook(field, listening: false);
     }
 
     private void WindowPreviewKeyDown(object sender, KeyEventArgs e)

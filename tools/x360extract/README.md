@@ -76,10 +76,12 @@ See [`lib/README.md`](lib/README.md) for the full API and examples.
 ```
 x360extract <iso> [options]          Extract game content from an Xbox 360 ISO
 x360extract --list <iso>             List the GDFX file tree without extracting
+x360extract <iso> --manifest <file>  Write a reference list (sha256 size path) of every file
 
 Options:
   -o, --out <dir>       Output directory (default: current directory)
   --list                List the GDFX directory tree
+  --manifest <file>     Hash every file on the disc into a reference list
   --files <a,b,c>       Only extract the named root entries (case-insensitive)
   --unpack-stfs         Expand STFS (PIRS/LIVE/CON) file entries into
                         directories (default: copy them as raw files)
@@ -101,6 +103,9 @@ x360extract.exe "D:\discs\Fable II (GOTY).iso" -o .
 
 :: Extract only the executable and the data tree
 x360extract.exe "D:\discs\Fable II (GOTY).iso" -o . --files default.xex,data
+
+:: Write the reference list the launcher's "Check game files" uses
+x360extract.exe "D:\discs\Fable II (GOTY).iso" --manifest constants\disc-manifests\goty-us-eu.txt
 
 :: Extract quietly (scriptable; progress goes nowhere, errors to stderr)
 x360extract.exe "D:\discs\Fable II (GOTY).iso" -o C:\content --quiet

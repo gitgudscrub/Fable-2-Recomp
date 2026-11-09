@@ -51,6 +51,7 @@
     <SolidColorBrush x:Key="OnText" Color="#FFEFE4C6" />
     <SolidColorBrush x:Key="KnobOn" Color="#FFF1D98F" />
     <SolidColorBrush x:Key="TabOnText" Color="#FF1F4A37" />
+    <SolidColorBrush x:Key="KeyListen" Color="#FFE4EFE4" />
     <LinearGradientBrush x:Key="SkyBrush" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#FF05110C" Offset="0" />
       <GradientStop Color="#FF0D281D" Offset="0.5" />
@@ -568,6 +569,165 @@
       </Setter>
     </Style>
 
+    <!-- Sliders, text boxes and scroll bars follow the theme (the Windows defaults
+         stay light on the Night page). -->
+    <Style x:Key="SliderPart" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Grid Background="Transparent">
+              <Border Height="4" CornerRadius="2" VerticalAlignment="Center" Background="{TemplateBinding Background}" />
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="Slider">
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid Background="Transparent">
+              <Border Height="4" CornerRadius="2" VerticalAlignment="Center" Background="{DynamicResource SwOff}" />
+              <Track x:Name="PART_Track">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource SliderPart}" Command="Slider.DecreaseLarge"
+                                Background="{DynamicResource OnBg}" />
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource SliderPart}" Command="Slider.IncreaseLarge" Background="Transparent" />
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Focusable="False">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Ellipse x:Name="Knob" Width="16" Height="16" Fill="{DynamicResource WellPage}"
+                                 Stroke="{DynamicResource OnBg}" StrokeThickness="2" />
+                        <ControlTemplate.Triggers>
+                          <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource OnBg}" />
+                          </Trigger>
+                        </ControlTemplate.Triggers>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+              </Track>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="PageTextBox" TargetType="TextBox">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+      <Setter Property="Background" Value="{DynamicResource WellPage}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CtlLine}" />
+      <Setter Property="CaretBrush" Value="{DynamicResource Ink}" />
+      <Setter Property="SelectionBrush" Value="{DynamicResource OnBg}" />
+      <Setter Property="Padding" Value="4,3" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="TextBox">
+            <Border x:Name="Box" CornerRadius="5" BorderThickness="1" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}">
+              <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" Focusable="False"
+                            VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource OnBg}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ScrollPart" TargetType="RepeatButton">
+      <Setter Property="Focusable" Value="False" />
+      <Setter Property="IsTabStop" Value="False" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RepeatButton">
+            <Border Background="Transparent" />
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ScrollThumb" TargetType="Thumb">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Thumb">
+            <Border x:Name="Bar" CornerRadius="4" Background="{DynamicResource CtlLine}" />
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bar" Property="Background" Value="{DynamicResource KnobOff}" />
+              </Trigger>
+              <Trigger Property="IsDragging" Value="True">
+                <Setter TargetName="Bar" Property="Background" Value="{DynamicResource KnobOff}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ScrollBar">
+      <Setter Property="Width" Value="10" />
+      <Setter Property="MinWidth" Value="10" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ScrollBar">
+            <Border Background="Transparent" Padding="2,2">
+              <Track x:Name="PART_Track" IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource ScrollPart}" Command="ScrollBar.PageUpCommand" />
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Style="{StaticResource ScrollPart}" Command="ScrollBar.PageDownCommand" />
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Style="{StaticResource ScrollThumb}" />
+                </Track.Thumb>
+              </Track>
+            </Border>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+      <Style.Triggers>
+        <Trigger Property="Orientation" Value="Horizontal">
+          <Setter Property="Width" Value="Auto" />
+          <Setter Property="MinWidth" Value="0" />
+          <Setter Property="Height" Value="10" />
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="ScrollBar">
+                <Border Background="Transparent" Padding="2,2">
+                  <Track x:Name="PART_Track">
+                    <Track.DecreaseRepeatButton>
+                      <RepeatButton Style="{StaticResource ScrollPart}" Command="ScrollBar.PageLeftCommand" />
+                    </Track.DecreaseRepeatButton>
+                    <Track.IncreaseRepeatButton>
+                      <RepeatButton Style="{StaticResource ScrollPart}" Command="ScrollBar.PageRightCommand" />
+                    </Track.IncreaseRepeatButton>
+                    <Track.Thumb>
+                      <Thumb Style="{StaticResource ScrollThumb}" />
+                    </Track.Thumb>
+                  </Track>
+                </Border>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Trigger>
+      </Style.Triggers>
+    </Style>
+
     <Storyboard x:Key="Fireflies" RepeatBehavior="Forever" AutoReverse="True">
       <DoubleAnimation Storyboard.TargetName="Flies" Storyboard.TargetProperty="Opacity"
                        From="0.35" To="1" Duration="0:0:3" />
@@ -1066,8 +1226,8 @@
                   <Border Style="{StaticResource Row}">
                     <DockPanel>
                       <TextBox x:Name="SensitivityBox" DockPanel.Dock="Right" Width="56" Margin="10,0,0,0"
-                               VerticalAlignment="Center" FontSize="14" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource CtlLine}"
-                               LostFocus="SensitivityBoxLostFocus" />
+                               VerticalAlignment="Center" FontSize="14" Style="{StaticResource PageTextBox}"
+                               LostFocus="SensitivityBoxLostFocus" KeyDown="SensitivityBoxKeyDown" />
                       <Slider x:Name="SensitivitySlider" DockPanel.Dock="Right" Width="200" Minimum="1" Maximum="4096"
                               VerticalAlignment="Center" ValueChanged="SensitivityChanged" />
                       <TextBlock Text="Mouse speed" Style="{StaticResource PageText}" />
@@ -1148,12 +1308,27 @@
                               Click="CreateReportClicked" />
                     </StackPanel>
                   </Border>
-                  <Button Style="{StaticResource PageLink}" Click="CheckFilesClicked">
+                  <Button x:Name="CheckFilesButton" Style="{StaticResource PageLink}" Click="CheckFilesClicked">
                     <StackPanel>
                       <TextBlock Text="Check game files" FontSize="16" />
-                      <TextBlock Text="Compare your files with a known-good disc" Style="{StaticResource PageHint}" />
+                      <TextBlock Text="Make sure every game file matches the original disc" Style="{StaticResource PageHint}" />
                     </StackPanel>
                   </Button>
+                  <Border x:Name="CheckPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
+                          Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}" BorderThickness="1">
+                    <StackPanel>
+                      <TextBlock x:Name="CheckStatusText" Style="{StaticResource PageText}" FontSize="14.5" TextWrapping="Wrap" />
+                      <ProgressBar x:Name="CheckBar" Style="{StaticResource ThinBar}" Maximum="100" Margin="0,10,0,0" />
+                      <TextBlock x:Name="CheckDetailText" Style="{StaticResource PageHint}" FontSize="14" Margin="0,8,0,0"
+                                 TextWrapping="Wrap" Visibility="Collapsed" />
+                      <WrapPanel Margin="0,12,0,0">
+                        <Button x:Name="CheckCancelButton" Style="{StaticResource PageButton}" Content="Stop"
+                                Click="CheckCancelClicked" Margin="0,0,8,0" />
+                        <Button x:Name="CheckRepairButton" Style="{StaticResource PageButtonGreen}" Content="Choose disc image…"
+                                Click="CheckRepairClicked" Visibility="Collapsed" Margin="0,0,8,0" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
                   <Button Style="{StaticResource PageLink}" Click="OpenSavesClicked">
                     <TextBlock Text="Open save folder" FontSize="16" />
                   </Button>

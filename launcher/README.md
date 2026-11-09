@@ -93,7 +93,13 @@ switching back to Stable installs the newest stable build even if older.
 - **Report a problem**: zips the last 3 logs, settings files (never saves),
   `fable2_build.json` and Windows/GPU details to the desktop, then opens a
   prefilled GitHub issue. Nothing is uploaded automatically.
-- **Check game files**: re-runs the version and content check.
+- **Check game files**: hashes `default.xex` and every `data/` file and compares
+  them with the disc's reference list (`constants/disc-manifests/<version>.txt`,
+  embedded in the launcher), then lists missing or damaged files and offers to
+  copy them again from the disc image. `data/dir.manifest` is skipped (the game
+  repairs it itself) and extra files are ignored. Versions without a reference
+  list fall back to the version and key-file check. To add a list for another
+  version, run `x360extract <iso> --manifest constants/disc-manifests/<version id>.txt`.
 - **Open save folder**, **Change data folder**, **Clear shader cache**
   (deletes `cache\shaders` only).
 
@@ -109,6 +115,7 @@ dotnet run --project tests/Fable2.Launcher.ConfigTests -c Release
 
 `--page=settings|controls|updates|help` opens the parchment page on start
 (handy for screenshots). `--preview=update-ready` shows the update-ready seal in a dev build.
+`--preview=check-files` opens Help and runs Check game files straight away.
 
 Fonts: IM FELL English and Alegreya Sans, embedded as resources under the SIL
 Open Font License (`Fonts/OFL-*.txt`, shipped in the release zip's

@@ -15,6 +15,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\constants\GameVersions.cs" Link="Constants\GameVersions.cs" />
+    <!-- Disc reference lists for "Check game files" (made with x360extract, manifest option). -->
+    <EmbeddedResource Include="..\..\constants\disc-manifests\*.txt" LogicalName="DiscManifests/%(Filename)%(Extension)" />
     <!-- Reusable Xbox 360 disc reader/extractor (GDFX + ISO 9660 + STFS), shared
          with tools/x360extract. Consumed as a project reference; produces X360ExtractCore.dll. -->
     <ProjectReference Include="..\..\tools\x360extract\lib\X360Extract.Core.csproj" />

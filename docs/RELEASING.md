@@ -51,7 +51,8 @@ package on this fork's GitHub Releases, and installed launchers update to it.
 
    What it does:
    - stages only the release allow-list (game exe and DLLs, launcher, config
-     template, README, font licences, `data/scripts/recomp/*.lua`);
+     template, shader pre-build list, README, font licences,
+     `data/scripts/recomp/*.lua`);
    - **refuses anything that looks like game content or player data**
      (`default.xex`, ISOs, disc `data/`, saves, logs), both in the staged folder
      and inside every built package;

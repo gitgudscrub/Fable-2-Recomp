@@ -136,5 +136,11 @@ class VelopackPackagingTests(PackageReleaseTests):
             packager.velopack_release(self.root, self.build, self.launcher, "1.8.0-beta.1", "beta", run=bad_run)
 
 
+    def test_printed_commands_hide_the_token(self):
+        shown = packager.shown_command(["vpk", "upload", "github", "--token", "gho_secret", "--channel", "beta"])
+        self.assertNotIn("gho_secret", shown)
+        self.assertIn("--token *** --channel beta", shown)
+
+
 if __name__ == "__main__":
     unittest.main()

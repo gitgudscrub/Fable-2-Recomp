@@ -132,6 +132,11 @@ def nupkg_app_paths(nupkg):
         return [name[len("lib/app/"):] for name in archive.namelist() if name.startswith("lib/app/")]
 
 
+def shown_command(args):
+    """The command as printed, with the GitHub token hidden."""
+    return " ".join("***" if i > 0 and args[i - 1] == "--token" else a for i, a in enumerate(args))
+
+
 def validate_version(version, channel):
     if channel not in CHANNELS:
         raise SystemExit(f"package_release: channel must be one of {', '.join(CHANNELS)}")
@@ -169,7 +174,7 @@ def velopack_release(root, build, launcher, version, channel, upload=False, run=
     pre = ["--pre"] if channel == "beta" else []
 
     def call(args, check=True):
-        print("> " + " ".join(args))
+        print("> " + shown_command(args))
         return run(args, check=check)
 
     # The last published release lets vpk build a small delta package. None yet is fine.

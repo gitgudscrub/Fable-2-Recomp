@@ -107,6 +107,14 @@ caused save corruption (likely OneDrive sync). LocalAppData isn't synced.
 - Keep the plain zip for people who want portable; it keeps working via the
   exe-dir default.
 
+Done (phase 4): `python tools/package_release.py --velopack --version X.Y.Z
+[--channel stable|beta] [--upload]`. Packages go to `out/velopack/releases/<channel>`
+(non-default channels add the channel to file names, e.g.
+`ProjectSparrow-1.8.0-beta.1-beta-full.nupkg`, `ProjectSparrow-beta-Setup.exe`).
+Upload creates a draft, attaches the `.sig` files with `gh`, then publishes.
+Needs `vpk` (`dotnet tool install -g vpk --version 1.2.161`, matching the
+launcher's Velopack package) and `gh auth login`.
+
 ## Phase 5: docs and tests
 
 - README "Install" section: download Setup, pick ISO, done. Updating section

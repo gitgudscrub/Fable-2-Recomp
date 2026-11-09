@@ -10,6 +10,8 @@
     <Product>Project Sparrow</Product>
     <ApplicationIcon>..\..\assets\app-icon.ico</ApplicationIcon>
     <RootNamespace>Fable2Launcher</RootNamespace>
+    <!-- Program.Main runs Velopack before WPF starts. -->
+    <StartupObject>Fable2Launcher.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\..\constants\GameVersions.cs" Link="Constants\GameVersions.cs" />
@@ -20,5 +22,10 @@
     <!-- IM FELL English and Alegreya Sans, SIL Open Font License (Fonts/OFL-*.txt). -->
     <Resource Include="Fonts\*.ttf" />
     <None Include="Fonts\OFL-*.txt" CopyToOutputDirectory="PreserveNewest" />
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 </Project>

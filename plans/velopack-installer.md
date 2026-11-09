@@ -135,12 +135,16 @@ caused save corruption (likely OneDrive sync). LocalAppData isn't synced.
     so switching beta -> stable installs the latest stable even if older.
   - Saves are forward-compatible-only risk: warn when switching beta -> stable.
 - **Code signing**: pending (see below). Until then, ship unsigned but add our
-  own update signature:
-  - ed25519 key pair; private key stays on the release PC (never in repo).
-  - `package_release.py` signs each `releases.<channel>.json` + nupkg hashes
-    into a `.sig` uploaded as a release asset.
-  - Launcher embeds the public key and refuses to apply an update whose
-    signature doesn't verify. Free, and it means a hijacked GitHub account
-    can't push code to players.
+  own update signature (done in phase 3):
+  - ECDSA P-256 key pair (built into .NET, so no extra packages; same
+    protection as the ed25519 first planned). Private key:
+    `%USERPROFILE%\.project-sparrow\update-signing-key.pem` on the release PC,
+    never in the repo. `tools/sparrow-sign` creates it and signs packages.
+  - Every `.nupkg` (full and delta) gets a `<file>.nupkg.sig` release asset:
+    a signature over the file name and its SHA-256.
+  - The launcher (`SignedGithubSource`) fetches the `.sig` from the same
+    release, re-hashes the downloaded package and refuses it unless it
+    verifies against the embedded public key. Missing signature = rejected.
+    A hijacked GitHub account can't push code to players.
   - Authenticode (SmartScreen) can be added later via `vpk --signParams` /
     `--azureTrustedSignFile` without changing anything else.

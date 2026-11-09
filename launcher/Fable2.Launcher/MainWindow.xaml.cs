@@ -14,7 +14,7 @@ namespace Fable2Launcher;
 
 public partial class MainWindow : Window
 {
-    private enum LauncherState { NeedsDisc, Extracting, Ready, Problem }
+    private enum LauncherState { NeedsDisc, Extracting, Ready, UpdateReady, Problem }
 
     private readonly LauncherHome _home;
     private readonly Dictionary<string, string> _graphics = new(StringComparer.OrdinalIgnoreCase);
@@ -24,6 +24,10 @@ public partial class MainWindow : Window
     private bool _loading = true;
     private bool _dirty;
     private string _version = "dev build";
+    private readonly Updater _updater;
+    private bool _checkingUpdates;
+    private bool _gameLaunched;
+    private string? _updateError;
     private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(3.5) };
 
     public MainWindow()
@@ -51,7 +55,9 @@ public partial class MainWindow : Window
             note = "Could not prepare the data folder: " + exception.Message;
         }
 
-        _version = ReadVersion();
+        _updater = new Updater(_home.Settings.Channel);
+        _version = _updater.CurrentVersion ?? ReadVersion();
+        _updater.LoadPending();
         LoadSettings();
         _loading = false;
         UpdateVersionText();
@@ -61,6 +67,7 @@ public partial class MainWindow : Window
         Loaded += (_, _) =>
         {
             if (AnimationsOn) ((Storyboard)FindResource("Fireflies")).Begin(this, true);
+            CheckForUpdates(quiet: true);
             // --page=settings|controls|updates|help opens the parchment page on start.
             string? page = Environment.GetCommandLineArgs()
                 .FirstOrDefault(arg => arg.StartsWith("--page=", StringComparison.OrdinalIgnoreCase))?[7..];
@@ -71,7 +78,14 @@ public partial class MainWindow : Window
             };
             if (tab is not null) OpenPage(tab);
         };
-        Closing += (_, _) => { if (_dirty) SaveAll(quiet: true); };
+        Closing += (_, _) =>
+        {
+            if (_dirty) SaveAll(quiet: true);
+            // Install a downloaded update once the launcher closes, unless the game is
+            // (about to be) running from the folder the update replaces.
+            if (_updater.Pending is not null && !_gameLaunched && !Updater.IsGameRunning(_home.InstallFolder))
+                try { _updater.ApplyOnExit(); } catch (Exception) { }
+        };
     }
 
     private static bool AnimationsOn => SystemParameters.ClientAreaAnimation;
@@ -94,10 +108,71 @@ public partial class MainWindow : Window
         VersionText.Text = $"{_version} · {(beta ? "Beta" : "Stable")}";
         ChannelNote.Text = beta
             ? "Newest fixes first, less tested. Back up your saves before switching back to Stable."
-            : "Tested releases. Updates download in the background and install when you close the game.";
-        UpdateStatusText.Text = "Automatic updates start once Project Sparrow is installed with its installer. "
-                                + $"You're running {_version}.";
+            : "Tested releases. Updates download in the background; restart the launcher to install them.";
+        UpdateActions.Visibility = _updater.IsInstalled ? Visibility.Visible : Visibility.Collapsed;
+        CheckUpdatesButton.IsEnabled = !_checkingUpdates;
+        RestartUpdateButton.Visibility = _updater.Pending is null ? Visibility.Collapsed : Visibility.Visible;
+        UpdateStatusText.Text =
+            !_updater.IsInstalled ? "Automatic updates start once Project Sparrow is installed with its installer. "
+                                    + (_version == "dev build" ? "This is a dev build." : $"You're running {_version}.")
+            : _updater.Pending is not null ? $"Version {_updater.Pending.Version} is ready. Restart to install it; your saves and settings stay as they are."
+            : _checkingUpdates ? "Checking for updates…"
+            : _updateError is not null ? _updateError
+            : $"You're up to date ({_version}).";
     }
+
+    // ---------------------------------------------------------------- updates
+
+    private async void CheckForUpdates(bool quiet)
+    {
+        if (!_updater.IsInstalled || _checkingUpdates) return;
+        _checkingUpdates = true;
+        _updateError = null;
+        UpdateVersionText();
+        try
+        {
+            string? ready = await _updater.CheckAndDownloadAsync(percent => Dispatcher.BeginInvoke(() =>
+            {
+                UpdateBar.Visibility = percent is > 0 and < 100 ? Visibility.Visible : Visibility.Collapsed;
+                UpdateBar.Value = percent;
+            }));
+            if (!quiet) ShowToast(ready is not null ? $"Update {ready} is ready." : "You're up to date.");
+        }
+        catch (UpdateSignatureException exception)
+        {
+            _updateError = exception.Message + " Please report this.";
+        }
+        catch (Exception exception)
+        {
+            _updateError = "Couldn't check for updates. Check your internet connection and try again. (" + exception.Message + ")";
+            if (!quiet) ShowToast("Couldn't check for updates.");
+        }
+        finally
+        {
+            _checkingUpdates = false;
+            UpdateBar.Visibility = Visibility.Collapsed;
+            UpdateVersionText();
+            if (_state is LauncherState.Ready or LauncherState.UpdateReady) RefreshGameState();
+        }
+    }
+
+    private void CheckUpdatesClicked(object sender, RoutedEventArgs e) => CheckForUpdates(quiet: false);
+
+    private void RestartToUpdateClicked(object sender, RoutedEventArgs e) => RestartToUpdate();
+
+    private void RestartToUpdate()
+    {
+        if (Updater.IsGameRunning(_home.InstallFolder))
+        {
+            ShowToast("Close Fable II first, then restart to update.");
+            return;
+        }
+        if (_dirty) SaveAll(quiet: true);
+        try { _updater.ApplyAndRestart(); }
+        catch (Exception exception) { ShowToast("Couldn't install the update: " + exception.Message); }
+    }
+
+    private void PlayWithoutUpdateClicked(object sender, RoutedEventArgs e) => LaunchGame();
 
     // ---------------------------------------------------------------- state
 
@@ -126,8 +201,12 @@ public partial class MainWindow : Window
         {
             GameCompatibility compatibility = GameCompatibilityInspector.Inspect(_home.GameFolder);
             GameLaunchPlanner.Create(ExecutableDirectory, _home.GameFolder, compatibility);
-            SetState(LauncherState.Ready, "Ready to play",
-                compatibility.Label + ". Keyboard: WASD to move, E or Shift to interact, Esc to pause.", "Play", null);
+            if (_updater.Pending is not null)
+                SetState(LauncherState.UpdateReady, $"Update {_updater.Pending.Version} is ready",
+                    "Restarting installs it and keeps your saves and settings. It takes a few seconds.", "Restart", "TO UPDATE");
+            else
+                SetState(LauncherState.Ready, "Ready to play",
+                    compatibility.Label + ". Keyboard: WASD to move, E or Shift to interact, Esc to pause.", "Play", null);
         }
         catch (Exception exception)
         {
@@ -149,6 +228,7 @@ public partial class MainWindow : Window
         StatusDot.Fill = (Brush)FindResource(attention ? "Ember" : "Gold");
         ExtractBar.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
         ExtractActions.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
+        PlayWithoutUpdateButton.Visibility = state == LauncherState.UpdateReady ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void SealClicked(object sender, RoutedEventArgs e)
@@ -156,6 +236,7 @@ public partial class MainWindow : Window
         switch (_state)
         {
             case LauncherState.Ready: LaunchGame(); break;
+            case LauncherState.UpdateReady: RestartToUpdate(); break;
             case LauncherState.NeedsDisc:
             case LauncherState.Problem: ExtractFromIso(); break;
         }
@@ -378,9 +459,12 @@ public partial class MainWindow : Window
         if (_loading) return;
         _home.Settings.Channel = ChannelBeta.IsChecked == true ? "beta" : "stable";
         try { _home.Save(); } catch (IOException) { }
+        _updater.SetChannel(_home.Settings.Channel);
+        RefreshGameState();
+        CheckForUpdates(quiet: true);
         UpdateVersionText();
         ShowToast(_home.Settings.Channel == "beta"
-            ? "Switched to Beta. Beta updates arrive once automatic updates are set up."
+            ? "Switched to Beta. Checking for beta updates…"
             : "Switched to Stable.");
     }
 
@@ -405,6 +489,7 @@ public partial class MainWindow : Window
             startInfo.ArgumentList.Add("--game_data_root=" + plan.GameRoot);
             startInfo.ArgumentList.Add("--user_root=" + _home.DataFolder);
             Process.Start(startInfo);
+            _gameLaunched = true;
             Close();
         }
         catch (Exception exception)

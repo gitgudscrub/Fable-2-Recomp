@@ -723,6 +723,9 @@
                       Click="ExtractAnywayClicked" Visibility="Collapsed" />
               <Button x:Name="StopButton" Style="{StaticResource SceneButton}" Content="Stop" Click="StopClicked" />
             </StackPanel>
+            <Button x:Name="PlayWithoutUpdateButton" Style="{StaticResource SceneButton}" HorizontalAlignment="Center"
+                    Margin="0,12,0,0" Content="Play now, update later" Click="PlayWithoutUpdateClicked"
+                    Visibility="Collapsed" />
           </StackPanel>
         </StackPanel>
 
@@ -1105,8 +1108,20 @@
                   <TextBlock x:Name="ChannelNote" Style="{StaticResource PageHint}" Margin="0,8,0,0" />
                   <Border Margin="0,14,0,0" Padding="14,12" CornerRadius="6" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}"
                           BorderThickness="1">
-                    <TextBlock x:Name="UpdateStatusText" Style="{StaticResource PageText}" FontSize="14.5" />
+                    <StackPanel>
+                      <TextBlock x:Name="UpdateStatusText" Style="{StaticResource PageText}" FontSize="14.5" />
+                      <ProgressBar x:Name="UpdateBar" Style="{StaticResource ThinBar}" Maximum="100" Margin="0,10,0,0"
+                                   Visibility="Collapsed" />
+                      <StackPanel x:Name="UpdateActions" Orientation="Horizontal" Margin="0,12,0,0" Visibility="Collapsed">
+                        <Button x:Name="CheckUpdatesButton" Style="{StaticResource PageButton}" Content="Check now"
+                                Click="CheckUpdatesClicked" />
+                        <Button x:Name="RestartUpdateButton" Style="{StaticResource PageButtonGreen}" Content="Restart to update"
+                                Click="RestartToUpdateClicked" Visibility="Collapsed" />
+                      </StackPanel>
+                    </StackPanel>
                   </Border>
+                  <TextBlock Style="{StaticResource PageHint}" Margin="0,10,0,0"
+                             Text="Updates are signed by Project Sparrow and checked before they install. They never touch your saves, settings or game files." />
                 </StackPanel>
 
                 <!-- Help -->

@@ -72,6 +72,22 @@ saved in `launcher.json`. Colours live in `Themes.cs`: the brushes in
 `MainWindow.xaml` are the Dusk values and are read as `DynamicResource`, so a
 new colour must be added in both places.
 
+## Updates
+
+Installed copies (Velopack, `%LOCALAPPDATA%\ProjectSparrow\`) check
+https://github.com/gitgudscrub/Fable-2-Recomp releases on start and download
+in the background. Stable sees full releases; Beta also sees pre-releases, and
+switching back to Stable installs the newest stable build even if older.
+
+- When an update is ready the seal reads **Restart / to update**, with
+  **Play now, update later** underneath. Closing the launcher without playing
+  also installs it. Nothing installs while `fable_2.exe` is running, since
+  the update replaces the folder it runs from.
+- Every package must have a valid `<file>.sig` (see `UpdateSignature.cs` and
+  `tools/sparrow-sign`); otherwise it's rejected and the Updates page says so.
+- Dev builds and the portable zip aren't installed, so they show no update
+  controls.
+
 ## Help tools
 
 - **Report a problem**: zips the last 3 logs, settings files (never saves),

@@ -65,6 +65,7 @@ public partial class MainWindow : Window
         }
         _version = _updater.CurrentVersion ?? ReadVersion();
         _updater.LoadPending();
+        if (Environment.GetCommandLineArgs().Contains("--preview=update-ready")) _updater.PreviewPending("9.9.9");
         LoadSettings();
         _loading = false;
         UpdateVersionText();
@@ -236,6 +237,10 @@ public partial class MainWindow : Window
         ExtractBar.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
         ExtractActions.Visibility = state == LauncherState.Extracting ? Visibility.Visible : Visibility.Collapsed;
         PlayWithoutUpdateButton.Visibility = state == LauncherState.UpdateReady ? Visibility.Visible : Visibility.Collapsed;
+        // States with a row of buttons under the status need the space above the seal.
+        bool compact = state is LauncherState.UpdateReady or LauncherState.Extracting;
+        CentreStack.Margin = new Thickness(24, compact ? 20 : 40, 24, compact ? 6 : 12);
+        SealButton.Margin = new Thickness(0, compact ? 12 : 30, 0, 0);
     }
 
     private void SealClicked(object sender, RoutedEventArgs e)

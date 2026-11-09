@@ -79,6 +79,12 @@ public sealed class Updater
     /// <summary>An update already downloaded (this run or an earlier one) and waiting to install.</summary>
     public VelopackAsset? Pending { get; private set; }
 
+    /// <summary>Screenshot aid (--preview=update-ready): fakes a waiting update in dev builds only.</summary>
+    public void PreviewPending(string version)
+    {
+        if (!_manager.IsInstalled) Pending = new VelopackAsset { Version = SemanticVersion.Parse(version), FileName = "preview" };
+    }
+
     private static UpdateManager Create(string channel) =>
         new(new SignedGithubSource(RepoUrl, prerelease: channel == "beta"),
             new UpdateOptions { ExplicitChannel = channel, AllowVersionDowngrade = true });
@@ -146,6 +152,6 @@ public sealed class Updater
     /// <summary>Installs the pending update after the launcher exits, without restarting it.</summary>
     public void ApplyOnExit()
     {
-        if (Pending is not null) _manager.WaitExitThenApplyUpdates(Pending, silent: true, restart: false);
+        if (Pending is not null && _manager.IsInstalled) _manager.WaitExitThenApplyUpdates(Pending, silent: true, restart: false);
     }
 }

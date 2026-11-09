@@ -669,7 +669,7 @@
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,40,24,12">
+        <StackPanel x:Name="CentreStack" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,40,24,12">
           <Image Source="pack://application:,,,/Assets/app-icon.png" Width="92" Height="92" HorizontalAlignment="Center">
             <Image.Clip>
               <RectangleGeometry Rect="0,0,92,92" RadiusX="22" RadiusY="22" />

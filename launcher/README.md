@@ -108,7 +108,7 @@ dotnet run --project tests/Fable2.Launcher.ConfigTests -c Release
 ```
 
 `--page=settings|controls|updates|help` opens the parchment page on start
-(handy for screenshots).
+(handy for screenshots). `--preview=update-ready` shows the update-ready seal in a dev build.
 
 Fonts: IM FELL English and Alegreya Sans, embedded as resources under the SIL
 Open Font License (`Fonts/OFL-*.txt`, shipped in the release zip's

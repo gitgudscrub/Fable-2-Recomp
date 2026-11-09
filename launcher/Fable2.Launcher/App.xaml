@@ -3,24 +3,23 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              StartupUri="MainWindow.xaml">
   <Application.Resources>
-    <SolidColorBrush x:Key="PanelBrush" Color="#DB121A1C" />
-    <SolidColorBrush x:Key="PanelBorderBrush" Color="#3AFFFFFF" />
-    <SolidColorBrush x:Key="TextBrush" Color="#FFF4E8D2" />
-    <SolidColorBrush x:Key="MutedTextBrush" Color="#FF9DA8A3" />
-    <SolidColorBrush x:Key="AccentBrush" Color="#FFC69A46" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="#FFE0B55A" />
-
+    <!-- Global styles. The window's own design styles live in MainWindow.xaml. -->
     <Style TargetType="TextBlock">
-      <Setter Property="FontFamily" Value="Segoe UI" />
+      <Setter Property="FontFamily" Value="pack://application:,,,/Fonts/#Alegreya Sans" />
     </Style>
 
+    <!-- Dropdowns use dark text on a light parchment background, including the
+         selected item (tested in tests/Fable2.Launcher.ConfigTests). -->
     <Style TargetType="ComboBox">
-      <Setter Property="Height" Value="38" />
+      <Setter Property="Height" Value="34" />
+      <Setter Property="MinWidth" Value="190" />
       <Setter Property="Padding" Value="10,4" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
       <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontFamily" Value="pack://application:,,,/Fonts/#Alegreya Sans" />
       <Setter Property="Foreground" Value="#FF172020" />
       <Setter Property="Background" Value="#FFF3EEE4" />
-      <Setter Property="BorderBrush" Value="#557C6A48" />
+      <Setter Property="BorderBrush" Value="#FFBFAE80" />
     </Style>
 
     <Style TargetType="ComboBoxItem">
@@ -38,52 +37,6 @@
           <Setter Property="FontWeight" Value="SemiBold" />
         </Trigger>
       </Style.Triggers>
-    </Style>
-
-    <Style TargetType="CheckBox">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="FontSize" Value="14" />
-      <Setter Property="VerticalAlignment" Value="Center" />
-    </Style>
-
-    <Style x:Key="PrimaryButton" TargetType="Button">
-      <Setter Property="Foreground" Value="#FF17130B" />
-      <Setter Property="Background" Value="{StaticResource AccentBrush}" />
-      <Setter Property="BorderThickness" Value="0" />
-      <Setter Property="Padding" Value="24,12" />
-      <Setter Property="FontSize" Value="16" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Cursor" Value="Hand" />
-      <Style.Triggers>
-        <Trigger Property="IsMouseOver" Value="True">
-          <Setter Property="Background" Value="{StaticResource AccentHoverBrush}" />
-        </Trigger>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Opacity" Value="0.45" />
-          <Setter Property="Cursor" Value="Arrow" />
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
-    <Style x:Key="SecondaryButton" TargetType="Button">
-      <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
-      <Setter Property="Background" Value="#332E3B3A" />
-      <Setter Property="BorderBrush" Value="#667E8D86" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="Padding" Value="14,9" />
-      <Setter Property="FontSize" Value="13" />
-      <Setter Property="Cursor" Value="Hand" />
-      <Style.Triggers>
-        <Trigger Property="IsEnabled" Value="False">
-          <Setter Property="Opacity" Value="0.45" />
-          <Setter Property="Cursor" Value="Arrow" />
-        </Trigger>
-      </Style.Triggers>
-    </Style>
-
-    <Style x:Key="PresetButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-      <Setter Property="Margin" Value="0,0,8,0" />
-      <Setter Property="MinWidth" Value="98" />
     </Style>
   </Application.Resources>
 </Application>

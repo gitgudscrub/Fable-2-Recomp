@@ -1,464 +1,1030 @@
 <Window x:Class="Fable2Launcher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Fable 2 Recompiled — Launcher"
-        Icon="/Assets/app-icon.png"
-        Width="930" Height="700" MinWidth="820" MinHeight="640"
-        WindowStartupLocation="CenterScreen"
-        Foreground="{StaticResource TextBrush}"
-        Background="#FF091012">
+        Title="Project Sparrow" Width="1180" Height="740" MinWidth="980" MinHeight="680"
+        WindowStartupLocation="CenterScreen" Background="#FF07140E"
+        Icon="pack://application:,,,/Assets/app-icon.png"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
+  <!-- Design: launcher/design/mockup.html. The window is a storybook scene: centred
+       title, gold seal to play, edition ribbon, and a parchment page that turns in
+       from the right edge for settings and help. -->
+  <WindowChrome.WindowChrome>
+    <WindowChrome CaptionHeight="38" ResizeBorderThickness="6" GlassFrameThickness="0"
+                  CornerRadius="0" UseAeroCaptionButtons="False" />
+  </WindowChrome.WindowChrome>
+
   <Window.Resources>
-    <Style x:Key="SectionTitle" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="18" />
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="#FFFFE8B4" />
-      <Setter Property="Margin" Value="0,0,0,16" />
+    <SolidColorBrush x:Key="Night" Color="#FF07140E" />
+    <SolidColorBrush x:Key="MossLine" Color="#FF2A4D3E" />
+    <SolidColorBrush x:Key="Gold" Color="#FFD6B25E" />
+    <SolidColorBrush x:Key="GoldHi" Color="#FFF1D98F" />
+    <SolidColorBrush x:Key="GoldDeep" Color="#FF8A6420" />
+    <SolidColorBrush x:Key="GoldInk" Color="#FF1D1405" />
+    <SolidColorBrush x:Key="Ivory" Color="#FFEFE5C9" />
+    <SolidColorBrush x:Key="Sage" Color="#FFA9BCA9" />
+    <SolidColorBrush x:Key="SageDim" Color="#FF7A947F" />
+    <SolidColorBrush x:Key="Ember" Color="#FFE6955A" />
+    <SolidColorBrush x:Key="Page" Color="#FFEFE4C6" />
+    <SolidColorBrush x:Key="Ink" Color="#FF2B2414" />
+    <SolidColorBrush x:Key="InkSoft" Color="#FF6A5C3D" />
+    <SolidColorBrush x:Key="InkGreen" Color="#FF1F4A37" />
+    <SolidColorBrush x:Key="Rule" Color="#FFD3C392" />
+    <LinearGradientBrush x:Key="GoldFill" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#FFF1D98F" Offset="0" />
+      <GradientStop Color="#FFC99A3C" Offset="1" />
+    </LinearGradientBrush>
+    <FontFamily x:Key="Display">pack://application:,,,/Fonts/#IM FELL English</FontFamily>
+    <FontFamily x:Key="DisplaySC">pack://application:,,,/Fonts/#IM FELL English SC</FontFamily>
+    <FontFamily x:Key="Body">pack://application:,,,/Fonts/#Alegreya Sans</FontFamily>
+
+    <!-- Title bar buttons -->
+    <Style x:Key="ChromeButton" TargetType="Button">
+      <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
+      <Setter Property="Width" Value="46" />
+      <Setter Property="Foreground" Value="{StaticResource Sage}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="Transparent">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="#22F1D98F" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
-    <Style x:Key="FieldLabel" TargetType="TextBlock">
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}" />
+    <Style x:Key="CloseButton" TargetType="Button" BasedOn="{StaticResource ChromeButton}">
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="Transparent">
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="#FFB3392F" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Corner tools on the scene (Settings, Help) -->
+    <Style x:Key="ToolPill" TargetType="Button">
+      <Setter Property="Foreground" Value="{StaticResource Ivory}" />
+      <Setter Property="FontFamily" Value="{StaticResource Body}" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Margin" Value="8,0,0,0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="#99071410" BorderBrush="#59D6B25E" BorderThickness="1"
+                    CornerRadius="17" Padding="12,6,16,6">
+              <ContentPresenter VerticalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldHi}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldHi}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- The gold seal -->
+    <Style x:Key="Seal" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Width" Value="152" />
+      <Setter Property="Height" Value="152" />
+      <Setter Property="Foreground" Value="{StaticResource GoldInk}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Grid>
+              <Ellipse Margin="-8" Stroke="#59F1D98F" StrokeThickness="1" Fill="#26D6B25E" />
+              <Ellipse x:Name="Disc">
+                <Ellipse.Fill>
+                  <RadialGradientBrush GradientOrigin="0.38,0.32" Center="0.45,0.4" RadiusX="0.62" RadiusY="0.62">
+                    <GradientStop Color="#FFFBEAB4" Offset="0" />
+                    <GradientStop Color="#FFE3BF68" Offset="0.38" />
+                    <GradientStop Color="#FFA87A2C" Offset="0.8" />
+                    <GradientStop Color="#FF7A5418" Offset="1" />
+                  </RadialGradientBrush>
+                </Ellipse.Fill>
+                <Ellipse.Effect>
+                  <DropShadowEffect Color="#FFF1D98F" BlurRadius="46" ShadowDepth="0" Opacity="0.55" />
+                </Ellipse.Effect>
+              </Ellipse>
+              <Ellipse Margin="11" Stroke="#73462D0A" StrokeThickness="1.5" StrokeDashArray="3 2.5" />
+              <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Disc" Property="Opacity" Value="0.92" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Disc" Property="Opacity" Value="0.7" />
+                <Setter Property="Cursor" Value="Wait" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource Ivory}" />
+                <Setter TargetName="Disc" Property="StrokeThickness" Value="2" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Small buttons on the dark scene (extraction prompt) -->
+    <Style x:Key="SceneButton" TargetType="Button">
+      <Setter Property="Foreground" Value="{StaticResource Ivory}" />
+      <Setter Property="FontFamily" Value="{StaticResource Body}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="#CC071410" BorderBrush="{StaticResource MossLine}"
+                    BorderThickness="1" CornerRadius="6" Padding="14,6">
+              <ContentPresenter HorizontalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource Gold}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Edition ribbon choices -->
+    <Style x:Key="EditionChoice" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="Edition" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bg" Background="Transparent" Padding="18,8,22,9" MinWidth="150">
+              <StackPanel>
+                <TextBlock x:Name="Title" Text="{TemplateBinding Content}" FontFamily="{StaticResource Display}"
+                           FontSize="19" Foreground="{StaticResource Ivory}" />
+                <TextBlock x:Name="Sub" Text="{TemplateBinding Tag}" FontSize="13"
+                           Foreground="{StaticResource SageDim}" />
+              </StackPanel>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{StaticResource GoldFill}" />
+                <Setter TargetName="Title" Property="Foreground" Value="{StaticResource GoldInk}" />
+                <Setter TargetName="Sub" Property="Foreground" Value="#FF3D2D0F" />
+              </Trigger>
+              <MultiTrigger>
+                <MultiTrigger.Conditions>
+                  <Condition Property="IsMouseOver" Value="True" />
+                  <Condition Property="IsChecked" Value="False" />
+                </MultiTrigger.Conditions>
+                <Setter TargetName="Bg" Property="Background" Value="#22F1D98F" />
+              </MultiTrigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Bookmark tabs on the parchment page -->
+    <Style x:Key="Bookmark" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="PageTabs" />
+      <Setter Property="Cursor" Value="Hand" />
       <Setter Property="Margin" Value="0,0,0,6" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bg" Background="{StaticResource GoldDeep}" CornerRadius="6,0,0,6"
+                    Padding="8,14" Width="34">
+              <Border.Effect>
+                <DropShadowEffect BlurRadius="6" ShadowDepth="2" Direction="200" Opacity="0.3" />
+              </Border.Effect>
+              <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontSize="13" FontWeight="Bold"
+                         Foreground="{StaticResource Page}" HorizontalAlignment="Center">
+                <TextBlock.LayoutTransform>
+                  <RotateTransform Angle="-90" />
+                </TextBlock.LayoutTransform>
+              </TextBlock>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{StaticResource Page}" />
+                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource InkGreen}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
     </Style>
-    <Style x:Key="Panel" TargetType="Border">
-      <Setter Property="Background" Value="{StaticResource PanelBrush}" />
-      <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
-      <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="12" />
-      <Setter Property="Padding" Value="22" />
+
+    <!-- Parchment page pieces -->
+    <Style x:Key="PageTitle" TargetType="TextBlock">
+      <Setter Property="FontFamily" Value="{StaticResource Display}" />
+      <Setter Property="FontSize" Value="32" />
+      <Setter Property="Foreground" Value="{StaticResource Ink}" />
     </Style>
-  </Window.Resources>
+    <Style x:Key="PageSection" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="FontWeight" Value="Bold" />
+      <Setter Property="Foreground" Value="{StaticResource GoldDeep}" />
+      <Setter Property="Margin" Value="0,20,0,2" />
+    </Style>
+    <Style x:Key="PageText" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="PageHint" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="13.5" />
+      <Setter Property="Foreground" Value="{StaticResource InkSoft}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+    <Style x:Key="Row" TargetType="Border">
+      <Setter Property="BorderBrush" Value="{StaticResource Rule}" />
+      <Setter Property="BorderThickness" Value="0,0,0,1" />
+      <Setter Property="Padding" Value="0,9" />
+      <Setter Property="MinHeight" Value="48" />
+    </Style>
 
-  <Grid>
-    <Grid.Background>
-      <RadialGradientBrush Center="0.1,0.05" GradientOrigin="0.1,0.05" RadiusX="1.1" RadiusY="1.2">
-        <GradientStop Color="#FF293B35" Offset="0" />
-        <GradientStop Color="#FF111A1B" Offset="0.42" />
-        <GradientStop Color="#FF070C0E" Offset="1" />
-      </RadialGradientBrush>
-    </Grid.Background>
-
-    <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="*" />
-      <RowDefinition Height="Auto" />
-    </Grid.RowDefinitions>
-
-    <Grid Margin="34,28,34,22">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="*" />
-        <ColumnDefinition Width="Auto" />
-      </Grid.ColumnDefinitions>
-      <StackPanel>
-        <TextBlock Text="F A B L E  I I" FontFamily="Georgia" FontSize="36" FontWeight="Bold"
-                   Foreground="#FFFFD888" />
-        <TextBlock Text="RECOMP LAUNCHER" FontSize="13" FontWeight="SemiBold"
-                   Foreground="#FFC69A46" Margin="2,3,0,0" />
-      </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-        <Border Background="#332A3D36" BorderBrush="#556B887B"
-                BorderThickness="1" CornerRadius="18" Padding="13,7">
-          <TextBlock x:Name="ConfigStateText" Text="Configuration ready" FontSize="12"
-                     Foreground="#FFB9D6C7" />
-        </Border>
-        <Button x:Name="UpdateButton" Click="UpdateClicked" Visibility="Collapsed"
-                Style="{StaticResource SecondaryButton}" Margin="14,0,0,0"
-                Foreground="{StaticResource AccentHoverBrush}" BorderBrush="{StaticResource AccentBrush}" />
-        <Button x:Name="AdvancedOptionsButton" Content="Advanced Options"
-                Click="AdvancedOptionsClicked" Style="{StaticResource SecondaryButton}"
-                Margin="14,0,0,0" />
-      </StackPanel>
-    </Grid>
-
-    <Grid Grid.Row="1">
-      <!-- Main page content -->
-      <ScrollViewer x:Name="MainContent" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-      <Grid Margin="34,0,34,22">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="3*" />
-          <ColumnDefinition Width="18" />
-          <ColumnDefinition Width="2*" />
-        </Grid.ColumnDefinitions>
-
-        <StackPanel Grid.Column="0">
-          <Border Style="{StaticResource Panel}">
-            <StackPanel>
-              <TextBlock Text="Graphics" Style="{StaticResource SectionTitle}" />
-
+    <Style x:Key="PageLink" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="Transparent" BorderBrush="{StaticResource Rule}"
+                    BorderThickness="0,0,0,1" Padding="0,11">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="16" />
-                  <ColumnDefinition Width="*" />
+                  <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
-                <StackPanel>
-                  <TextBlock Text="OUTPUT RESOLUTION" Style="{StaticResource FieldLabel}" />
-                  <ComboBox x:Name="ResolutionCombo" SelectionChanged="SettingChanged">
-                    <ComboBoxItem Tag="720p">1280 × 720</ComboBoxItem>
-                    <ComboBoxItem Tag="1080p">1920 × 1080</ComboBoxItem>
-                    <ComboBoxItem Tag="1440p">2560 × 1440</ComboBoxItem>
-                    <ComboBoxItem Tag="4k">3840 × 2160</ComboBoxItem>
-                  </ComboBox>
-                </StackPanel>
-
-                <StackPanel Grid.Column="2">
-                  <TextBlock Text="INTERNAL RENDER SCALE" Style="{StaticResource FieldLabel}" />
-                  <ComboBox x:Name="RenderScaleCombo" SelectionChanged="SettingChanged">
-                    <ComboBoxItem Tag="1">1× — Native 720p</ComboBoxItem>
-                    <ComboBoxItem Tag="2">2× — Native 1440p</ComboBoxItem>
-                    <ComboBoxItem Tag="3">3× — Native 4K</ComboBoxItem>
-                    <ComboBoxItem Tag="4">4× — 5120 × 2880</ComboBoxItem>
-                  </ComboBox>
-                </StackPanel>
+                <ContentPresenter />
+                <TextBlock Grid.Column="1" Text="›" FontSize="22" Foreground="{StaticResource GoldDeep}"
+                           VerticalAlignment="Center" Margin="12,0,0,0" />
               </Grid>
-
-              <Grid Margin="0,18,0,0">
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="*" />
-                  <ColumnDefinition Width="16" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                  <TextBlock Text="TEXTURE FILTERING" Style="{StaticResource FieldLabel}" />
-                  <ComboBox x:Name="AnisotropicCombo" SelectionChanged="SettingChanged">
-                    <ComboBoxItem Tag="-1">Game default</ComboBoxItem>
-                    <ComboBoxItem Tag="1">1× anisotropic</ComboBoxItem>
-                    <ComboBoxItem Tag="2">2× anisotropic</ComboBoxItem>
-                    <ComboBoxItem Tag="3">4× anisotropic</ComboBoxItem>
-                    <ComboBoxItem Tag="4">8× anisotropic</ComboBoxItem>
-                    <ComboBoxItem Tag="5">16× anisotropic</ComboBoxItem>
-                  </ComboBox>
-                </StackPanel>
-                <StackPanel Grid.Column="2">
-                  <TextBlock Text="DISPLAY MODE" Style="{StaticResource FieldLabel}" />
-                  <ComboBox x:Name="DisplayModeCombo" SelectionChanged="SettingChanged">
-                    <ComboBoxItem Tag="windowed">Windowed</ComboBoxItem>
-                    <ComboBoxItem Tag="borderless">Borderless fullscreen</ComboBoxItem>
-                    <ComboBoxItem Tag="exclusive">Exclusive fullscreen</ComboBoxItem>
-                  </ComboBox>
-                </StackPanel>
-              </Grid>
-
-              <StackPanel Margin="0,18,0,0">
-                <TextBlock Text="ANTI-ALIASING (POST-PROCESS)" Style="{StaticResource FieldLabel}" />
-                <ComboBox x:Name="AntiAliasingCombo" SelectionChanged="SettingChanged">
-                  <ComboBoxItem Tag="none">Off — game-controlled AA</ComboBoxItem>
-                  <ComboBoxItem Tag="fxaa">FXAA</ComboBoxItem>
-                  <ComboBoxItem Tag="fxaa_extreme">FXAA Extreme</ComboBoxItem>
-                </ComboBox>
-                <TextBlock Text="Optional edge smoothing. Higher internal scales also provide supersampling."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
-              </StackPanel>
-
-              <StackPanel Margin="0,18,0,0">
-                <TextBlock Text="GUEST FPS LIMIT" Style="{StaticResource FieldLabel}" />
-                <ComboBox x:Name="FrameLimitCombo" SelectionChanged="SettingChanged" />
-                <TextBlock Text="Requires the matching runtime. VSync may impose a lower limit; gameplay timing above 60 FPS is not fully verified."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
-              </StackPanel>
-
-              <StackPanel Margin="0,18,0,0">
-                <TextBlock Text="HOST FPS LIMIT" Style="{StaticResource FieldLabel}" />
-                <ComboBox x:Name="HostFrameLimitCombo" SelectionChanged="SettingChanged" />
-                <TextBlock Text="Caps how often frames reach your display, without slowing the game. Requires the matching runtime."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
-              </StackPanel>
-
-              <Border Background="#222F4941" CornerRadius="8" Padding="14,10" Margin="0,18,0,0">
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel>
-                    <TextBlock Text="Vertical synchronization" FontWeight="SemiBold" />
-                    <TextBlock Text="Synchronizes display pacing; may limit FPS below the selected cap."
-                               FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,2,0,0" />
-                  </StackPanel>
-                  <CheckBox x:Name="VsyncCheck" Grid.Column="1" IsChecked="True"
-                            Checked="SettingChanged" Unchecked="SettingChanged" />
-                </Grid>
-              </Border>
-            </StackPanel>
-          </Border>
-
-          <Border Style="{StaticResource Panel}" Margin="0,18,0,0">
-            <StackPanel>
-              <TextBlock Text="Quick presets" Style="{StaticResource SectionTitle}" />
-              <WrapPanel>
-                <Button Content="Original" Tag="original" Click="PresetClicked" Style="{StaticResource PresetButton}" />
-                <Button Content="Balanced" Tag="balanced" Click="PresetClicked" Style="{StaticResource PresetButton}" />
-                <Button Content="Enhanced" Tag="enhanced" Click="PresetClicked" Style="{StaticResource PresetButton}" />
-                <Button Content="Ultra" Tag="ultra" Click="PresetClicked" Style="{StaticResource PresetButton}" />
-              </WrapPanel>
-              <TextBlock x:Name="PresetDescription" Text="Choose a preset or tune every option above."
-                         FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,14,0,0"
-                         TextWrapping="Wrap" />
-            </StackPanel>
-          </Border>
-        </StackPanel>
-
-        <StackPanel Grid.Column="2">
-          <Border Style="{StaticResource Panel}">
-            <StackPanel>
-              <TextBlock Text="Game location" Style="{StaticResource SectionTitle}" />
-              <TextBlock Text="ORIGINAL GAME FILES" Style="{StaticResource FieldLabel}" />
-              <Border Background="#99101819" BorderBrush="#445E706A" BorderThickness="1"
-                      CornerRadius="7" Padding="10,8">
-                <TextBlock x:Name="GamePathText" Text="Not selected" FontSize="12"
-                           Foreground="#FFD0D8D2" TextWrapping="Wrap" />
-              </Border>
-              <!-- Hidden (the launcher defaults to its own folder and the user
-                   can still edit the saved path in launcher-game-path.txt).
-                   The BrowseClicked code is kept in case it is re-enabled. -->
-              <Button Content="Choose game folder…" Click="BrowseClicked"
-                      Style="{StaticResource SecondaryButton}" Margin="0,12,0,0"
-                      Visibility="Collapsed" />
-              <Button x:Name="ExtractButton" Content="Extract from ISO" Click="ExtractClicked"
-                      Style="{StaticResource SecondaryButton}" Margin="0,12,0,0" />
-              <TextBlock x:Name="ExtractionStatusText" FontSize="12"
-                         Foreground="{StaticResource MutedTextBrush}" Margin="0,10,0,0"
-                         TextWrapping="Wrap" Visibility="Collapsed" />
-            </StackPanel>
-          </Border>
-
-          <Border Style="{StaticResource Panel}" Margin="0,18,0,0">
-            <StackPanel>
-              <TextBlock Text="Effective quality" Style="{StaticResource SectionTitle}" />
-              <TextBlock x:Name="InternalResolutionText" Text="Internal: 1280 × 720"
-                         FontSize="16" FontWeight="SemiBold" />
-              <TextBlock x:Name="OutputResolutionText" Text="Output: 1280 × 720"
-                         FontSize="13" Foreground="{StaticResource MutedTextBrush}" Margin="0,5,0,0" />
-              <Separator Margin="0,14" Background="#445E706A" />
-              <TextBlock Text="Higher internal scales improve geometry edges and render targets. They use substantially more GPU memory."
-                         FontSize="12" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
-            </StackPanel>
-          </Border>
-        </StackPanel>
-      </Grid>
-      </ScrollViewer>
-
-      <!-- Advanced page content (hidden by default) -->
-      <ScrollViewer x:Name="AdvancedContent" Visibility="Collapsed"
-                    VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-        <Grid Margin="34,0,34,22">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="3*" />
-            <ColumnDefinition Width="18" />
-            <ColumnDefinition Width="2*" />
-          </Grid.ColumnDefinitions>
-
-          <!-- Keybinds -->
-          <StackPanel Grid.Column="0">
-            <Border Style="{StaticResource Panel}">
-              <StackPanel>
-                <TextBlock Text="Keybinds" Style="{StaticResource SectionTitle}" />
-                <TextBlock Text="HOST KEY  →  GUEST INPUT" Style="{StaticResource FieldLabel}" />
-                <StackPanel x:Name="KeybindList" />
-                <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                  <Button Content="+ Add binding" Click="AddKeybindClicked"
-                          Style="{StaticResource SecondaryButton}" MinWidth="120" />
-                  <Button Content="Reset to defaults" Click="ResetKeybindsClicked"
-                          Style="{StaticResource SecondaryButton}" MinWidth="150" Margin="8,0,0,0" />
-                </StackPanel>
-                <TextBlock Text="Click a host-key box, then press the key or mouse button you want to bind (Esc cancels). Changes are saved to fable2_config.toml and take effect the next time the game is launched."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,12,0,0"
-                           TextWrapping="Wrap" />
-              </StackPanel>
             </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource InkGreen}" />
+                <Setter TargetName="Bg" Property="Background" Value="#14000000" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
 
-            <Border Style="{StaticResource Panel}" Margin="0,18,0,0">
-              <StackPanel>
-                <TextBlock Text="Mouse" Style="{StaticResource SectionTitle}" />
-                <TextBlock Text="Mouse look (camera)" FontWeight="SemiBold" />
-                <TextBlock Text="Map mouse movement to the guest right stick. Disable to keep the cursor free."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,3,0,0"
-                           TextWrapping="Wrap" />
-                <CheckBox x:Name="MouseLookCheck" IsChecked="True" Margin="0,10,0,0"
-                          Foreground="{StaticResource TextBrush}" />
-                <Grid Margin="0,16,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel>
-                    <TextBlock Text="MOUSE SENSITIVITY" Style="{StaticResource FieldLabel}" />
-                    <Slider x:Name="MouseSensitivitySlider" Minimum="1" Maximum="4096" Value="256"
-                            SmallChange="1" LargeChange="64"
-                            ValueChanged="MouseSensitivitySliderChanged" />
-                  </StackPanel>
-                  <TextBox x:Name="MouseSensitivityBox" Grid.Column="2" Width="64" Text="256"
-                           TextAlignment="Center" VerticalContentAlignment="Center"
-                           LostFocus="MouseSensitivityBoxLostFocus" />
-                </Grid>
-                <Border Background="#264A2C2C" CornerRadius="8" Padding="14,10,14,10" Margin="0,16,0,0">
-                  <Grid>
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="*" />
-                      <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel>
-                      <TextBlock Text="Direct mouse look (camera)  (experimental)"
-                                 FontWeight="SemiBold" Foreground="#FFE06666" />
-                      <TextBlock Text="Aim the camera directly like a desktop FPS, orbiting the hero with native pitch limits, instead of mapping to the gamepad right stick. Only applies when mouse look is on. May feel wrong in some scenes."
-                                 FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,2,0,0"
-                                 TextWrapping="Wrap" />
-                    </StackPanel>
-                    <CheckBox x:Name="DirectMouseLookCheck" Grid.Column="1" IsChecked="False"
-                              VerticalAlignment="Top" Margin="10,0,0,0"
-                              Foreground="{StaticResource TextBrush}" />
-                  </Grid>
+    <Style x:Key="PageButton" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="Background" Value="#FFF6EED6" />
+      <Setter Property="BorderBrush" Value="#FFBFAE80" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="14,6">
+              <ContentPresenter HorizontalAlignment="Center" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="Opacity" Value="0.85" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="PageButtonGreen" TargetType="Button" BasedOn="{StaticResource PageButton}">
+      <Setter Property="Foreground" Value="{StaticResource Page}" />
+      <Setter Property="Background" Value="{StaticResource InkGreen}" />
+      <Setter Property="BorderBrush" Value="{StaticResource InkGreen}" />
+      <Setter Property="FontWeight" Value="Bold" />
+    </Style>
+
+    <Style x:Key="CloseLink" TargetType="Button">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{StaticResource InkSoft}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bg" BorderBrush="#FFD9C99F" BorderThickness="1" CornerRadius="12" Padding="12,3"
+                    Background="Transparent">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldDeep}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- On/off switch for the parchment page -->
+    <Style x:Key="Switch" TargetType="CheckBox">
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="CheckBox">
+            <Border x:Name="Track" Width="44" Height="24" CornerRadius="12" Background="#FFE2D4AD"
+                    BorderBrush="#FFBFAE80" BorderThickness="1">
+              <Ellipse x:Name="Knob" Width="16" Height="16" Fill="#FFA99868" HorizontalAlignment="Left"
+                       Margin="3,0,0,0" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Track" Property="Background" Value="{StaticResource InkGreen}" />
+                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource InkGreen}" />
+                <Setter TargetName="Knob" Property="Fill" Value="{StaticResource GoldHi}" />
+                <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
+                <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource GoldDeep}" />
+                <Setter TargetName="Track" Property="BorderThickness" Value="2" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="ChannelChoice" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="Channel" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bg" Background="Transparent" Padding="16,6">
+              <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontSize="14"
+                         Foreground="{StaticResource InkSoft}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{StaticResource InkGreen}" />
+                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Page}" />
+                <Setter TargetName="Label" Property="FontWeight" Value="Bold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <Style x:Key="ThinBar" TargetType="ProgressBar">
+      <Setter Property="Height" Value="6" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ProgressBar">
+            <Border CornerRadius="3" Background="#CC071410" BorderBrush="{StaticResource MossLine}" BorderThickness="1">
+              <Grid x:Name="PART_Track">
+                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="3">
+                  <Border.Background>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                      <GradientStop Color="#FFD6B25E" Offset="0" />
+                      <GradientStop Color="#FFF1D98F" Offset="1" />
+                    </LinearGradientBrush>
+                  </Border.Background>
                 </Border>
-              </StackPanel>
+              </Grid>
             </Border>
-          </StackPanel>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
 
-          <!-- Patches -->
-          <StackPanel Grid.Column="2">
-            <Border Style="{StaticResource Panel}">
-              <StackPanel>
-                <TextBlock Text="Patches" Style="{StaticResource SectionTitle}" />
-                <TextBlock Text="Recomp-level (mid-asm hook) patches. They take effect the next time the game is launched."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,14"
-                           TextWrapping="Wrap" />
-                <StackPanel x:Name="PatchList" />
-              </StackPanel>
-            </Border>
+    <Storyboard x:Key="Fireflies" RepeatBehavior="Forever" AutoReverse="True">
+      <DoubleAnimation Storyboard.TargetName="Flies" Storyboard.TargetProperty="Opacity"
+                       From="0.35" To="1" Duration="0:0:3" />
+      <DoubleAnimation Storyboard.TargetName="FliesShift" Storyboard.TargetProperty="Y"
+                       From="0" To="-14" Duration="0:0:6" />
+      <DoubleAnimation Storyboard.TargetName="FliesShift" Storyboard.TargetProperty="X"
+                       From="0" To="10" Duration="0:0:6" />
+    </Storyboard>
+  </Window.Resources>
 
-            <Border Style="{StaticResource Panel}" Margin="0,18,0,0">
-              <StackPanel>
-                <TextBlock Text="Performance" Style="{StaticResource SectionTitle}" />
-                <TextBlock Text="Hot-function yield batching. 1 = original (yield every call); larger = fewer context switches; 0 = never yield."
-                           FontSize="12" Foreground="{StaticResource MutedTextBrush}" Margin="0,0,0,10"
-                           TextWrapping="Wrap" />
-                <Grid>
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="16" />
-                    <ColumnDefinition Width="Auto" />
-                  </Grid.ColumnDefinitions>
-                  <StackPanel>
-                    <TextBlock Text="HOTFUNC YIELD EVERY" Style="{StaticResource FieldLabel}" />
-                    <Slider x:Name="HotFuncYieldSlider" Minimum="0" Maximum="16" Value="1"
-                            SmallChange="1" LargeChange="1" IsSnapToTickEnabled="True" TickFrequency="1"
-                            ValueChanged="HotFuncYieldSliderChanged" />
-                  </StackPanel>
-                  <TextBox x:Name="HotFuncYieldBox" Grid.Column="2" Width="56" Text="1"
-                           TextAlignment="Center" VerticalContentAlignment="Center"
-                           LostFocus="HotFuncYieldBoxLostFocus" />
-                </Grid>
-              </StackPanel>
-            </Border>
-          </StackPanel>
-        </Grid>
-      </ScrollViewer>
+  <Grid x:Name="Root">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="38" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Title bar -->
+    <Grid Background="#FF0A1A13">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+        <Image Source="pack://application:,,,/Assets/app-icon.png" Width="18" Height="18">
+          <Image.Clip>
+            <RectangleGeometry Rect="0,0,18,18" RadiusX="4" RadiusY="4" />
+          </Image.Clip>
+        </Image>
+        <TextBlock Text="Project Sparrow" Margin="10,0,0,0" FontSize="14" Foreground="{StaticResource Sage}"
+                   VerticalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+        <Button Style="{StaticResource ChromeButton}" Click="MinimizeClicked" ToolTip="Minimise">
+          <Path Data="M0,0 L10,0" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+        </Button>
+        <Button Style="{StaticResource ChromeButton}" Click="MaximizeClicked" ToolTip="Maximise">
+          <Rectangle Width="10" Height="10" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+        </Button>
+        <Button Style="{StaticResource CloseButton}" Click="CloseClicked" ToolTip="Close">
+          <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+        </Button>
+      </StackPanel>
     </Grid>
 
-    <Border Grid.Row="2" Background="#E60A1012" BorderBrush="#33FFFFFF" BorderThickness="0,1,0,0">
-      <Grid Margin="34,18">
-        <Grid x:Name="MainFooter">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="12" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBlock x:Name="StatusText" Text="Select the original game folder containing default.xex and data."
-                     Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-          <Button Grid.Column="1" Content="Save settings" Click="SaveClicked"
-                  Style="{StaticResource SecondaryButton}" MinWidth="125" />
-          <Button Grid.Column="3" x:Name="LaunchButton" Content="Play Fable II" Click="LaunchClicked"
-                  Style="{StaticResource PrimaryButton}" MinWidth="175" />
-        </Grid>
-        <Grid x:Name="AdvancedFooter" Visibility="Collapsed">
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="Auto" />
-            <ColumnDefinition Width="12" />
-            <ColumnDefinition Width="Auto" />
-          </Grid.ColumnDefinitions>
-          <TextBlock x:Name="AdvancedStatusText" Text=""
-                     Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-          <Button Grid.Column="1" Content="Save advanced settings" Click="SaveAdvancedClicked"
-                  Style="{StaticResource SecondaryButton}" MinWidth="175" />
-          <Button Grid.Column="3" Content="Back to launcher" Click="BackClicked"
-                  Style="{StaticResource PrimaryButton}" MinWidth="155" />
-        </Grid>
-      </Grid>
-    </Border>
+    <!-- Stage -->
+    <Grid x:Name="Stage" Grid.Row="1" ClipToBounds="True">
+      <!-- Scene art (all drawn here, no game artwork) -->
+      <Viewbox Stretch="UniformToFill">
+        <Canvas Width="1180" Height="700">
+          <Rectangle Width="1180" Height="700">
+            <Rectangle.Fill>
+              <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                <GradientStop Color="#FF05110C" Offset="0" />
+                <GradientStop Color="#FF0D281D" Offset="0.5" />
+                <GradientStop Color="#FF1C4130" Offset="1" />
+              </LinearGradientBrush>
+            </Rectangle.Fill>
+          </Rectangle>
+          <Rectangle Width="1180" Height="700">
+            <Rectangle.Fill>
+              <RadialGradientBrush Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.5" RadiusY="0.5">
+                <GradientStop Color="#38F1D98F" Offset="0" />
+                <GradientStop Color="#00F1D98F" Offset="1" />
+              </RadialGradientBrush>
+            </Rectangle.Fill>
+          </Rectangle>
+          <Path Fill="#FFF1D98F" Data="M90,70 m-1.4,0 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0
+                M240,40 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
+                M360,120 m-1.6,0 a1.6,1.6 0 1 0 3.2,0 a1.6,1.6 0 1 0 -3.2,0
+                M820,60 m-1.1,0 a1.1,1.1 0 1 0 2.2,0 a1.1,1.1 0 1 0 -2.2,0
+                M930,140 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
+                M1060,50 m-1.5,0 a1.5,1.5 0 1 0 3,0 a1.5,1.5 0 1 0 -3,0
+                M170,200 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
+                M1010,230 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
+                M700,30 m-1.2,0 a1.2,1.2 0 1 0 2.4,0 a1.2,1.2 0 1 0 -2.4,0
+                M470,60 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
+                M1120,300 m-1.1,0 a1.1,1.1 0 1 0 2.2,0 a1.1,1.1 0 1 0 -2.2,0" Opacity="0.8" />
+          <Path Fill="#D9EFE5C9" Data="M1000,110 a34,34 0 1 0 28,52 a27,27 0 1 1 -28,-52 z" />
+          <Path Fill="#FF163A2B" Data="M0,500 C160,450 300,462 440,485 S760,440 900,470 S1100,455 1180,462 V700 H0 Z" />
+          <Path Fill="#FF122F23" Data="M160,382 h18 v96 h-18 z M155,384 L169,348 L183,384 Z M960,482 q30,-70 60,0 z M990,480 q26,-96 52,0 z" />
+          <Rectangle Canvas.Left="166" Canvas.Top="402" Width="6" Height="9" Fill="#E6F1D98F" />
+          <Path Fill="#FF0F2A1F" Data="M0,550 C200,510 380,522 560,542 S900,518 1180,536 V700 H0 Z" />
+          <Path Fill="#FF0A1D16" Data="M0,610 C260,578 480,588 700,604 S1020,590 1180,598 V700 H0 Z" />
+          <Canvas x:Name="Flies">
+            <Canvas.RenderTransform>
+              <TranslateTransform x:Name="FliesShift" />
+            </Canvas.RenderTransform>
+            <Ellipse Canvas.Left="298" Canvas.Top="548" Width="4" Height="4" Fill="#FFF1D98F" />
+            <Ellipse Canvas.Left="858" Canvas.Top="528" Width="3.2" Height="3.2" Fill="#FFF1D98F" />
+            <Ellipse Canvas.Left="518" Canvas.Top="588" Width="3.6" Height="3.6" Fill="#FFF1D98F" />
+            <Ellipse Canvas.Left="1038" Canvas.Top="568" Width="3" Height="3" Fill="#FFF1D98F" />
+            <Ellipse Canvas.Left="138" Canvas.Top="588" Width="2.8" Height="2.8" Fill="#FFF1D98F" />
+          </Canvas>
+        </Canvas>
+      </Viewbox>
+      <Rectangle IsHitTestVisible="False">
+        <Rectangle.Fill>
+          <RadialGradientBrush Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.62" RadiusY="0.62">
+            <GradientStop Color="#00040C08" Offset="0" />
+            <GradientStop Color="#8C040C08" Offset="1" />
+          </RadialGradientBrush>
+        </Rectangle.Fill>
+      </Rectangle>
 
-    <!-- Fullscreen extraction progress overlay: a centered progress bar, the file
-         being written, and a checklist where every top-level folder/file becomes a
-         progress checkbox. Shown during extraction, dismissed when it finishes. -->
-    <Border x:Name="ExtractionOverlay" Grid.Row="0" Grid.RowSpan="3" Background="#F5070C0E"
-            Visibility="Collapsed">
-      <Grid Margin="44,36">
+      <!-- Centre and ribbon -->
+      <Grid>
         <Grid.RowDefinitions>
-          <RowDefinition Height="Auto" />
           <RowDefinition Height="*" />
-          <RowDefinition Height="Auto" />
           <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" HorizontalAlignment="Center">
-          <TextBlock Text="Extracting from ISO" FontFamily="Georgia" FontSize="30" FontWeight="Bold"
-                     Foreground="#FFFFD888" HorizontalAlignment="Center" />
-          <TextBlock x:Name="ExtractionPhaseText" Text="Starting…" FontSize="14"
-                     Foreground="#FFC69A46" Margin="0,8,0,0" HorizontalAlignment="Center" />
-        </StackPanel>
+        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="24,40,24,12">
+          <Image Source="pack://application:,,,/Assets/app-icon.png" Width="92" Height="92" HorizontalAlignment="Center">
+            <Image.Clip>
+              <RectangleGeometry Rect="0,0,92,92" RadiusX="22" RadiusY="22" />
+            </Image.Clip>
+            <Image.Effect>
+              <DropShadowEffect Color="#FFF1D98F" BlurRadius="40" ShadowDepth="0" Opacity="0.4" />
+            </Image.Effect>
+          </Image>
+          <TextBlock Text="FABLE II  ·  RECOMPILED FOR WINDOWS" HorizontalAlignment="Center" Margin="0,14,0,0"
+                     FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource Gold}" />
+          <TextBlock Text="P R O J E C T" HorizontalAlignment="Center" Margin="0,10,0,0"
+                     FontFamily="{StaticResource DisplaySC}" FontSize="24" Foreground="{StaticResource Gold}" />
+          <TextBlock HorizontalAlignment="Center" FontFamily="{StaticResource Display}" FontSize="82"
+                     Foreground="{StaticResource Ivory}" Margin="0,-10,0,0">
+            <TextBlock.Effect>
+              <DropShadowEffect ShadowDepth="3" Direction="270" BlurRadius="0" Opacity="0.35" />
+            </TextBlock.Effect>
+            <Run Text="S" Foreground="{StaticResource GoldHi}" /><Run Text="parrow" />
+          </TextBlock>
+          <Path HorizontalAlignment="Center" Margin="0,2,0,4" Fill="{StaticResource Gold}" Stroke="{StaticResource Gold}"
+                StrokeThickness="1" Data="M0,7 H130 M190,7 H320 M160,1 L166,7 L160,13 L154,7 Z M138,7 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 M178,7 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0" />
+          <TextBlock Text="Every hero begins as a sparrow." HorizontalAlignment="Center" FontFamily="{StaticResource Display}"
+                     FontStyle="Italic" FontSize="19" Foreground="{StaticResource Sage}" />
 
-        <Button Grid.Row="0" x:Name="StopButton" Content="Stop" Click="StopClicked"
-                Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right"
-                VerticalAlignment="Top" MinWidth="110" Foreground="#FFD98B8B" />
-
-        <StackPanel Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Width="520" MaxWidth="680">
-          <ProgressBar x:Name="ExtractionProgressBar" Height="16" Minimum="0" Maximum="100"
-                       Foreground="#FF3FBF7F" Background="#1FFFFFFF" BorderBrush="#44FFFFFF"
-                       BorderThickness="1" />
-          <Grid Margin="0,10,0,0">
-            <TextBlock x:Name="ExtractionPercentText" Text="0%" FontSize="22" FontWeight="SemiBold"
-                       Foreground="#FFB9D6C7" HorizontalAlignment="Left" />
-            <TextBlock x:Name="ExtractionBytesText" Text="0 / 0 MB" FontSize="13"
-                       Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Right"
-                       VerticalAlignment="Bottom" />
-          </Grid>
-
-          <!-- Shown when the extracted default.xex is not a supported version:
-               offers to continue the extraction (keeping the XEX) or cancel. -->
-          <Border x:Name="HashPrompt" Margin="0,24,0,0" Background="#40241212"
-                  BorderBrush="#FF9E4A4A" BorderThickness="1" CornerRadius="10"
-                  Padding="18,14" Visibility="Collapsed">
+          <Button x:Name="SealButton" Style="{StaticResource Seal}" AutomationProperties.Name="Play" Margin="0,30,0,0" Click="SealClicked">
             <StackPanel>
-              <TextBlock x:Name="HashPromptText" FontSize="14" Foreground="#FFE8C9A8"
-                         TextWrapping="Wrap" HorizontalAlignment="Center" />
-              <!-- Large, easy-to-reach way to back out (besides the small Stop
-                   button in the top corner). -->
-              <Button x:Name="CancelButton" Content="Cancel" Click="CancelClicked"
-                      Style="{StaticResource SecondaryButton}" Margin="0,16,0,0"
-                      MinWidth="260" HorizontalAlignment="Center" Padding="24,15"
-                      FontSize="17" />
-              <Button x:Name="ExtractAnywaysButton" Content="Extract Anyways"
-                      Click="ExtractAnywaysClicked" Style="{StaticResource SecondaryButton}"
-                      Margin="0,10,0,0" MinWidth="150" HorizontalAlignment="Center"
-                      Foreground="#FFE06666" Background="#553A1414" BorderBrush="#FF9E4A4A"
-                      Padding="16,8" />
+              <TextBlock x:Name="SealText" Text="Play" HorizontalAlignment="Center" FontFamily="{StaticResource DisplaySC}"
+                         FontSize="30" Foreground="{StaticResource GoldInk}" />
+              <TextBlock x:Name="SealSubText" HorizontalAlignment="Center" FontSize="12" FontWeight="Bold"
+                         Foreground="#BF1D1405" Visibility="Collapsed" />
             </StackPanel>
-          </Border>
+          </Button>
+
+          <StackPanel MaxWidth="580" Margin="0,16,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+              <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource Gold}" VerticalAlignment="Center">
+                <Ellipse.Effect>
+                  <DropShadowEffect Color="#FFD6B25E" BlurRadius="10" ShadowDepth="0" />
+                </Ellipse.Effect>
+              </Ellipse>
+              <TextBlock x:Name="StatusTitle" Text="Ready to play" Margin="10,0,0,0" FontSize="18" FontWeight="Bold"
+                         Foreground="{StaticResource Ivory}" />
+            </StackPanel>
+            <TextBlock x:Name="StatusText" Margin="0,4,0,0" FontSize="15.5" Foreground="{StaticResource Sage}"
+                       TextAlignment="Center" TextWrapping="Wrap" />
+            <ProgressBar x:Name="ExtractBar" Style="{StaticResource ThinBar}" Maximum="100" Width="360"
+                         Margin="0,10,0,0" Visibility="Collapsed" />
+            <StackPanel x:Name="ExtractActions" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,0"
+                        Visibility="Collapsed">
+              <Button x:Name="ExtractAnywayButton" Style="{StaticResource SceneButton}" Content="Copy it anyway"
+                      Click="ExtractAnywayClicked" Visibility="Collapsed" />
+              <Button x:Name="StopButton" Style="{StaticResource SceneButton}" Content="Stop" Click="StopClicked" />
+            </StackPanel>
+          </StackPanel>
         </StackPanel>
 
-        <TextBlock x:Name="ExtractionFileText" Grid.Row="2" Margin="0,18,0,0" FontSize="14"
-                   Foreground="#FFD0D8D2" HorizontalAlignment="Center"
-                   TextTrimming="CharacterEllipsis" Text="Waiting…" />
-
-        <Border Grid.Row="3" Margin="0,18,0,0" Background="#220E1A17" BorderBrush="#335E706A"
-                BorderThickness="1" CornerRadius="10" Padding="16,12">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="232">
-            <StackPanel x:Name="ExtractionFolderList" />
-          </ScrollViewer>
+        <!-- Edition ribbon -->
+        <Border Grid.Row="1" Padding="20,14,20,18">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+              <GradientStop Color="#00050E0A" Offset="0" />
+              <GradientStop Color="#D9050E0A" Offset="0.45" />
+            </LinearGradientBrush>
+          </Border.Background>
+          <Grid>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+              <TextBlock Text="EDITION" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource Gold}"
+                         VerticalAlignment="Center" Margin="0,0,16,0" />
+              <Border BorderBrush="#73D6B25E" BorderThickness="1" CornerRadius="6" Background="#B3071410">
+                <StackPanel Orientation="Horizontal">
+                  <RadioButton x:Name="EditionOriginal" Style="{StaticResource EditionChoice}" Content="Original"
+                               Tag="30 fps · 720p · as on Xbox" Checked="EditionChecked" />
+                  <Rectangle Width="1" Fill="#40D6B25E" />
+                  <RadioButton x:Name="EditionEnhanced" Style="{StaticResource EditionChoice}" Content="Enhanced"
+                               Tag="60 fps · 1440p · FXAA" Checked="EditionChecked" />
+                  <Rectangle Width="1" Fill="#40D6B25E" />
+                  <RadioButton x:Name="EditionExperimental" Style="{StaticResource EditionChoice}" Content="Experimental"
+                               Tag="Uncapped · 4x scale · may glitch" Checked="EditionChecked" />
+                </StackPanel>
+              </Border>
+              <TextBlock x:Name="CustomMarker" Text="Custom changes" FontSize="13.5" Foreground="{StaticResource Ember}"
+                         VerticalAlignment="Center" Margin="16,0,0,0" Visibility="Collapsed" />
+            </StackPanel>
+            <TextBlock x:Name="VersionText" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="13"
+                       Foreground="{StaticResource SageDim}" />
+          </Grid>
         </Border>
       </Grid>
-    </Border>
+
+      <!-- Corner tools -->
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,16,0">
+        <Button Style="{StaticResource ToolPill}" Click="OpenSettingsClicked" AutomationProperties.Name="Settings">
+          <StackPanel Orientation="Horizontal">
+            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{StaticResource GoldHi}" StrokeThickness="1.5"
+                  Data="M12,9 a3,3 0 1 0 0.01,0 M12,2 V5 M12,19 V22 M2,12 H5 M19,12 H22 M4.9,4.9 L7,7 M17,17 L19.1,19.1 M4.9,19.1 L7,17 M17,7 L19.1,4.9" />
+            <TextBlock Text="Settings" Margin="8,0,0,0" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+        <Button Style="{StaticResource ToolPill}" Click="OpenHelpClicked" AutomationProperties.Name="Help">
+          <StackPanel Orientation="Horizontal">
+            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{StaticResource GoldHi}" StrokeThickness="1.5"
+                  Data="M12,3 a9,9 0 1 0 0.01,0 M9.5,9.5 a2.5,2.5 0 1 1 3.5,2.3 c-0.7,0.3 -1,0.9 -1,1.6 v0.6 M12,17 v0.5" />
+            <TextBlock Text="Help" Margin="8,0,0,0" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
+      </StackPanel>
+
+      <!-- Toast -->
+      <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,96"
+              Background="#FF0E2219" BorderBrush="{StaticResource Gold}" BorderThickness="1" CornerRadius="8"
+              Padding="16,10" Visibility="Collapsed" Panel.ZIndex="20" MaxWidth="640">
+        <TextBlock x:Name="ToastText" FontSize="14.5" Foreground="{StaticResource Ivory}" TextWrapping="Wrap" />
+      </Border>
+
+      <!-- Parchment page -->
+      <Rectangle x:Name="Scrim" Fill="#73030A07" Visibility="Collapsed" MouseDown="ScrimMouseDown" Panel.ZIndex="10" />
+      <Grid x:Name="PageHost" HorizontalAlignment="Right" Width="600" Visibility="Collapsed" Panel.ZIndex="11"
+            RenderTransformOrigin="1,0.5">
+        <Grid.RenderTransform>
+          <TransformGroup>
+            <ScaleTransform x:Name="PageScale" ScaleX="1" />
+            <SkewTransform x:Name="PageSkew" />
+          </TransformGroup>
+        </Grid.RenderTransform>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto" />
+          <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <StackPanel Margin="0,70,-1,0">
+          <RadioButton x:Name="TabSettings" Style="{StaticResource Bookmark}" Content="Settings" Checked="TabChecked" />
+          <RadioButton x:Name="TabControls" Style="{StaticResource Bookmark}" Content="Controls" Checked="TabChecked" />
+          <RadioButton x:Name="TabUpdates" Style="{StaticResource Bookmark}" Content="Updates" Checked="TabChecked" />
+          <RadioButton x:Name="TabHelp" Style="{StaticResource Bookmark}" Content="Help" Checked="TabChecked" />
+        </StackPanel>
+
+        <Border Grid.Column="1" BorderBrush="#FFD9C99F" BorderThickness="1,0,0,0">
+          <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+              <GradientStop Color="#FFE4D6B0" Offset="0" />
+              <GradientStop Color="#FFEFE4C6" Offset="0.04" />
+              <GradientStop Color="#FFEFE4C6" Offset="0.97" />
+              <GradientStop Color="#FFDCCDA4" Offset="0.975" />
+              <GradientStop Color="#FFE9DCBA" Offset="0.985" />
+              <GradientStop Color="#FFD6C597" Offset="1" />
+            </LinearGradientBrush>
+          </Border.Background>
+          <Border.Effect>
+            <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" />
+          </Border.Effect>
+          <Grid>
+            <ScrollViewer x:Name="PageScroll" VerticalScrollBarVisibility="Auto" Padding="30,24,34,30">
+              <Grid x:Name="PageContent" RenderTransformOrigin="1,0.5">
+                <Grid.RenderTransform>
+                  <ScaleTransform x:Name="ContentScale" ScaleX="1" />
+                </Grid.RenderTransform>
+
+                <!-- Settings -->
+                <StackPanel x:Name="PanelSettings">
+                  <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Settings" Style="{StaticResource PageTitle}" />
+                    <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Click="ClosePageClicked" />
+                  </Grid>
+                  <TextBlock Text="DISPLAY" Style="{StaticResource PageSection}" />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="DisplayModeCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged">
+                        <ComboBoxItem Tag="windowed">Windowed</ComboBoxItem>
+                        <ComboBoxItem Tag="borderless">Borderless fullscreen</ComboBoxItem>
+                        <ComboBoxItem Tag="exclusive">Exclusive fullscreen</ComboBoxItem>
+                      </ComboBox>
+                      <TextBlock Text="Window" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="ResolutionCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged">
+                        <ComboBoxItem Tag="720p">1280 × 720</ComboBoxItem>
+                        <ComboBoxItem Tag="1080p">1920 × 1080</ComboBoxItem>
+                        <ComboBoxItem Tag="1440p">2560 × 1440</ComboBoxItem>
+                        <ComboBoxItem Tag="4k">3840 × 2160</ComboBoxItem>
+                      </ComboBox>
+                      <TextBlock Text="Window size" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="RenderScaleCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged">
+                        <ComboBoxItem Tag="1">1× (720p, original)</ComboBoxItem>
+                        <ComboBoxItem Tag="2">2× (1440p)</ComboBoxItem>
+                        <ComboBoxItem Tag="3">3× (4K)</ComboBoxItem>
+                        <ComboBoxItem Tag="4">4× (5120 × 2880)</ComboBoxItem>
+                      </ComboBox>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Render scale" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Draws the game sharper than the Xbox did" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="AnisotropicCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged">
+                        <ComboBoxItem Tag="-1">Game default</ComboBoxItem>
+                        <ComboBoxItem Tag="1">1×</ComboBoxItem>
+                        <ComboBoxItem Tag="2">2×</ComboBoxItem>
+                        <ComboBoxItem Tag="3">4×</ComboBoxItem>
+                        <ComboBoxItem Tag="4">8×</ComboBoxItem>
+                        <ComboBoxItem Tag="5">16×</ComboBoxItem>
+                      </ComboBox>
+                      <TextBlock Text="Texture filtering" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="AntiAliasingCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged">
+                        <ComboBoxItem Tag="none">Off (game's own)</ComboBoxItem>
+                        <ComboBoxItem Tag="fxaa">FXAA</ComboBoxItem>
+                        <ComboBoxItem Tag="fxaa_extreme">FXAA Extreme</ComboBoxItem>
+                      </ComboBox>
+                      <TextBlock Text="Smoothing" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="FrameLimitCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Game frame rate" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Above 60 can break timing in some scenes" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <ComboBox x:Name="HostFrameLimitCombo" DockPanel.Dock="Right" SelectionChanged="SettingChanged" />
+                      <TextBlock Text="Display frame cap" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="VsyncCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <TextBlock Text="VSync" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+
+                  <TextBlock Text="GAME" Style="{StaticResource PageSection}" />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="SkipIntroCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <TextBlock Text="Skip intro videos" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="MotionBlurCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <TextBlock Text="Motion blur" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="UnlockWebsiteCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Website items" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Grants the old Fable II website rewards when a save loads" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="UnlockCeCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Collector's Edition items" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Grants the Collector's Edition chest when a save loads" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+
+                  <TextBlock Text="EXPERIMENTAL" Style="{StaticResource PageSection}" />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="HighTickCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="HighTickUnchecked" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Faster world tick" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Runs the slow game tick at 30 Hz instead of 15. Unstable" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="HigherHfTickCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="HigherHfTickChecked" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Faster animation tick" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Runs the fast tick at 60 Hz instead of 30. Needs the faster world tick. Unstable" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="MorphingCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Live skin changes" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Draws the hero and dog skin changes on the GPU. Fixes a black hero or dog" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="ReadbackCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Old skin fix" Style="{StaticResource PageText}" />
+                        <TextBlock Text="The earlier CPU fix for the hero and dog textures. Replaced by live skin changes" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <TextBlock x:Name="YieldValueText" DockPanel.Dock="Right" Width="28" TextAlignment="Right"
+                                 Style="{StaticResource PageText}" />
+                      <Slider x:Name="YieldSlider" DockPanel.Dock="Right" Width="170" Minimum="0" Maximum="16"
+                              IsSnapToTickEnabled="True" TickFrequency="1" VerticalAlignment="Center"
+                              ValueChanged="YieldChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="CPU yield batching" Style="{StaticResource PageText}" />
+                        <TextBlock Text="1 is the original behaviour, 0 never yields" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <TextBlock Text="Changes are saved when you close this page or press Play. Changing anything an edition sets marks it as Custom."
+                             Style="{StaticResource PageHint}" Margin="0,14,0,0" />
+                </StackPanel>
+
+                <!-- Controls -->
+                <StackPanel x:Name="PanelControls" Visibility="Collapsed">
+                  <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Controls" Style="{StaticResource PageTitle}" />
+                    <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Click="ClosePageClicked" />
+                  </Grid>
+                  <TextBlock Text="Controllers work straight away. These settings are for playing on keyboard and mouse."
+                             Style="{StaticResource PageHint}" Margin="0,4,0,0" />
+                  <TextBlock Text="MOUSE" Style="{StaticResource PageSection}" />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="MouseLookCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Mouse look" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Move the camera with the mouse" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="DirectMouseCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Direct camera" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Turns the camera like a PC game instead of through the right stick. Experimental" Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <TextBox x:Name="SensitivityBox" DockPanel.Dock="Right" Width="56" Margin="10,0,0,0"
+                               VerticalAlignment="Center" FontSize="14" Background="#FFF6EED6" BorderBrush="#FFBFAE80"
+                               LostFocus="SensitivityBoxLostFocus" />
+                      <Slider x:Name="SensitivitySlider" DockPanel.Dock="Right" Width="200" Minimum="1" Maximum="4096"
+                              VerticalAlignment="Center" ValueChanged="SensitivityChanged" />
+                      <TextBlock Text="Mouse speed" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <Grid Margin="0,20,0,4">
+                    <TextBlock Text="KEYBOARD KEYS" Style="{StaticResource PageSection}" Margin="0" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                      <Button Style="{StaticResource PageButton}" Content="Add a key" Click="AddKeybindClicked" />
+                      <Button Style="{StaticResource PageButton}" Content="Reset to default" Margin="0" Click="ResetKeybindsClicked" />
+                    </StackPanel>
+                  </Grid>
+                  <TextBlock Text="Click a key box, then press the key or mouse button you want. Esc cancels."
+                             Style="{StaticResource PageHint}" Margin="0,0,0,8" />
+                  <StackPanel x:Name="KeybindList" />
+                </StackPanel>
+
+                <!-- Updates -->
+                <StackPanel x:Name="PanelUpdates" Visibility="Collapsed">
+                  <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Updates" Style="{StaticResource PageTitle}" />
+                    <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Click="ClosePageClicked" />
+                  </Grid>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <Border DockPanel.Dock="Right" BorderBrush="#FFBFAE80" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+                        <StackPanel Orientation="Horizontal">
+                          <RadioButton x:Name="ChannelStable" Style="{StaticResource ChannelChoice}" Content="Stable"
+                                       Checked="ChannelChecked" />
+                          <RadioButton x:Name="ChannelBeta" Style="{StaticResource ChannelChoice}" Content="Beta"
+                                       Checked="ChannelChecked" />
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Text="Channel" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <TextBlock x:Name="ChannelNote" Style="{StaticResource PageHint}" Margin="0,8,0,0" />
+                  <Border Margin="0,14,0,0" Padding="14,12" CornerRadius="6" Background="#FFF6EED6" BorderBrush="#FFD9C99F"
+                          BorderThickness="1">
+                    <TextBlock x:Name="UpdateStatusText" Style="{StaticResource PageText}" FontSize="14.5" />
+                  </Border>
+                </StackPanel>
+
+                <!-- Help -->
+                <StackPanel x:Name="PanelHelp" Visibility="Collapsed">
+                  <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Help" Style="{StaticResource PageTitle}" />
+                    <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Click="ClosePageClicked" />
+                  </Grid>
+                  <Button Style="{StaticResource PageLink}" Click="ReportToggleClicked">
+                    <StackPanel>
+                      <TextBlock Text="Report a problem" FontSize="16" />
+                      <TextBlock Text="Bundle logs and settings, then open a GitHub issue" Style="{StaticResource PageHint}" />
+                    </StackPanel>
+                  </Button>
+                  <Border x:Name="ReportPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
+                          Background="#FFF6EED6" BorderBrush="#FFD9C99F" BorderThickness="1">
+                    <StackPanel>
+                      <TextBlock Style="{StaticResource PageHint}" FontSize="14.5"
+                                 Text="This puts the following in one zip on your desktop. Nothing is uploaded; you attach it to the issue yourself." />
+                      <TextBlock Style="{StaticResource PageHint}" FontSize="14.5" Margin="12,6,0,10"
+                                 Text="• The last 3 game logs&#x0a;• Version, channel and edition&#x0a;• Your settings files (no saves)&#x0a;• Graphics card, driver and Windows version" />
+                      <Button Style="{StaticResource PageButtonGreen}" Content="Create report" HorizontalAlignment="Left"
+                              Click="CreateReportClicked" />
+                    </StackPanel>
+                  </Border>
+                  <Button Style="{StaticResource PageLink}" Click="CheckFilesClicked">
+                    <StackPanel>
+                      <TextBlock Text="Check game files" FontSize="16" />
+                      <TextBlock Text="Compare your files with a known-good disc" Style="{StaticResource PageHint}" />
+                    </StackPanel>
+                  </Button>
+                  <Button Style="{StaticResource PageLink}" Click="OpenSavesClicked">
+                    <TextBlock Text="Open save folder" FontSize="16" />
+                  </Button>
+                  <Button Style="{StaticResource PageLink}" Click="FolderToggleClicked">
+                    <StackPanel>
+                      <TextBlock Text="Change data folder" FontSize="16" />
+                      <TextBlock x:Name="DataFolderHint" Style="{StaticResource PageHint}" />
+                    </StackPanel>
+                  </Button>
+                  <Border x:Name="FolderPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
+                          Background="#FFF6EED6" BorderBrush="#FFD9C99F" BorderThickness="1">
+                    <StackPanel>
+                      <TextBlock x:Name="FolderPanelText" Style="{StaticResource PageHint}" FontSize="14.5" Margin="0,0,0,10" />
+                      <WrapPanel>
+                        <Button x:Name="MoveDataButton" Style="{StaticResource PageButtonGreen}" Content="Move to…"
+                                Click="MoveDataClicked" Margin="0,0,8,6" />
+                        <Button Style="{StaticResource PageButton}" Content="Use game files from another folder…"
+                                Click="UseGameFolderClicked" Margin="0,0,8,6" />
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                  <Button Style="{StaticResource PageLink}" Click="ClearShaderCacheClicked">
+                    <StackPanel>
+                      <TextBlock Text="Clear shader cache" FontSize="16" />
+                      <TextBlock Text="Try this if graphics look broken after an update" Style="{StaticResource PageHint}" />
+                    </StackPanel>
+                  </Button>
+                  <TextBlock Style="{StaticResource PageHint}" Margin="0,22,0,0"
+                             Text="Project Sparrow is an unofficial, fan-made recompilation of Fable II for Windows. You need your own Fable II Game of the Year disc; no game files are included or downloaded. Not affiliated with or endorsed by Microsoft or Xbox Game Studios. Built on the ReXGlue SDK. Fonts: IM FELL English and Alegreya Sans (SIL Open Font License)." />
+                </StackPanel>
+              </Grid>
+            </ScrollViewer>
+            <Rectangle x:Name="PageShade" IsHitTestVisible="False" Opacity="0">
+              <Rectangle.Fill>
+                <LinearGradientBrush StartPoint="1,0" EndPoint="0,0">
+                  <GradientStop Color="#593C280A" Offset="0" />
+                  <GradientStop Color="#003C280A" Offset="0.4" />
+                  <GradientStop Color="#40FFFAE6" Offset="0.85" />
+                  <GradientStop Color="#333C280A" Offset="1" />
+                </LinearGradientBrush>
+              </Rectangle.Fill>
+            </Rectangle>
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
   </Grid>
 </Window>

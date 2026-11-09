@@ -27,6 +27,9 @@ def release_files(root, build, launcher):
     files = {name: require(build / name) for name in BUILD_FILES}
     files["Fable2Launcher.exe"] = require(launcher)
     files["README.md"] = require(root / "README.md")
+    # The launcher embeds these fonts; the OFL asks for its text to travel with them.
+    for licence in sorted((root / "launcher/Fable2.Launcher/Fonts").glob("OFL-*.txt")):
+        files[f"licenses/{licence.name}"] = licence
     # From the repo: the build folder's copy may hold a developer's own settings.
     files["fable2_config.toml"] = require(root / "config/fable2_config.toml")
     # dir.manifest stays out: the real one comes from the disc, and the game lists these scripts itself.

@@ -1,8 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Project Sparrow Launcher</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -29,6 +24,18 @@
   --ink:#2b2414;          /* text on parchment */
   --ink-soft:#6a5c3d;
   --ink-green:#1f4a37;    /* accent on parchment */
+  /* scene + chrome tokens (Dusk = default) */
+  --sky1:#05110c; --sky2:#0d281d; --sky3:#1c4130; --glow:#f1d98f; --glow-a:.22;
+  --star-o:1; --moon:#efe5c9; --moon-o:.85; --sun-o:0;
+  --hill1:#163a2b; --tower:#122f23; --hill2:#0f2a1f; --hill3:#0a1d16; --lamp-o:.9;
+  --fly-o:1; --bird-o:0; --bird:#3f4d36;
+  --bar-bg:rgba(5,14,10,.55); --vignette:rgba(4,12,8,.55); --pill:rgba(7,20,14,.6); --well:rgba(7,20,14,.8);
+  --ribbon:rgba(5,14,10,.85); --ed-bg:rgba(7,20,14,.7); --gold-line:rgba(214,178,94,.45); --gold-line-soft:rgba(214,178,94,.25);
+  --title-shadow:rgba(0,0,0,.35); --scrim:rgba(3,10,7,.45);
+  /* page tokens (parchment) */
+  --sheet-edge:#e4d6b0; --rule:var(--rule); --ctl-line:var(--ctl-line); --well-page:var(--well-page); --sw-off:var(--sw-off); --knob-off:var(--knob-off);
+  --on-bg:var(--ink-green); --on-text:var(--page); --knob-on:var(--gold-hi);
+  --stack1:#dccda4; --stack2:#e9dcba; --stack3:#d6c597; --tab-on-text:var(--ink-green);
   --display:"IM Fell English", "Iowan Old Style", Georgia, serif;
   --display-sc:"IM Fell English SC", "IM Fell English", Georgia, serif;
   --body:"Alegreya Sans", "Segoe UI", system-ui, sans-serif;
@@ -49,8 +56,32 @@ button{font:inherit;color:inherit}
 .chip[aria-pressed="true"]{border-color:var(--gold);color:var(--gold-hi);background:rgba(214,178,94,.08)}
 
 /* Window */
-.window{position:relative;max-width:1180px;margin:0 auto;border:1px solid var(--moss-line);border-radius:12px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);background:var(--forest)}
-.titlebar{position:relative;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 6px 8px 14px;background:rgba(5,14,10,.55);font-size:14px;color:var(--sage)}
+/* Night: everything dark, the page becomes dark leather with gold and ivory ink. */
+.window[data-theme="night"]{
+  --forest:#08140f; --moss-line:#22392f; --ivory:#e6dcc0; --sage:#93a693; --sage-dim:#6a8270;
+  --sky1:#010604; --sky2:#051209; --sky3:#0a1d15; --glow-a:.1; --star-o:.9; --moon:#d9d0b4; --moon-o:.7;
+  --hill1:#123024; --tower:#0f281d; --hill2:#0c2118; --hill3:#081811; --lamp-o:.75;
+  --bar-bg:rgba(2,8,5,.85); --vignette:rgba(1,5,3,.72); --pill:rgba(3,10,7,.75); --well:rgba(2,8,5,.9);
+  --ribbon:rgba(2,8,5,.92); --ed-bg:rgba(3,10,7,.85); --scrim:rgba(0,4,2,.6);
+  --page:#1b231c; --page-edge:#2f3a2e; --ink:#e8dcc0; --ink-soft:#a59a7e; --ink-green:#d6b25e; --gold-deep:#c9a24f;
+  --sheet-edge:#141b15; --rule:#36423a; --ctl-line:#4a5747; --well-page:#232d24; --sw-off:#2a352b; --knob-off:#6f7a68;
+  --on-bg:#d6b25e; --on-text:#1d1405; --knob-on:#1d1405;
+  --stack1:#263026; --stack2:#1f281f; --stack3:#2c372c; --tab-on-text:#d6b25e;
+}
+/* Day: a sunlit storybook morning, dark ink on the scene, parchment page. */
+.window[data-theme="day"]{
+  --forest:#efe5c9; --moss-line:var(--rule); --ivory:#2b2414; --sage:#4f5f45; --sage-dim:#6b7a5e; --gold:#8a6420; --gold-hi:#a87a2c;
+  --sky1:#f6eedb; --sky2:#f3e2b8; --sky3:#ead49a; --glow:#fff6d6; --glow-a:.7; --star-o:0; --moon-o:0; --sun-o:1;
+  --hill1:#a9bd8f; --tower:#7d9670; --hill2:#8aa77a; --hill3:#6d8d62; --lamp-o:0; --fly-o:0; --bird-o:1;
+  --bar-bg:rgba(240,230,205,.85); --vignette:rgba(120,90,30,.14); --pill:rgba(255,250,236,.8); --well:rgba(255,250,236,.9);
+  --ribbon:rgba(246,238,216,.94); --ed-bg:rgba(255,250,236,.8); --gold-line:rgba(138,100,32,.45); --gold-line-soft:rgba(138,100,32,.25);
+  --title-shadow:rgba(255,255,255,.45); --scrim:rgba(60,45,15,.25);
+}
+.window .scene *{transition:fill .5s, stop-color .5s, opacity .5s}
+.bird{animation:glide 9s ease-in-out infinite alternate}
+@keyframes glide{0%{transform:translate(0,0)}100%{transform:translate(40px,-12px)}}
+.window{position:relative;max-width:1180px;margin:0 auto;border:1px solid var(--moss-line);border-radius:12px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);background:var(--forest);color:var(--ivory)}
+.titlebar{position:relative;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 6px 8px 14px;background:var(--bar-bg);font-size:14px;color:var(--sage)}
 .titlebar img{width:18px;height:18px;border-radius:4px}
 .titlebar .sp{flex:1}
 .wc{width:40px;height:28px;display:grid;place-items:center}
@@ -59,19 +90,25 @@ button{font:inherit;color:inherit}
 .stage{position:relative;min-height:660px;display:flex;flex-direction:column}
 .stage svg.scene{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .stage::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
-  background:radial-gradient(60% 55% at 50% 40%, transparent 0%, rgba(4,12,8,.55) 100%)}
+  background:radial-gradient(60% 55% at 50% 40%, transparent 0%, var(--vignette) 100%)}
 
 /* Corner tools (open the page) */
 .tools{position:absolute;top:14px;right:16px;z-index:2;display:flex;gap:8px}
-.tool{display:flex;align-items:center;gap:8px;background:rgba(7,20,14,.6);border:1px solid rgba(214,178,94,.35);border-radius:99px;padding:6px 14px 6px 10px;cursor:pointer;color:var(--ivory);font-size:15px;backdrop-filter:blur(4px)}
+.tool{display:flex;align-items:center;gap:8px;background:var(--pill);border:1px solid var(--gold-line);border-radius:99px;padding:6px 14px 6px 10px;cursor:pointer;color:var(--ivory);font-size:15px;backdrop-filter:blur(4px)}
 .tool svg{width:18px;height:18px;stroke:var(--gold-hi);fill:none;stroke-width:1.5}
 .tool:hover{border-color:var(--gold-hi)}
+.quick{position:absolute;top:14px;left:16px;z-index:2;display:flex;gap:2px;padding:3px;background:var(--pill);border:1px solid var(--gold-line);border-radius:99px;backdrop-filter:blur(4px)}
+.quick button{width:34px;height:30px;display:grid;place-items:center;border:0;border-radius:99px;background:transparent;cursor:pointer;color:var(--sage)}
+.quick button svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.quick button:hover{color:var(--gold-hi)}
+.quick button[aria-pressed="true"]{background:var(--gold);color:var(--forest)}
+.quick button:focus-visible{outline:2px solid var(--gold-hi);outline-offset:1px}
 
 /* Centre: title + seal */
 .centre{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:56px 24px 24px;gap:6px}
 .emblem{width:96px;height:96px;border-radius:24px;box-shadow:0 0 0 1px rgba(241,217,143,.4),0 0 50px rgba(241,217,143,.28)}
 .eyebrow{margin-top:14px;font-family:var(--label);font-weight:700;letter-spacing:.2em;font-size:12.5px;color:var(--gold);text-transform:uppercase}
-.name{font-family:var(--display);font-weight:400;font-size:clamp(44px,7.2vw,86px);line-height:.95;margin:0;color:var(--ivory);text-shadow:0 3px 0 rgba(0,0,0,.35);text-wrap:balance}
+.name{font-family:var(--display);font-weight:400;font-size:clamp(44px,7.2vw,86px);line-height:.95;margin:0;color:var(--ivory);text-shadow:0 3px 0 var(--title-shadow);text-wrap:balance}
 .name .initial{color:var(--gold-hi)}
 .name .pre{display:block;font-family:var(--display-sc);font-size:.34em;letter-spacing:.35em;color:var(--gold);margin-bottom:.12em;padding-left:.35em}
 .flourish{width:min(320px,70%);height:14px;margin:4px 0 2px}
@@ -94,16 +131,16 @@ button{font:inherit;color:inherit}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold)}
 .dot.warn{background:var(--ember);box-shadow:0 0 10px var(--ember)}
 .status p{margin:0}
-.status kbd{font-family:var(--body);font-size:13px;border:1px solid var(--moss-line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ivory);background:rgba(7,20,14,.8)}
-.bar{height:6px;border-radius:99px;background:rgba(7,20,14,.8);border:1px solid var(--moss-line);margin:10px auto 0;overflow:hidden;max-width:360px}
+.status kbd{font-family:var(--body);font-size:13px;border:1px solid var(--moss-line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ivory);background:var(--well)}
+.bar{height:6px;border-radius:99px;background:var(--well);border:1px solid var(--moss-line);margin:10px auto 0;overflow:hidden;max-width:360px}
 .bar i{display:block;height:100%;width:43%;background:linear-gradient(90deg,var(--gold),var(--gold-hi))}
 
 /* Edition ribbon */
 .ribbon{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;
-  padding:14px 20px 18px;background:linear-gradient(180deg, rgba(5,14,10,0), rgba(5,14,10,.85) 40%)}
+  padding:14px 20px 18px;background:linear-gradient(180deg, transparent, var(--ribbon) 40%)}
 .ribbon .lbl{font-family:var(--label);font-weight:700;letter-spacing:.14em;font-size:12.5px;color:var(--gold);text-transform:uppercase}
-.editions{display:flex;flex-wrap:wrap;justify-content:center;border:1px solid rgba(214,178,94,.45);border-radius:6px;overflow:hidden;background:rgba(7,20,14,.7)}
-.ed{background:transparent;border:0;border-right:1px solid rgba(214,178,94,.25);padding:8px 18px;cursor:pointer;text-align:left;min-width:0}
+.editions{display:flex;flex-wrap:wrap;justify-content:center;border:1px solid var(--gold-line);border-radius:6px;overflow:hidden;background:var(--ed-bg)}
+.ed{background:transparent;border:0;border-right:1px solid var(--gold-line-soft);padding:8px 18px;cursor:pointer;text-align:left;min-width:0}
 .ed:last-child{border-right:0}
 .ed b{display:block;font-family:var(--display);font-weight:400;font-size:19px;color:var(--ivory)}
 .ed span{display:block;font-size:13px;color:var(--sage-dim)}
@@ -113,7 +150,7 @@ button{font:inherit;color:inherit}
 .ver{position:absolute;right:18px;bottom:18px;z-index:1;color:var(--sage-dim);font-size:13px;font-variant-numeric:tabular-nums}
 
 /* Parchment page */
-.scrim{position:absolute;inset:0;z-index:4;background:rgba(3,10,7,.45);opacity:0;pointer-events:none;transition:opacity .25s}
+.scrim{position:absolute;inset:0;z-index:4;background:var(--scrim);opacity:0;pointer-events:none;transition:opacity .25s}
 /* The page is hinged on the window's right edge and swings in onto the scene like a turned page. */
 .page{position:absolute;top:0;right:0;bottom:0;z-index:5;width:min(560px,100%);display:flex;
   transform-origin:right center;transform:perspective(1800px) rotateY(100deg);opacity:0;pointer-events:none;
@@ -132,35 +169,35 @@ button{font:inherit;color:inherit}
 .tab{writing-mode:vertical-rl;transform:rotate(180deg);background:var(--gold-deep);color:var(--page);border:0;cursor:pointer;
   padding:14px 8px;border-radius:0 6px 6px 0;font-family:var(--label);font-weight:700;letter-spacing:.1em;font-size:13px;box-shadow:-2px 2px 6px rgba(0,0,0,.3)}
 .tab[aria-selected="true"]{background:var(--page);color:var(--ink-green)}
-.sheet{flex:1;min-width:0;background:linear-gradient(90deg, #e4d6b0 0, var(--page) 18px), var(--page);color:var(--ink);
+.sheet{flex:1;min-width:0;background:linear-gradient(90deg, var(--sheet-edge) 0, var(--page) 18px), var(--page);color:var(--ink);
   border-left:1px solid var(--page-edge);overflow:auto;padding:26px 30px 30px;
-  box-shadow:-20px 0 50px rgba(0,0,0,.45), inset -3px 0 0 #dccda4, inset -6px 0 0 #e9dcba, inset -9px 0 0 #d6c597}
+  box-shadow:-20px 0 50px rgba(0,0,0,.45), inset -3px 0 0 var(--stack1), inset -6px 0 0 var(--stack2), inset -9px 0 0 var(--stack3)}
 .sheet header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--page-edge);padding-bottom:10px;margin-bottom:6px}
 .sheet h3{font-family:var(--display);font-weight:400;font-size:32px;margin:0;color:var(--ink)}
 .close{background:transparent;border:1px solid var(--page-edge);border-radius:99px;padding:3px 12px;cursor:pointer;color:var(--ink-soft)}
 .sheet h4{font-family:var(--label);font-weight:700;letter-spacing:.12em;font-size:12.5px;color:var(--gold-deep);text-transform:uppercase;margin:20px 0 4px}
-.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;min-height:46px;border-bottom:1px dotted #c9b88a}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;min-height:46px;border-bottom:1px dotted var(--rule)}
 .row .hint{display:block;color:var(--ink-soft);font-size:13.5px}
-.link{width:100%;background:transparent;border:0;border-bottom:1px dotted #c9b88a;cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;font-size:16px;color:var(--ink)}
+.link{width:100%;background:transparent;border:0;border-bottom:1px dotted var(--rule);cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;font-size:16px;color:var(--ink)}
 .link span.hint{display:block;color:var(--ink-soft);font-size:13.5px}
 .link::after{content:"›";color:var(--gold-deep);font-size:22px;line-height:1}
 .link:hover{color:var(--ink-green)}
-.seg{display:inline-grid;grid-auto-flow:column;border:1px solid #bfae80;border-radius:6px;overflow:hidden}
+.seg{display:inline-grid;grid-auto-flow:column;border:1px solid var(--ctl-line);border-radius:6px;overflow:hidden}
 .seg button{background:transparent;border:0;padding:6px 14px;cursor:pointer;color:var(--ink-soft)}
 .seg button[aria-pressed="true"]{background:var(--ink-green);color:var(--page);font-weight:700}
-.sw{position:relative;width:44px;height:24px;flex:none;border-radius:99px;border:1px solid #bfae80;background:#e2d4ad;cursor:pointer;padding:0}
-.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#a99868;transition:transform .15s, background .15s}
+.sw{position:relative;width:44px;height:24px;flex:none;border-radius:99px;border:1px solid var(--ctl-line);background:var(--sw-off);cursor:pointer;padding:0}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--knob-off);transition:transform .15s, background .15s}
 .sw[aria-checked="true"]{background:var(--ink-green);border-color:var(--ink-green)}
 .sw[aria-checked="true"]::after{transform:translateX(20px);background:var(--gold-hi)}
-select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80;border-radius:6px;padding:5px 8px}
+select{font:inherit;color:var(--ink);background:var(--well-page);border:1px solid var(--ctl-line);border-radius:6px;padding:5px 8px}
 .note{color:var(--ink-soft);font-size:14px;margin:8px 0 0}
 .panel{display:none}.panel.on{display:block}
-.inline{margin:12px 0 0;padding:12px 14px;border:1px solid var(--page-edge);border-radius:6px;background:#f6eed6;color:var(--ink-soft);font-size:14.5px}
+.inline{margin:12px 0 0;padding:12px 14px;border:1px solid var(--page-edge);border-radius:6px;background:var(--well-page);color:var(--ink-soft);font-size:14.5px}
 .inline ul{margin:6px 0 10px;padding-left:20px}
-.btn{border:1px solid #bfae80;background:#f6eed6;border-radius:6px;padding:6px 14px;cursor:pointer;color:var(--ink)}
+.btn{border:1px solid var(--ctl-line);background:var(--well-page);border-radius:6px;padding:6px 14px;cursor:pointer;color:var(--ink)}
 .btn.green{background:var(--ink-green);border-color:var(--ink-green);color:var(--page);font-weight:700}
 
-.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--forest);border:1px solid var(--gold);border-radius:8px;padding:10px 16px;z-index:30;max-width:calc(100% - 32px)}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:#0e2219;color:#efe5c9;border:1px solid #d6b25e;border-radius:8px;padding:10px 16px;z-index:30;max-width:calc(100% - 32px)}
 
 @media (max-width:700px){
   .stage{min-height:600px}
@@ -172,15 +209,13 @@ select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80
   .ed{border-right:0;border-bottom:1px solid rgba(214,178,94,.25)}
   .sheet{padding:22px 18px}
 }
-@media (prefers-reduced-motion:reduce){ .fly,.panel.turn,.page.lift .sheet::after{animation:none!important} .page,.scrim{transition:none} }
+@media (prefers-reduced-motion:reduce){ .bird,.window .scene *,.fly,.panel.turn,.page.lift .sheet::after{animation:none!important} .page,.scrim{transition:none} }
 @keyframes drift{0%{transform:translate(0,0);opacity:.2}50%{opacity:1}100%{transform:translate(14px,-22px);opacity:.15}}
 .fly{animation:drift 6s ease-in-out infinite alternate}
 </style>
-</head>
-<body>
-
 
 <div class="proto" aria-label="Mockup controls">
+  <b>Theme</b><div class="chips" id="themes"></div>
   <b>Preview state</b><div class="chips" id="states"></div>
 </div>
 
@@ -196,36 +231,47 @@ select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80
     <svg class="scene" viewBox="0 0 1180 660" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#05110c"/><stop offset=".5" stop-color="#0d281d"/><stop offset="1" stop-color="#1c4130"/>
+          <stop offset="0" style="stop-color:var(--sky1)"/><stop offset=".5" style="stop-color:var(--sky2)"/><stop offset="1" style="stop-color:var(--sky3)"/>
         </linearGradient>
         <radialGradient id="glow" cx=".5" cy=".42" r=".5">
-          <stop offset="0" stop-color="#f1d98f" stop-opacity=".22"/><stop offset="1" stop-color="#f1d98f" stop-opacity="0"/>
+          <stop offset="0" style="stop-color:var(--glow);stop-opacity:var(--glow-a)"/><stop offset="1" style="stop-color:var(--glow);stop-opacity:0"/>
         </radialGradient>
       </defs>
       <rect width="1180" height="660" fill="url(#sky)"/>
       <rect width="1180" height="660" fill="url(#glow)"/>
-      <g fill="#f1d98f">
+      <g fill="#f1d98f" style="opacity:var(--star-o)">
         <circle cx="90" cy="70" r="1.4" opacity=".8"/><circle cx="240" cy="40" r="1"/><circle cx="360" cy="120" r="1.6" opacity=".7"/>
         <circle cx="820" cy="60" r="1.1"/><circle cx="930" cy="140" r="1" opacity=".6"/><circle cx="1060" cy="50" r="1.5"/>
         <circle cx="170" cy="200" r="1" opacity=".5"/><circle cx="1010" cy="230" r="1" opacity=".5"/><circle cx="700" cy="30" r="1.2"/>
         <circle cx="470" cy="60" r="1" opacity=".6"/><circle cx="1120" cy="300" r="1.1" opacity=".5"/>
       </g>
-      <path d="M1000 110a34 34 0 1 0 28 52 27 27 0 1 1-28-52z" fill="#efe5c9" opacity=".85"/>
-      <path d="M0 470 C 160 420, 300 432, 440 455 S 760 410, 900 440 S 1100 425, 1180 432 V660 H0Z" fill="#163a2b"/>
-      <g fill="#122f23">
+      <path d="M1000 110a34 34 0 1 0 28 52 27 27 0 1 1-28-52z" style="fill:var(--moon);opacity:var(--moon-o)"/>
+      <g style="opacity:var(--sun-o)"><circle cx="1010" cy="140" r="78" fill="#fff3c4" opacity=".5"/><circle cx="1010" cy="140" r="42" fill="#f4d27a"/></g>
+      <path d="M0 470 C 160 420, 300 432, 440 455 S 760 410, 900 440 S 1100 425, 1180 432 V660 H0Z" style="fill:var(--hill1)"/>
+      <g style="fill:var(--tower)">
         <rect x="160" y="352" width="18" height="96"/><path d="M155 354 L169 318 L183 354Z"/>
-        <rect x="166" y="372" width="6" height="9" fill="#f1d98f" opacity=".9"/>
+        <rect x="166" y="372" width="6" height="9" style="fill:#f1d98f;opacity:var(--lamp-o)"/>
         <path d="M960 452 q 30 -70 60 0z"/><path d="M990 450 q 26 -96 52 0z"/>
       </g>
-      <path d="M0 520 C 200 480, 380 492, 560 512 S 900 488, 1180 506 V660 H0Z" fill="#0f2a1f"/>
-      <path d="M0 580 C 260 548, 480 558, 700 574 S 1020 560, 1180 568 V660 H0Z" fill="#0a1d16"/>
-      <g fill="#f1d98f">
+      <path d="M0 520 C 200 480, 380 492, 560 512 S 900 488, 1180 506 V660 H0Z" style="fill:var(--hill2)"/>
+      <path d="M0 580 C 260 548, 480 558, 700 574 S 1020 560, 1180 568 V660 H0Z" style="fill:var(--hill3)"/>
+      <g fill="#f1d98f" style="opacity:var(--fly-o)">
         <circle class="fly" cx="300" cy="520" r="2"/><circle class="fly" style="animation-delay:-2s" cx="860" cy="500" r="1.6"/>
         <circle class="fly" style="animation-delay:-4s" cx="520" cy="560" r="1.8"/><circle class="fly" style="animation-delay:-1s" cx="1040" cy="540" r="1.5"/>
         <circle class="fly" style="animation-delay:-3s" cx="140" cy="560" r="1.4"/>
       </g>
+      <g style="opacity:var(--bird-o);stroke:var(--bird)" fill="none" stroke-width="2.2" stroke-linecap="round">
+        <path class="bird" d="M300 150 q8 -8 16 0 q8 -8 16 0"/>
+        <path class="bird" style="animation-delay:-3s" d="M350 186 q6 -6 12 0 q6 -6 12 0"/>
+        <path class="bird" style="animation-delay:-6s" d="M760 118 q7 -7 14 0 q7 -7 14 0"/>
+      </g>
     </svg>
 
+    <div class="quick" role="group" aria-label="Theme">
+      <button data-t="Night" aria-pressed="false" aria-label="Night theme" title="Night"><svg viewBox="0 0 24 24"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/><path d="M17 3v3M15.5 4.5h3"/></svg></button>
+      <button data-t="Dusk" aria-pressed="true" aria-label="Dusk theme" title="Dusk"><svg viewBox="0 0 24 24"><path d="M6 17a6 6 0 0 1 12 0"/><path d="M2 17h20M5 21h14M12 5v3M4.6 9.6l2 2M19.4 9.6l-2 2"/></svg></button>
+      <button data-t="Day" aria-pressed="false" aria-label="Day theme" title="Day"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg></button>
+    </div>
     <div class="tools">
       <button class="tool" data-open="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span class="t">Settings</span></button>
       <button class="tool" data-open="help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.6v.6M12 17.2v.3"/></svg><span class="t">Help</span></button>
@@ -235,7 +281,7 @@ select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80
       <img class="emblem" src="../../assets/app-icon.png" alt="Gold tree growing from an open book">
       <div class="eyebrow">Fable II · recompiled for Windows</div>
       <h1 class="name" id="name"><span class="pre">Project</span><span class="initial">S</span>parrow</h1>
-      <svg class="flourish" viewBox="0 0 320 14" aria-hidden="true"><path d="M0 7h130M190 7h130" stroke="#d6b25e" stroke-width="1"/><path d="M160 1l6 6-6 6-6-6z" fill="#d6b25e"/><circle cx="140" cy="7" r="2" fill="#d6b25e"/><circle cx="180" cy="7" r="2" fill="#d6b25e"/></svg>
+      <svg class="flourish" viewBox="0 0 320 14" aria-hidden="true"><path d="M0 7h130M190 7h130" style="stroke:var(--gold)" stroke-width="1"/><g style="fill:var(--gold)"><path d="M160 1l6 6-6 6-6-6z"/><circle cx="140" cy="7" r="2"/><circle cx="180" cy="7" r="2"/></g></svg>
       <div class="motto" id="motto">Every hero begins as a sparrow.</div>
 
       <div class="seal-wrap">
@@ -266,6 +312,8 @@ select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80
       <div class="sheet">
         <section class="panel on" data-panel="settings">
           <header><h3>Settings</h3><button class="close" data-close>Close</button></header>
+          <h4>Appearance</h4>
+          <div class="row"><span>Theme<span class="hint">Night is darkest, Day is light</span></span><div class="seg" id="theme-seg"><button aria-pressed="false">Night</button><button aria-pressed="true">Dusk</button><button aria-pressed="false">Day</button></div></div>
           <h4>Display</h4>
           <div class="row"><label for="wm">Window</label><select id="wm"><option>Windowed</option><option selected>Borderless</option><option>Fullscreen</option></select></div>
           <div class="row"><label for="res">Resolution</label><select id="res"><option selected>720p</option><option>1080p</option><option>1440p</option><option>4K</option></select></div>
@@ -332,6 +380,19 @@ function setState(k){ current=k; const s=STATES[k];
 setState('Ready');
 $('#play').onclick=()=>{ const m={"Ready":"Launching Fable II…","Needs disc":"This opens a file picker for your .iso","Update ready":"Restarting to install 1.7.1…"}[current]; if(m) toast(m); };
 
+// Themes (Dusk is the default and has no attribute)
+const THEMES=['Night','Dusk','Day'];
+const themesEl=$('#themes'), themeSeg=$('#theme-seg');
+THEMES.forEach(t=>{ const b=document.createElement('button'); b.className='chip'; b.textContent=t; b.setAttribute('aria-pressed', t==='Dusk'); b.onclick=()=>setTheme(t); themesEl.append(b); });
+themeSeg.querySelectorAll('button').forEach(b=>b.onclick=()=>setTheme(b.textContent));
+$$('.quick button').forEach(b=>b.onclick=()=>setTheme(b.dataset.t));
+function setTheme(t){
+  const w=$('#win');
+  if(t==='Dusk') w.removeAttribute('data-theme'); else w.setAttribute('data-theme', t.toLowerCase());
+  [themesEl, themeSeg].forEach(g=>g.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b.textContent===t)));
+  $$('.quick button').forEach(b=>b.setAttribute('aria-pressed', b.dataset.t===t));
+}
+
 // Editions
 const eds=$('#eds'); const BLUR={original:true,enhanced:false,experimental:false};
 eds.querySelectorAll('.ed').forEach(b=>b.onclick=()=>{ pressGroup(eds,b); $('#custom').hidden=true; $('#blur').setAttribute('aria-checked', BLUR[b.dataset.p]); });
@@ -365,6 +426,3 @@ $('#report-btn').onclick=()=>$('#report').hidden=!$('#report').hidden;
 $('#folder-btn').onclick=()=>$('#folder').hidden=!$('#folder').hidden;
 $$('[data-toast]').forEach(b=>b.onclick=()=>toast(b.dataset.toast));
 </script>
-
-</body>
-</html>

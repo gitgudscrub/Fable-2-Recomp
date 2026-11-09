@@ -381,6 +381,64 @@ try
     Require(File.Exists(advPath + ".launcher-backup"), "fable2_config backup missing");
     Console.WriteLine("Advanced options (fable2_config.toml) roundtrip and preservation passed.");
 
+    // LauncherHome: player data lives outside the install folder, which updates replace.
+    string install = Path.Combine(testDirectory, "install");
+    string homeDir = Path.Combine(testDirectory, "home");
+    Directory.CreateDirectory(Path.Combine(install, "data", "scripts", "recomp"));
+    Directory.CreateDirectory(Path.Combine(install, "saves", "profile"));
+    File.WriteAllText(Path.Combine(install, "default.xex"), "xex");
+    Directory.CreateDirectory(Path.Combine(install, "data", "levels"));
+    File.WriteAllText(Path.Combine(install, "saves", "profile", "save1.dat"), "save");
+    File.WriteAllText(Path.Combine(install, "fable_2.toml"), "vsync = false\n");
+    File.WriteAllText(Path.Combine(install, "fable2_config.toml"), "# shipped template\n");
+    File.WriteAllText(Path.Combine(install, "data", "scripts", "recomp", "a.lua"), "print(1)");
+
+    var home = new LauncherHome(homeDir, install);
+    Require(LauncherHome.PathsEqual(home.GameFolder, Path.Combine(homeDir, "game")), "default game folder");
+    home.EnsureFolders();
+    home.MigrateFromPortableFolder();
+    Require(LauncherHome.PathsEqual(home.GameFolder, install), "portable game files were not adopted in place");
+    Require(File.Exists(Path.Combine(home.SavesFolder, "profile", "save1.dat")), "portable saves were not copied");
+    Require(File.Exists(Path.Combine(install, "saves", "profile", "save1.dat")), "migration must not delete the old saves");
+    Require(File.ReadAllText(home.GraphicsConfigPath).Contains("vsync = false"), "graphics settings were not copied");
+    Require(!File.Exists(home.RecompConfigPath), "untouched shipped template counted as player settings");
+    home.SeedRecompConfig();
+    Require(File.Exists(home.RecompConfigPath), "recomp config was not seeded");
+    Require(new LauncherHome(homeDir, install).Settings.Migrated, "migration ran but was not remembered");
+    Require(new LauncherHome(homeDir, install).MigrateFromPortableFolder() is null, "migration ran twice");
+
+    // Scripts are copied into a separate game folder, and only when changed.
+    home.Settings.GameFolder = Path.Combine(testDirectory, "gamecopy");
+    Require(home.SyncScripts() == 1, "script was not copied");
+    Require(home.SyncScripts() == 0, "unchanged script was copied again");
+    File.WriteAllText(Path.Combine(install, "data", "scripts", "recomp", "a.lua"), "print(2)");
+    Require(home.SyncScripts() == 1, "updated script was not copied");
+
+    // Moving the data folder keeps launcher.json in the home folder.
+    home.Settings.GameFolder = null;
+    home.Save();
+    string moved = Path.Combine(testDirectory, "moved");
+    home.MoveDataFolder(moved);
+    Require(File.Exists(Path.Combine(moved, "saves", "profile", "save1.dat")), "saves did not move");
+    Require(File.Exists(home.SettingsPath) && !File.Exists(Path.Combine(moved, "launcher.json")), "launcher.json moved");
+    Require(LauncherHome.PathsEqual(new LauncherHome(homeDir, install).DataFolder, moved), "new data folder not remembered");
+    RequireThrows(() => home.MoveDataFolder(Path.Combine(moved, "inner")), "moved the data folder into itself");
+    Directory.CreateDirectory(Path.Combine(testDirectory, "busy"));
+    File.WriteAllText(Path.Combine(testDirectory, "busy", "x.txt"), "x");
+    RequireThrows(() => home.MoveDataFolder(Path.Combine(testDirectory, "busy")), "moved into a non-empty folder");
+    Console.WriteLine("Data folder migration, script sync and folder moves passed.");
+
+    // Editions: matching decides whether the ribbon shows "Custom changes".
+    var stock = new Fable2ConfigValues();
+    Require(Edition.Original.Matches("720p", "1", "-1", "none", "30", stock), "Original defaults should match");
+    stock.DisableMotionBlur = true;
+    Require(!Edition.Original.Matches("720p", "1", "-1", "none", "30", stock), "motion blur change not detected");
+    Require(Edition.Find("nonsense") == Edition.Original && Edition.Find("enhanced") == Edition.Enhanced, "edition lookup");
+    foreach (Edition edition in Edition.All)
+        GraphicsSettings.Create(edition.Resolution, edition.RenderScale, edition.Anisotropic, edition.AntiAliasing,
+            "borderless", true, edition.FrameLimit);   // throws if an edition uses an unsupported value
+    Console.WriteLine("Edition matching and validity passed.");
+
     if (args.Length > 0)
     {
         GameCompatibility compatibility = GameCompatibilityInspector.Inspect(args[0]);

@@ -1,6 +1,6 @@
 # Velopack installer and auto-update
 
-Goal: players download one small `Fable2Recomp-Setup.exe` from the fork's
+Goal: players download one small `ProjectSparrow-Setup.exe` from the fork's
 GitHub releases. It installs the launcher and the recompiled game, asks for
 their own Fable 2 GOTY ISO once, and from then on updates itself in place.
 Nothing distributed ever contains game content (no ISO, no `default.xex`,
@@ -8,9 +8,9 @@ no `data/` from the disc).
 
 ## Constraints found in the code
 
-- Velopack installs to `%LOCALAPPDATA%\Fable2Recomp\current\` and **replaces
+- Velopack installs to `%LOCALAPPDATA%\ProjectSparrow\current\` and **replaces
   `current\` on every update**; uninstall deletes the whole
-  `%LOCALAPPDATA%\Fable2Recomp\` folder.
+  `%LOCALAPPDATA%\ProjectSparrow\` folder.
 - Today everything lives next to `fable_2.exe`:
   - game content: the launcher extracts the ISO into `AppContext.BaseDirectory`
     (`MainWindow.xaml.cs`, `outDir = AppContext.BaseDirectory`)
@@ -29,13 +29,13 @@ no `data/` from the disc).
 ## Target layout
 
 ```
-%LOCALAPPDATA%\Fable2Recomp\              <- Velopack owned, wiped on update/uninstall
+%LOCALAPPDATA%\ProjectSparrow\              <- Velopack owned, wiped on update/uninstall
   Update.exe
   current\  Fable2Launcher.exe fable_2.exe *.dll fable2_build.json
             defaults\fable2_config.toml  scripts\recomp\*.lua
   packages\ (cached full/delta nupkgs)
 
-%LOCALAPPDATA%\Fable2Recomp-Data\          <- ours, never touched by Velopack
+%LOCALAPPDATA%\ProjectSparrow-Data\          <- ours, never touched by Velopack
   launcher.json        (launcher settings, chosen game folder)
   fable2_config.toml   fable_2.toml
   saves\  cache\  logs\
@@ -84,7 +84,7 @@ caused save corruption (likely OneDrive sync). LocalAppData isn't synced.
 - Delete `UpdateChecker.cs`; read the version from `UpdateManager.CurrentVersion`.
 - Running outside Velopack (dev builds, old zips): `IsInstalled == false` -> no
   update UI, all else works.
-- Uninstall hook: leave `Fable2Recomp-Data` alone (saves + 7 GB of game data);
+- Uninstall hook: leave `ProjectSparrow-Data` alone (saves + 7 GB of game data);
   show where it is so the player can delete it.
 
 ## Phase 4: packaging and release
@@ -95,7 +95,7 @@ caused save corruption (likely OneDrive sync). LocalAppData isn't synced.
    `default.xex`, `*.xex`, or a disc `data/` path other than
    `data/scripts/recomp` ends up there.
 2. `vpk download github --repoUrl <fork>` (previous release, for deltas).
-3. `vpk pack --packId Fable2Recomp --packVersion <tag> --packDir stage
+3. `vpk pack --packId ProjectSparrow --packVersion <tag> --packDir stage
    --mainExe Fable2Launcher.exe --icon assets/app-icon.ico`
    (+ `--signParams` once signing exists).
 4. `vpk upload github --repoUrl <fork> --publish --releaseName v<tag>
@@ -124,7 +124,7 @@ caused save corruption (likely OneDrive sync). LocalAppData isn't synced.
 - **Update source**: GitHub Releases on the public fork
   (gitgudscrub/Fable-2-Recomp); release builds are publicly downloadable.
 
-- **Data folder**: default `%LOCALAPPDATA%\Fable2Recomp-Data`, with a
+- **Data folder**: default `%LOCALAPPDATA%\ProjectSparrow-Data`, with a
   "Change folder" button in the launcher (moves game data/saves, or just
   repoints for game data on another drive).
 - **Channels**: `stable` and `beta`, player-switchable in the launcher.

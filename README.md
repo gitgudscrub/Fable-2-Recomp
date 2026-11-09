@@ -9,13 +9,33 @@ Recompilation of Fable 2 (Xbox 360, title ID 4D5307F1) using the [ReXGlue SDK](h
 # Playing the game
 
 You need your own Fable 2 GOTY disc image (`.iso`) and about 7 GB of free space.
+Nothing on this page contains game files; the launcher copies them from your disc image.
 
-1. Download the `windows` zip from the [latest release](https://github.com/himdo/Fable-2-Recomp/releases/latest) and unzip it anywhere.
-2. Open `Fable2Launcher.exe`.
-3. Click **Extract from ISO** and pick your `.iso`. The game files go into the launcher's folder.
-4. Click **Play Fable II**.
+1. Download `ProjectSparrow-stable-Setup.exe` from the
+   [latest release](https://github.com/gitgudscrub/Fable-2-Recomp/releases/latest)
+   and run it. It installs **Project Sparrow** for your user (no admin needed) and
+   adds desktop and Start menu shortcuts. Windows may warn that the installer is
+   from an unknown publisher, because it isn't code-signed yet: choose
+   **More info → Run anyway**.
+2. Click the gold seal (**Choose disc image**) and pick your `.iso`. It's checked
+   against the supported versions, then the game files are copied into your data
+   folder.
+3. Click **Play**.
 
-**Updating:** unzip the new release into its own folder, copy your `saves` folder across and extract your `.iso` again.
+**Updating** is automatic. Project Sparrow checks for updates when it starts and
+downloads them in the background; when one is ready the seal reads
+**Restart / to update**. Updates are signed and checked before they install, and
+never touch your saves, settings or game files. Pick **Stable** (tested) or
+**Beta** (newest fixes first) under **Updates**.
+
+**Where your files are:** `%LOCALAPPDATA%\ProjectSparrow-Data` holds your saves,
+settings, logs and the game files. **Help → Change data folder** moves it, for
+example to a bigger drive. Uninstalling Project Sparrow leaves this folder alone,
+so delete it yourself if you want the space back.
+
+**Prefer a portable copy?** Each release also has `ProjectSparrow-stable-Portable.zip`:
+unzip it anywhere and run `Fable2Launcher.exe`. Portable copies don't update
+themselves.
 
 **Need help?** Ask on the [Discord](https://discord.gg/8TQUZpPNeR). To compile the game yourself, see [Building](#building).
 
@@ -54,29 +74,15 @@ Original GOTY USA/Europe and German GOTY dumps are supported by the default
 
 ## Windows launcher
 
-The optional WPF launcher detects the original game edition and configures
-output resolution, internal render scale, anisotropic filtering, FXAA, VSync,
-window/fullscreen mode, and separate 30/60/120/144/165/240/unlimited FPS limits for the game
-and for presenting to the display. It keeps its preferences
-in `launcher-settings.toml` and writes `fable_2.toml`, preserving other settings
-and a one-time backup. Preferences survive the runtime rewriting its config.
-It can also extract the game straight from a disc image: the **Extract from
-ISO** button opens a raw `.iso`, pulls out just `default.xex` first, checks its
-SHA-256 against the supported-version list, and only once it matches does it
-extract the rest of the disc (`default.xex` and `data/`) into the launcher's own
-folder, with a live progress screen and a Stop button. It reads Xbox 360 GDFX
-discs with the shared [X360Extract](tools/x360extract/) library, so its output
-matches the `x360extract` tool byte for byte — making the launcher the simplest
-way to get the game files in place, with no separate extractor tool.
-
-Packaged releases check GitHub for a newer release when the launcher opens and
-show a button that opens its page. Local builds don't check, and a failed check
-is ignored.
-
-The game-folder selection defaults to the launcher's own folder on first launch
-and then remembers the user's saved location. Game files can live separately;
-the launcher uses `--game_data_root`. Both applications are named Fable 2
-Recompiled and use new project-owned icons.
+**Project Sparrow** (`launcher/`) installs, updates and starts the game. It
+copies the game from your own disc image (checking `default.xex` against the
+supported versions first), offers Original, Enhanced and Experimental editions
+plus individual display and control settings, has Night, Dusk and Day themes,
+and bundles logs for bug reports. Player files live in a data folder outside the
+install, so updates can replace the program safely. Updates come from this
+fork's GitHub Releases through [Velopack](https://velopack.io), on a Stable or
+Beta channel, and every package is signed. Details:
+[launcher/README.md](launcher/README.md).
 
 
 # There is now a discord!
@@ -90,7 +96,7 @@ https://discord.gg/8TQUZpPNeR
 - **How to extract (built-in, recommended):** the launcher has an **Extract from ISO** button. Click **Extract from ISO** and pick your disc image (`.iso`). It first checks the iso against the supported-version list, and only once that matches does it extract disc (`default.xex` and `data/`) into the launcher's own folder. No separate tool is required.
 - **How to extract (external GUI tool):** alternatively, rip the disc to an ISO and open it with **[XboxImageExtractor](https://github.com/dromex1/XboxImageExtractor)** — a GUI tool for Xbox 360 game images. It lists the image's filesystem; select `default.xex` and `data` and extract them into the project root (`data` extract as folders).
 - **You must supply the game content yourself** (it is not in the repo): rip the Fable 2 GOTY (USA/EU) disc (see the hashes in [German GOTY support](docs/GERMAN_GOTY_SUPPORT.md)) and put `default.xex` and `data/` in the project root. The build does not copy this into the build directories   
-- **Saves live in `<build dir>\saves\`** — back that folder up to keep your progress, and copy it between build trees (Debug/Release) or machines to carry a save over.
+- **Saves live in `<data folder>\saves\`**: `%LOCALAPPDATA%\ProjectSparrow-Data\saves\` for an installed copy, or `<build dir>\saves\` when you run a build directly without `--user_root`. Back that folder up to keep your progress, and copy it between folders or machines to carry a save over.
 - The `--game_data_root <path>` override still points the content root at a different tree (e.g. to run from a shared content copy without staging); saves/cache/logs/config still land next to the exe unless `--user_root` is given.
 - Although this was made for the US / Europe GOTY version I have been able to run the following regions: Germany, France, Italy, Russia, and Spain. Your milage may very if you use those regions.
 
@@ -524,6 +530,11 @@ The build also accepts explicit overrides if you keep the SDK elsewhere:
 - A full clean build recompiles ~291 generated translation units (60,462 guest functions).
 
 ## Packaging a release
+
+Installer releases (Velopack, signed, auto-updating) are described step by step
+in [docs/RELEASING.md](docs/RELEASING.md).
+
+The older portable zip still works:
 
 ```
 build.cmd package

@@ -117,6 +117,12 @@ launcher's Velopack package) and `gh auth login`.
 
 ## Phase 5: docs and tests
 
+Done: README "Playing the game" covers Setup, the disc image, automatic
+updates and the data folder; docs/RELEASING.md is the publishing guide.
+End-to-end test on 2026-11-09: 0.1.0-beta.1 installed, found 0.1.0-beta.2
+(full + delta, both signed), installed it on launcher exit, reopened as beta.2.
+Test releases deleted afterwards.
+
 - README "Install" section: download Setup, pick ISO, done. Updating section
   becomes "automatic".
 - Tests: `DataPaths` resolution, script sync, config seeding/merge,

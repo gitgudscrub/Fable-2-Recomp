@@ -61,7 +61,7 @@ constexpr u64 kGuestCodeMax = 0x83500000ull;
 constexpr u64 kGuestStackMin = 0x83800000ull;
 constexpr u64 kGuestStackMax = 0x83C00000ull;
 
-// PPCContext layout (thirdparty/rexglue-sdk-src/include/rex/ppc/context.h):
+// PPCContext layout (thirdparty/rexglue-sdk/include/rex/ppc/context.h):
 //   struct alignas(0x40) PPCContext {
 //     r3@0x00 r0@0x08 r1@0x10 r2@0x18 r4@0x20 r5@0x28 ... r31@0xF8
 //     lr@0x100 ctr@0x108 xer@0x110 ...

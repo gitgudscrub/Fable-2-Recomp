@@ -126,7 +126,7 @@ class Fable2App : public rex::ReXApp {
 #endif  // FABLE2_REMOTE_CONTROL
 
   // Emulate the Xbox 360 Xenos GPU. Two plugins are staged next to the exe:
-  //   rexgpu-xenos[d].dll        -> D3D12 (prebuilt SDK plugin; the default)
+  //   rexgpu-xenos[d].dll        -> D3D12 (built with the game; the default)
   //   rexgpu-xenos-vulkan[d].dll -> Vulkan (built from the SDK source via
   //                                   tools/build_sdk_vulkan.cmd)
   // Swap the renderer at launch with --gpu_plugin, no rebuild required:
@@ -142,7 +142,7 @@ class Fable2App : public rex::ReXApp {
       config.graphics = rex::system::LoadGpuPlugin("xenos-vulkan", "vulkan");
     }
     // Otherwise leave config.graphics null so ReXApp loads
-    // LoadGpuPlugin("xenos") -> the prebuilt D3D12 plugin.
+    // LoadGpuPlugin("xenos") -> the D3D12 plugin.
 
     // Build on top of the default input system (SDL gamepad + NOP) and add a
     // synthetic "keyboard gamepad" driver so host keys/mouse buttons can drive

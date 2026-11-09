@@ -267,7 +267,7 @@ endif()
 
 # --- Recomp user config (fable2_config.toml) -------------------------------
 # Header-only toml++ parser, vendored from the same version the ReXGlue SDK
-# uses (thirdparty/rexglue-sdk-src/thirdparty/tomlplusplus), so the app's
+# uses (thirdparty/rexglue-sdk/thirdparty/tomlplusplus), so the app's
 # config loader does not depend on the SDK source tree being present.
 target_include_directories(fable_2 SYSTEM PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tomlplusplus/include)
@@ -358,8 +358,8 @@ add_custom_command(TARGET fable_2 POST_BUILD
             "$<TARGET_FILE_DIR:fable_2>/StartWithoutAudio.cmd")
 
 # --- Vulkan renderer: Stage 2 (source-built plugin, swappable at launch) --
-# The prebuilt plugin above (GPU_PLUGINS xenos) is D3D12-only. The Vulkan
-# backend is built from the (unmodified) SDK source via
+# The default plugin above (GPU_PLUGINS xenos) is D3D12-only. The Vulkan
+# backend is built from the SDK fork (thirdparty/rexglue-sdk) via
 # tools/build_sdk_vulkan.cmd (a Release build) into a separate tree. Stage it
 # next to the exe as rexgpu-xenos-vulkan.dll so the game can swap to Vulkan at
 # launch with --gpu_plugin=xenos-vulkan (see Fable2App::OnPreSetup) - no
@@ -384,11 +384,11 @@ set(FABLE2_SDK_ROOT "${REXGLUE_SDK_ROOT}")
 # (The candidate-existence checks below guard every copy, so the staging is
 # safe regardless of whether the official standalone codegen tool is used.)
 if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release")
-    # The SDK stages its outputs under its own out/win-amd64/Release/ tree
-    # (REXGLUE_ROOT based). We need both the source plugin AND the source
-    # (both-backends) runtime: the prebuilt 0.10.0 runtime is D3D12-only and is
-    # missing the 16 Vulkan symbols the source plugin imports, so the Vulkan
-    # path must run against the source runtime.
+    # tools/build_sdk_vulkan.cmd stages its outputs under the SDK's own
+    # out/win-amd64/Release/ tree (REXGLUE_ROOT based). We need both its plugin
+    # AND its (both-backends) runtime: the normal runtime staged by build.cmd is
+    # D3D12-only and is missing the Vulkan symbols the Vulkan plugin imports,
+    # so the Vulkan path must run against the Vulkan-enabled runtime.
     file(GLOB FABLE2_VULKAN_PLUGIN_CANDIDATES "${FABLE2_SDK_SRC}/out/win-amd64/Release/rexgpu-xenos.dll")
     file(GLOB FABLE2_VULKAN_RUNTIME_CANDIDATES "${FABLE2_SDK_SRC}/out/win-amd64/Release/rexruntime.dll")
     # Vulkan loader (vulkan-1.dll), resolved at configure time: prefer a
@@ -406,26 +406,24 @@ if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release")
         list(GET FABLE2_VULKAN_PLUGIN_CANDIDATES 0 FABLE2_VULKAN_PLUGIN)
         list(GET FABLE2_VULKAN_RUNTIME_CANDIDATES 0 FABLE2_VULKAN_RUNTIME)
         # Stage, next to the exe:
-        #   rexgpu-xenos-vulkan.dll  - source dual-backend plugin (D3D12+Vulkan;
-        #                              fable2.cmd copies it over rexgpu-xenos.dll)
-        #   rexruntime-vulkan.dll    - source (both-backends) runtime
-        #   rexruntime-d3d12.dll     - prebuilt 0.10.0 runtime (D3D12 backup)
-        #   rexgpu-xenos-prebuilt.dll- prebuilt 0.10.0 D3D12 plugin (pristine
-        #                              backup for `fable2.cmd prebuilt`)
+        #   rexgpu-xenos-vulkan.dll  - Vulkan-enabled plugin (loaded by name
+        #                              with --gpu_plugin=xenos-vulkan)
+        #   rexruntime-vulkan.dll    - Vulkan-enabled (both-backends) runtime
+        #   rexruntime-d3d12.dll     - copy of the build's own D3D12 runtime, so
+        #                              `fable2.cmd` can restore it after a
+        #                              Vulkan run overwrote rexruntime.dll
         #   fable2.cmd               - launcher that picks the runtime + backend
         #   vulkan-1.dll             - Vulkan loader (in-place LoadLibrary)
-        # The default rexruntime.dll (staged above by GPU_PLUGINS xenos) is the
-        # prebuilt one, so a plain `fable_2.exe` launch stays D3D12 (0.10.0)
-        # until fable2.cmd restages a source pair.
+        # A plain `fable_2.exe` launch uses whatever rexruntime.dll is in
+        # place - the D3D12 runtime unless `fable2.cmd vulkan` ran last.
         add_custom_command(TARGET fable_2 POST_BUILD
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_VULKAN_PLUGIN}"  "$<TARGET_FILE_DIR:fable_2>/rexgpu-xenos-vulkan.dll"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_VULKAN_RUNTIME}" "$<TARGET_FILE_DIR:fable_2>/rexruntime-vulkan.dll"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_SDK_ROOT}/bin/rexruntime.dll" "$<TARGET_FILE_DIR:fable_2>/rexruntime-d3d12.dll"
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_SDK_ROOT}/bin/rexgpu-xenos.dll" "$<TARGET_FILE_DIR:fable_2>/rexgpu-xenos-prebuilt.dll"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/tools/fable2.cmd" "$<TARGET_FILE_DIR:fable_2>/fable2.cmd"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${CMAKE_CURRENT_SOURCE_DIR}/tools/fable2-uncapped.cmd" "$<TARGET_FILE_DIR:fable_2>/fable2-uncapped.cmd"
           COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_VULKAN_LOADER}" "$<TARGET_FILE_DIR:fable_2>/vulkan-1.dll"
-          COMMENT "Staging Vulkan plugin/runtime + D3D12 backups + loader + launcher")
+          COMMENT "Staging Vulkan plugin/runtime + D3D12 runtime copy + loader + launcher")
     else()
         message(STATUS "Vulkan SDK not fully built (need rexgpu-xenos.dll + rexruntime.dll under ${FABLE2_SDK_SRC}/out/win-amd64/Release) - run tools/build_sdk_vulkan.cmd to enable 'fable2.cmd vulkan'")
     endif()
@@ -433,24 +431,11 @@ if(WIN32 AND CMAKE_BUILD_TYPE STREQUAL "Release")
         message(STATUS "vulkan-1.dll not found (checked out/tooling/vulkan-loader + System32) - 'fable2.cmd vulkan' will rely on the driver-installed loader")
     endif()
 
-    # Prefer the source-built runtime/plugin pair over the prebuilt 0.10.0
-    # pair (Release only): the source tree carries local fixes the prebuilt
-    # SDK lacks (e.g. the vsync present gate in the UI presenter, see
-    # docs/FPS_CAP_INVESTIGATION.md). The source plugin is dual-backend, so a
-    # plain `fable_2.exe` launch stays D3D12 ("any" picks D3D12).
-    if(FABLE2_VULKAN_PLUGIN AND FABLE2_VULKAN_RUNTIME)
-        add_custom_command(TARGET fable_2 POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_VULKAN_RUNTIME}" "$<TARGET_FILE_DIR:fable_2>/rexruntime.dll"
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FABLE2_VULKAN_PLUGIN}" "$<TARGET_FILE_DIR:fable_2>/rexgpu-xenos.dll"
-          COMMENT "Staging source-built runtime/plugin (overrides prebuilt 0.10.0)")
-    endif()
-
-    # Final override (Release only): stage the fresh source-built pair that
-    # tools/build_runtime_sdk.cmd just staged (build.cmd refreshes this on
-    # every run). Placed AFTER the Vulkan source-pair block above so the most
-    # recent build always wins - the Vulkan block reads the SDK's
-    # out/win-amd64/Release/ tree, which goes stale whenever a D3D12-only SDK
-    # rebuild happens (the two share the SDK output tree, last build wins).
+    # Stage the fresh runtime/plugin pair that tools/build_runtime_sdk.cmd just
+    # staged (build.cmd refreshes this on every run), so the default
+    # rexruntime.dll / rexgpu-xenos.dll always match the build. The Vulkan
+    # files above come from a separate, possibly older, tools/build_sdk_vulkan.cmd
+    # run and are only used through `fable2.cmd vulkan`.
     set(FABLE2_TOOLING_RUNTIME_DIR "${CMAKE_CURRENT_SOURCE_DIR}/out/tooling/runtime-sdk/win-amd64/bin")
     if(EXISTS "${FABLE2_TOOLING_RUNTIME_DIR}/rexruntime.dll" AND EXISTS "${FABLE2_TOOLING_RUNTIME_DIR}/rexgpu-xenos.dll")
         add_custom_command(TARGET fable_2 POST_BUILD

@@ -20,7 +20,7 @@ rem   fable2-functrace.cmd d3d12 82B9 subs  D3D12, address-range naming mode
 rem   fable2-functrace.cmd summary          summary file only, no trace log
 rem   fable2-functrace.cmd trace            trace log only, no summary file
 rem
-rem   <backend>  d3d12 (default) | vulkan | prebuilt  (passed to fable2.cmd)
+rem   <backend>  d3d12 (default) | vulkan  (passed to fable2.cmd)
 rem   <filter>   any other argument: sets FABLE2_FUNC_TRACE_FILTER (substring
 rem              match; e.g. Story_, SwitchDispatch, or 82B9 with subs)
 rem   subs       keyword: sets FABLE2_FUNC_TRACE_SUBS_ONLY=1, dropping
@@ -58,8 +58,6 @@ for %%A in (%*) do (
         if not defined BACKEND set "BACKEND=d3d12"
     ) else if /i "%%A"=="vulkan" (
         if not defined BACKEND set "BACKEND=vulkan"
-    ) else if /i "%%A"=="prebuilt" (
-        if not defined BACKEND set "BACKEND=prebuilt"
     ) else if not defined FILTER (
         set "FILTER=%%A"
     )
@@ -108,18 +106,18 @@ if "%SUBSONLY%"=="1" (
 
 if exist "fable2.cmd" goto full_launcher
 
-rem Debug builds: no fable2.cmd staged; the prebuilt D3D12 runtime/plugin
-rem pair is already next to the exe - launch it directly.
+rem No fable2.cmd staged (Debug builds, or the Vulkan SDK not built): the
+rem build's D3D12 runtime/plugin pair is already next to the exe - launch it
+rem directly.
 if not defined BACKEND goto launch_debug
 if /i "%BACKEND%"=="d3d12" goto launch_debug
-if /i "%BACKEND%"=="prebuilt" goto launch_debug
 echo Note: no fable2.cmd here %BACKEND% backend ignored. 1>&2
 :launch_debug
 "fable_2.exe" --gpu_plugin=xenos
 goto done
 
-rem Full launcher present (Release builds): stage the right runtime/plugin
-rem pair and forward the backend selection.
+rem Full launcher present (Release builds with the Vulkan SDK built): stage
+rem the right runtime and forward the backend selection.
 :full_launcher
 if not defined BACKEND (
     call fable2.cmd

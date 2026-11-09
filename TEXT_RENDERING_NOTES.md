@@ -417,7 +417,7 @@ UIText_RenderElement (0x82C0A6A0)  [r31=element, r30=render ctx]
 - The "uv" (`obj+0x08`) is a **GPU shared-memory offset** (`0xF0000000–0xFFFFFFFF`),
   all zeros at dump time — NOT a font-atlas UV.
 - Fable 2 does **NOT** use XAPI graphics; the host backend is D3D12
-  (`thirdparty/rexglue-sdk-src/src/graphics/d3d12/`).
+  (`thirdparty/rexglue-sdk/src/graphics/d3d12/`).
 - Glyph data (64B at `0x404DDxxx`) is **identical per glyph** except position
   words at `+0x20`/`+0x30`.
 

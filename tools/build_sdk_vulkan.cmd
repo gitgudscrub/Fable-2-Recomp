@@ -1,7 +1,7 @@
 @echo off
 rem ===========================================================================
-rem Build the ReXGlue SDK's Vulkan GPU plugin from the SDK source + this
-rem project's local patch (thirdparty/rexglue-sdk-local.patch).
+rem Build the ReXGlue SDK's Vulkan GPU plugin from the project's SDK fork
+rem (thirdparty/rexglue-sdk submodule) - the same source the game builds from.
 rem
 rem Uses a thin CMake wrapper (tools/vulkan_sdk) that add_subdirectory()s the
 rem SDK, which skips the SDK's top-level install/export step (it fails on a
@@ -12,7 +12,7 @@ rem plus its deps (rexruntime, glslang, VMA, SPIRV-Tools, Vulkan loader). The
 rem SDK stages its outputs under its own out/ tree (REXGLUE_ROOT based).
 rem
 rem The game selects the renderer at launch via --gpu_plugin:
-rem   --gpu_plugin=xenos           -> D3D12 (prebuilt plugin, default)
+rem   --gpu_plugin=xenos           -> D3D12 (the normal build's plugin, default)
 rem   --gpu_plugin=xenos-vulkan    -> Vulkan (this source-built plugin)
 rem
 rem Toolchain: clang + lld + Ninja Multi-Config (matches the SDK win-amd64
@@ -22,9 +22,8 @@ setlocal
 set "REPO=%~dp0.."
 set "WRAPPER=%REPO%\tools\vulkan_sdk"
 set "OUT=%REPO%\out\build\vulkan-sdk"
-rem SDK source: the thirdparty\rexglue-sdk submodule (your fork, branch
-rem vsync-present-gate); its build outputs land in SDKOUT (under the SDK
-rem source root).
+rem SDK source: the thirdparty\rexglue-sdk submodule (the fork, branch
+rem fable2); its build outputs land in SDKOUT (under the SDK source root).
 set "SDKSRC=%REPO%\thirdparty\rexglue-sdk"
 if not exist "%SDKSRC%\CMakeLists.txt" set "SDKSRC=%REPO%\..\rexglue-sdk"
 set "SDKOUT=%SDKSRC%\out"

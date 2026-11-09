@@ -10,8 +10,8 @@
 # Consuming the SDK via add_subdirectory() makes PROJECT_IS_TOP_LEVEL false,
 # which skips that install step entirely. We only need the built
 # rexgpu-xenos.dll (Vulkan), so skipping install/packaging is fine. The
-# wrapper modifies nothing - the SDK tree it consumes is stock upstream plus
-# this project's tracked local patch (thirdparty/rexglue-sdk-local.patch).
+# wrapper modifies nothing - the SDK tree it consumes is the project's fork
+# (thirdparty/rexglue-sdk submodule, gitgudscrub/rexglue-sdk branch fable2).
 cmake_minimum_required(VERSION 3.25)
 
 # C/CXX enabled so the SDK's C and C++ dependencies configure. The compiler
@@ -27,9 +27,10 @@ endif()
 
 # Both backends on. The resulting rexruntime.dll is a SUPERSET that exports both
 # the D3D12 symbols (so the game + the D3D12 plugin load against it) and the
-# Vulkan symbols (so the source Vulkan plugin loads against it). The prebuilt
-# 0.10.0 runtime is D3D12-only and is missing the 16 Vulkan symbols the plugin
-# needs, so the game must run against this source-built runtime instead.
+# Vulkan symbols (so the Vulkan plugin loads against it). The normal runtime
+# that build.cmd stages is D3D12-only and is missing the Vulkan symbols the
+# plugin needs, so a Vulkan run must use this runtime instead (fable2.cmd
+# vulkan swaps it in).
 set(REXGLUE_USE_VULKAN ON CACHE BOOL "Enable Vulkan graphics backend" FORCE)
 set(REXGLUE_USE_D3D12 ON CACHE BOOL "Enable D3D12 graphics backend" FORCE)
 

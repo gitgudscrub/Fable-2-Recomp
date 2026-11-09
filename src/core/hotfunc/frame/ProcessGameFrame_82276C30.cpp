@@ -97,7 +97,12 @@
 //     // drain / yield: either run the threshold check path, or yield
 //     if (thresholdMet) { /* indirect call via vtable */ } else YieldAndCheckThreshold();
 //   }
+#include <windows.h>
+
+#include <cmath>
+
 #include "fable_2_pch.h"
+#include "fable2_config.h"
 
 extern "C" void CallActivePlayerMethod_821A11E8(PPCContext& ctx, uint8_t* base);
 extern "C" void ConstructRefCounted_8222CF18(PPCContext& ctx, uint8_t* base);
@@ -140,6 +145,55 @@ extern "C" void sub_8243A2C8(PPCContext& ctx, uint8_t* base);
 #define SV16(x, y)  (*(uint16_t*)(REX_RAW_ADDR(x)) = __builtin_bswap16(y))
 #define SV32(x, y)  (*(uint32_t*)(REX_RAW_ADDR(x)) = __builtin_bswap32(y))
 #define SV64(x, y)  (*(uint64_t*)(REX_RAW_ADDR(x)) = __builtin_bswap64(y))
+
+// ===== Sleeping until the next simulation step (host-only, [perf] game_loop_sleep) =====
+// The frame loop is a fixed-step loop. compute_loop_timing() works out
+//   due = trunc((now - start) * rate + base) - done        (r30, cr0)
+// with now = f31, start = f26, rate = f25 (steps per second), base = r23 and
+// done = r28, all in guest seconds. With no step due the guest just calls
+// NtYieldExecution and loops, so the thread spins at 100% of a core between
+// steps. The next step is due once now >= start + (done + 1 - base) / rate,
+// so sleep on a high-resolution waitable timer until shortly before that and
+// let the original yield loop cover the last part. Reads registers only;
+// guest state is untouched, and the yield still runs afterwards.
+namespace {
+
+// Wake this long before the step is due; covers timer lateness (high-
+// resolution timers are typically 0.5 ms late at worst).
+constexpr double kWakeEarlySeconds = 0.0008;
+// Never sleep longer than this in one go, so a wrong estimate (or a guest
+// clock running faster than real time) costs at most a few milliseconds.
+constexpr double kMaxSleepSeconds = 0.008;
+
+HANDLE StepTimer() {
+	static thread_local HANDLE timer = [] {
+		HANDLE t = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+		                                  TIMER_ALL_ACCESS);
+		return t ? t : INVALID_HANDLE_VALUE;  // no high-resolution timers: keep spinning
+	}();
+	return timer;
+}
+
+void SleepUntilNextStep(const PPCContext& ctx) {
+	if (!fable2::config::Get().game_loop_sleep) return;
+	const double rate = ctx.f25.f64;
+	if (!(rate > 0.0) || !std::isfinite(rate)) return;
+	const int32_t steps_ahead = static_cast<int32_t>(ctx.r28.u32 - ctx.r23.u32) + 1;
+	const double due_at = ctx.f26.f64 + double(steps_ahead) / rate;
+	double sleep = due_at - ctx.f31.f64 - kWakeEarlySeconds;
+	if (!(sleep > 0.0)) return;
+	if (sleep > kMaxSleepSeconds) sleep = kMaxSleepSeconds;
+	HANDLE timer = StepTimer();
+	if (timer == INVALID_HANDLE_VALUE) return;
+	LARGE_INTEGER due;
+	due.QuadPart = -static_cast<LONGLONG>(sleep * 1e7);  // relative, 100 ns units
+	if (due.QuadPart == 0) return;
+	if (SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+		WaitForSingleObject(timer, INFINITE);
+	}
+}
+
+}  // namespace
 // Cached reference to the SDK's global critical region mutex: same mutex and
 // same lock/unlock order as REX_ENTER/LEAVE_GLOBAL_LOCK, without the
 // per-use DLL call to global_critical_region::mutex().
@@ -1078,6 +1132,7 @@ extern "C" void ProcessGameFrame_82276C30(PPCContext& __restrict ctx, uint8_t* b
 	process_frame_work(ctx, base);
 	} else {
 	// --- (no work on this path) yield + re-check the frame threshold ---
+	SleepUntilNextStep(ctx);  // host-only: see above
 	// bl 0x82cbd098
 	ctx.lr = 0x8227720C;
 	Yield_82CBD098(ctx, base);

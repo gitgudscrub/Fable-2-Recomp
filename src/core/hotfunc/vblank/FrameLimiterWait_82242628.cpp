@@ -28,8 +28,13 @@
 // Deliberate deviation from the guest: the guest loop back-edges to
 // GpuProgressCheck with no delay between iterations. This version interposes
 // a short CPU pause when still not ready, so the emulated loop does not
-// hammer the counter as aggressively. The pause touches no guest state, so
-// the register-state invariants above still hold.
+// hammer the counter as aggressively. After a few dozen pauses it blocks
+// instead ([perf] frame_limiter_sleep): WaitOnAddress on the counter, which
+// the SDK's command processor wakes (WakeByAddressAll) right after its
+// EVENT_WRITE_SHD store, with a 1 ms timeout so the other exits of the loop
+// (GpuProgressCheck's flag and timeout checks) are still seen promptly. The
+// pause and the wait touch no guest state, so the register-state invariants
+// above still hold.
 // Guest structure (addresses are the guest instructions):
 //   0x82242628  prologue: save r29/lr, 144-byte frame, r31=limit (r3),
 //               r30=now (r4), r29=flag (r5).
@@ -47,6 +52,9 @@
 #include <windows.h>
 
 #include "fable_2_pch.h"
+#include "fable2_config.h"
+
+#pragma comment(lib, "Synchronization.lib")
 
 extern "C" void FastHelper_821E8D20(PPCContext& ctx, uint8_t* base);
 extern "C" void GpuProgressCheck_82B9BF90(PPCContext& ctx, uint8_t* base);
@@ -83,6 +91,14 @@ constexpr uint32_t kArgTimebase = 100;
 // PAUSE instructions between not-ready iterations of the wait loop.
 // (The guest loop has no delay; on hardware this is a tight spin.)
 constexpr int kPauseSpins = 32;
+// Not-ready iterations that only pause before the loop starts blocking
+// (about 30-50 us of spinning: short waits stay as fast as before).
+constexpr int kSpinIterations = 48;
+// Host layout of guest memory (rex::memory::Memory): the physical view the
+// command processor writes through (Memory::TranslatePhysical) starts 4 GiB
+// above the virtual view `base`, and the 0xE0000000 physical heap is offset
+// by 0x1000 (PhysicalHeap::GetPhysicalAddress).
+constexpr uint64_t kPhysicalViewOffset = 0x100000000ull;
 
 // Guest return addresses (the instruction after each bl).
 constexpr uint32_t kRetSaveGpr = 0x82242630;
@@ -166,6 +182,47 @@ void SpinPause() {
   for (int i = 0; i < kPauseSpins; ++i) YieldProcessor();
 }
 
+// Host address of the counter as the command processor writes it, or null
+// when the counter is not in a physical heap (then just spin).
+volatile uint32_t* CounterPhysicalView(uint32_t counter, uint8_t* base) {
+  uint32_t physical;
+  if (counter >= 0xE0000000u) {
+    physical = (counter - 0xE0000000u + 0x1000u) & 0x1FFFFFFFu;
+  } else if (counter >= 0xA0000000u) {
+    physical = counter & 0x1FFFFFFFu;
+  } else {
+    return nullptr;
+  }
+  return reinterpret_cast<volatile uint32_t*>(base + kPhysicalViewOffset + physical);
+}
+
+// One not-ready iteration of the wait loop: pause, or after kSpinIterations
+// block until the command processor next writes the counter (or 1 ms).
+// Reads guest memory only; no guest registers or memory are changed.
+void WaitForCounter(PPCContext& ctx, uint8_t* base, int iteration) {
+  if (iteration < kSpinIterations || !fable2::config::Get().frame_limiter_sleep) {
+    SpinPause();
+    return;
+  }
+  const uint32_t counter = REX_LOAD_U32(ctx.r31.u32 + kCounterPtrOffset);
+  volatile uint32_t* physical = CounterPhysicalView(counter, base);
+  if (!physical) {
+    SpinPause();
+    return;
+  }
+  uint32_t observed = *physical;
+  // Same memory through two views; if they ever disagree the layout
+  // assumption above is wrong, so do not block on it.
+  if (observed != *reinterpret_cast<volatile uint32_t*>(REX_RAW_ADDR(counter))) {
+    SpinPause();
+    return;
+  }
+  // WaitOnAddress returns at once if the value already differs from
+  // `observed`. A write that lands between the readiness test and the read
+  // above is not missed for long: the 1 ms timeout bounds it.
+  WaitOnAddress(physical, &observed, sizeof(observed), 1);
+}
+
 // addi r1,r1,144; b __restgprlr_29 (0x82242714).
 void Epilogue(PPCContext& ctx, uint8_t* base) {
   ctx.r1.s64 = ctx.r1.s64 + kFrameSize;
@@ -205,6 +262,7 @@ extern "C" void FrameLimiterWait_82242628(PPCContext& __restrict ctx, uint8_t* b
   // sub_82B9BEC8. The loop leaves on GpuProgressCheck == 0 (beq 0x8224270C)
   // or once the counter reaches the deadline (blt cr6,0x822426E0 not taken).
   BuildArgBlock(ctx, base);
+  int not_ready = 0;
   while (ctx.cr6.lt != 0) {
     ctx.r3.s64 = ctx.r1.s64 + kArgBlock;
     ctx.lr = kRetProgressCheck;
@@ -215,7 +273,7 @@ extern "C" void FrameLimiterWait_82242628(PPCContext& __restrict ctx, uint8_t* b
     }
     ReadinessR9R11(ctx, base);
     if (ctx.cr6.lt != 0) {
-      SpinPause();
+      WaitForCounter(ctx, base, not_ready++);
     }
   }
 

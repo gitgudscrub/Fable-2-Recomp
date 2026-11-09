@@ -240,6 +240,20 @@ faster_render_targets = true
 # Default: 1
 hotfunc_yield_every = 1
 
+# Game Loop Sleep: between the game's fixed simulation steps its main loop
+# used to spin on a yield until the next step was due, keeping a CPU core at
+# 100%. On, it sleeps on a high-resolution timer until just before the next
+# step, then yields for the last fraction of a millisecond as before. Frees
+# most of a core (useful on laptops and handhelds) with the same step timing.
+# false = spin as the original game does. Default: true
+game_loop_sleep = true
+
+# Frame Limiter Sleep: the render thread waits for the emulated GPU to catch
+# up before starting the next frame. It used to spin on a CPU core while it
+# waited; on, it sleeps and the GPU thread wakes it the moment it moves on.
+# Same frame pacing, less CPU heat. false = spin as before. Default: true
+frame_limiter_sleep = true
+
 # Refresh GPU Memory Each Frame (SDK cvar clear_memory_page_state): at the end of
 # every frame the SDK forgets which guest memory it has already copied to the
 # GPU, so everything the next frame uses is copied again. It is a safety net for

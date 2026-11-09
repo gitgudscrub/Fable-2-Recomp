@@ -213,6 +213,14 @@ struct Values {
   // original (yield every call), 0 = never yield. Larger = fewer context
   // switches, less frequent CPU rotation to other guest threads.
   int32_t hotfunc_yield_every = 1;
+  // [perf] game_loop_sleep: when the game thread's fixed-step loop has no
+  // tick due yet, sleep until just before the next one instead of spinning
+  // on NtYieldExecution (see ProcessGameFrame_82276C30.cpp).
+  bool game_loop_sleep = true;
+  // [perf] frame_limiter_sleep: the render thread's frame limiter blocks on
+  // the GPU progress counter instead of spinning (see
+  // FrameLimiterWait_82242628.cpp; needs the SDK's EVENT_WRITE_SHD wake).
+  bool frame_limiter_sleep = true;
   // [perf] refresh_gpu_memory_each_frame: false seeds the SDK cvar
   // clear_memory_page_state off (see the config file).
   bool refresh_gpu_memory_each_frame = false;

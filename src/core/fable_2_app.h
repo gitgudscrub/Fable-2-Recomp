@@ -33,6 +33,7 @@
 #include "fable2_config.h"
 #include "fable2_fit_window.h"
 #include "fable2_patches.h"
+#include "fable2_texture_pack.h"
 // #include "fable2_deadbeef_overlay.h"
 // 30fps-cap instrumentation (writes fps_probe.log next to the exe). Disabled
 // now that the cap is lifted via REX_VSYNC=0 (see tools/fable2-uncapped.cmd).
@@ -244,6 +245,8 @@ class Fable2App : public rex::ReXApp {
         }
       }
     }
+    // [graphics] texture pack cvars live in the GPU plugin too.
+    fable2::texturepack::SeedCvars(fable2::UserRoot());
     // The fast memexport readback hands the guest the previous draw's output, so
     // moving geometry uses stale data and flickers. With both shaders on the CPU
     // nothing is left to read back in testing, so the exact path costs nothing.

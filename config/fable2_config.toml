@@ -261,3 +261,22 @@ frame_limiter_sleep = true
 # FPS indoors with nothing missing on screen in testing.
 # false = trust the write tracking. Default: false
 refresh_gpu_memory_each_frame = false
+
+[graphics]
+# Texture Pack: shows replacement textures (for example AI-upscaled ones) from
+# the textures\replace folder next to fable2_config.toml in place of the
+# originals. Switch between the pack ("Modern") and the original textures
+# ("Classic") while playing with texture_pack_toggle_key.
+# true = Modern, false = Classic. Default: true
+texture_pack = true
+
+# Key that switches between the texture pack and the original textures in game
+# (a key name such as "F8", "F6" or "Home"; empty = no key). F3, F4, F5, F7
+# and F9 already open other tools.
+# Default: "F8"
+texture_pack_toggle_key = "F8"
+
+# Texture Dump: writes every game texture once, as it is first seen, to the
+# textures\dump folder as a DDS file. These are the input for the upscaling
+# tool. The first town is about 80 MB. Default: false
+texture_dump = false

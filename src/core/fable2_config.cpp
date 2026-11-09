@@ -294,6 +294,25 @@ frame_limiter_sleep = true
 # FPS indoors with nothing missing on screen in testing.
 # false = trust the write tracking. Default: false
 refresh_gpu_memory_each_frame = false
+
+[graphics]
+# Texture Pack: shows replacement textures (for example AI-upscaled ones) from
+# the textures\replace folder next to fable2_config.toml in place of the
+# originals. Switch between the pack ("Modern") and the original textures
+# ("Classic") while playing with texture_pack_toggle_key.
+# true = Modern, false = Classic. Default: true
+texture_pack = true
+
+# Key that switches between the texture pack and the original textures in game
+# (a key name such as "F8", "F6" or "Home"; empty = no key). F3, F4, F5, F7
+# and F9 already open other tools.
+# Default: "F8"
+texture_pack_toggle_key = "F8"
+
+# Texture Dump: writes every game texture once, as it is first seen, to the
+# textures\dump folder as a DDS file. These are the input for the upscaling
+# tool. The first town is about 80 MB. Default: false
+texture_dump = false
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -356,8 +375,8 @@ bool Load(const std::filesystem::path& path) {
 
   // Warn about unknown top-level sections (usually a typo or a file written
   // for a newer build).
-  static constexpr std::array<std::string_view, 4> kKnownSections = {
-      "general", "input", "patches", "perf"};
+  static constexpr std::array<std::string_view, 5> kKnownSections = {
+      "general", "input", "patches", "perf", "graphics"};
   for (const auto& [key, value] : root) {
     const bool known =
         std::ranges::find(kKnownSections, key.str()) != kKnownSections.end();
@@ -496,6 +515,18 @@ bool Load(const std::filesystem::path& path) {
     values.refresh_gpu_memory_each_frame = Read<bool>(
         perf_table, "perf", "refresh_gpu_memory_each_frame", "boolean",
         values.refresh_gpu_memory_each_frame);
+  }
+  const toml::path graphics_path{"graphics"};
+  const auto graphics = root[graphics_path];
+  if (graphics.is_table()) {
+    const toml::table& graphics_table = *graphics.as_table();
+    values.texture_pack = Read<bool>(graphics_table, "graphics", "texture_pack", "boolean",
+                                     values.texture_pack);
+    values.texture_pack_toggle_key =
+        Read<std::string>(graphics_table, "graphics", "texture_pack_toggle_key", "string",
+                          values.texture_pack_toggle_key);
+    values.texture_dump = Read<bool>(graphics_table, "graphics", "texture_dump", "boolean",
+                                     values.texture_dump);
   }
 
   g_values = values;

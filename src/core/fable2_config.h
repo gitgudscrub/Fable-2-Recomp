@@ -224,6 +224,14 @@ struct Values {
   // [perf] refresh_gpu_memory_each_frame: false seeds the SDK cvar
   // clear_memory_page_state off (see the config file).
   bool refresh_gpu_memory_each_frame = false;
+  // [graphics] texture_pack: seeds the SDK cvar texture_replacement (true =
+  // replacement textures from <user root>/textures/replace are shown).
+  bool texture_pack = true;
+  // [graphics] texture_pack_toggle_key: switches texture_replacement in game
+  // (src/core/fable2_texture_pack.h). Empty = no key.
+  std::string texture_pack_toggle_key = "F8";
+  // [graphics] texture_dump: seeds the SDK cvar texture_dump.
+  bool texture_dump = false;
 };
 
 // Load the config from `path`.

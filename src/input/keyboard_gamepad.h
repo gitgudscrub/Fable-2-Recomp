@@ -48,6 +48,7 @@
 #include <rex/ui/keybinds.h>
 
 #include "fable2_config.h"  // direct_mouse_look toggle
+#include "fable2_texture_pack.h"  // Classic/Modern graphics toggle key
 #include "mouse_look.h"     // fable2::mouselook (accumulates the mouse delta)
 
 #ifdef _WIN32
@@ -270,6 +271,8 @@ class KeyboardGamepadDriver final : public rex::input::InputDriver {
     // probe, so this just latches a flag. Runs even while the console (F4) is
     // open (F5 is a host-level developer command, not gamepad input).
     fable2::f5lua::poll_f5(focused);
+    // Texture pack toggle (default F8): Classic <-> Modern graphics.
+    fable2::texturepack::PollToggle(focused);
 
     // Debug-console toggle key (default F4). Pressing it opens/closes the menu;
     // while the menu is open we release the mouse lock (free cursor for the

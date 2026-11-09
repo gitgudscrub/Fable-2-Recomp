@@ -14,6 +14,9 @@
 param(
   [string[]]$Only = @(),
   [int]$LoadTimeoutSec = 90,
+  # Extra game arguments, e.g. '--texture_dump=true' to collect textures for the
+  # texture pack builder (tools/upscale_textures.py) on the same tour.
+  [string]$ExtraArgs = '',
   [string]$Build = 'E:\Fable 2\Fable-2-Recomp\out\build\win-amd64-release'
 )
 $ErrorActionPreference = 'Stop'
@@ -99,7 +102,7 @@ New-Item -ItemType Directory -Force (Join-Path $root 'console') | Out-Null
 Remove-Item (Join-Path $root 'console\in.txt') -ErrorAction SilentlyContinue
 $before = Get-Date
 # Uncapped: the menu presses below are timed in frames, as in bench.ps1.
-$script:p = Start-Process (Join-Path $Build 'fable_2.exe') -ArgumentList ("--game_data_root=`"$root`" --vsync=false --d3d12_log_pipeline_timing=true") -WorkingDirectory $Build -PassThru
+$script:p = Start-Process (Join-Path $Build 'fable_2.exe') -ArgumentList ("--game_data_root=`"$root`" --vsync=false --d3d12_log_pipeline_timing=true " + $ExtraArgs) -WorkingDirectory $Build -PassThru
 $results = @()
 try {
   $script:log = $null

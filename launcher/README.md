@@ -13,7 +13,7 @@ replaced by every update, so nothing the player owns is kept there.
 
 ```
 %LOCALAPPDATA%\ProjectSparrow-Data\        home folder, never moves
-  launcher.json                            data folder, game folder, channel, edition
+  launcher.json                            data folder, game folder, channel, edition, theme
   fable_2.toml  launcher-settings.toml     graphics settings
   fable2_config.toml                       keys, mouse, patches
   saves\  cache\  logs\
@@ -62,6 +62,15 @@ Settings an edition doesn't name keep the player's value. Changing anything an
 edition sets shows **Custom changes** on the ribbon. Settings are written when
 the page closes and before launch; unknown keys in every file are preserved
 and each file gets a one-time `.launcher-backup` before its first write.
+
+## Themes
+
+**Night** (darkest; the page becomes dark leather), **Dusk** (default) and
+**Day** (sunlit scene, sparrows instead of fireflies). Switch with the three
+buttons in the top-left corner or **Settings → Appearance**; the choice is
+saved in `launcher.json`. Colours live in `Themes.cs`: the brushes in
+`MainWindow.xaml` are the Dusk values and are read as `DynamicResource`, so a
+new colour must be added in both places.
 
 ## Help tools
 

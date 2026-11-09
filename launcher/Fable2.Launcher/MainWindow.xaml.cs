@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, string> _graphics = new(StringComparer.OrdinalIgnoreCase);
     private Fable2ConfigValues _recomp = new();
     private LauncherState _state;
+    private bool _applyingTheme;
     private bool _loading = true;
     private bool _dirty;
     private string _version = "dev build";
@@ -210,6 +211,7 @@ public partial class MainWindow : Window
             (edition.Id switch { "enhanced" => EditionEnhanced, "experimental" => EditionExperimental, _ => EditionOriginal })
                 .IsChecked = true;
             (_home.Settings.Channel == "beta" ? ChannelBeta : ChannelStable).IsChecked = true;
+        SetTheme(_home.Settings.Theme, save: false);
             if (fresh) _dirty = true;   // write the edition's settings on first save
         }
         finally { _loading = false; }
@@ -346,6 +348,29 @@ public partial class MainWindow : Window
         bool matches = Edition.Find(_home.Settings.Edition).Matches(TagOf(ResolutionCombo, ""), TagOf(RenderScaleCombo, ""),
             TagOf(AnisotropicCombo, ""), TagOf(AntiAliasingCombo, ""), TagOf(FrameLimitCombo, ""), _recomp);
         CustomMarker.Visibility = matches ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ThemeChecked(object sender, RoutedEventArgs e)
+    {
+        if (_applyingTheme || sender is not RadioButton { Tag: string theme }) return;
+        SetTheme(theme, save: !_loading);
+    }
+
+    /// <summary>Applies a theme and keeps the corner buttons and the Settings row in step.</summary>
+    private void SetTheme(string theme, bool save)
+    {
+        theme = Themes.Normalize(theme);
+        _applyingTheme = true;
+        try
+        {
+            Themes.Apply(this, theme);
+            (theme == Themes.Night ? QuickNight : theme == Themes.Day ? QuickDay : QuickDusk).IsChecked = true;
+            (theme == Themes.Night ? ThemeNight : theme == Themes.Day ? ThemeDay : ThemeDusk).IsChecked = true;
+        }
+        finally { _applyingTheme = false; }
+        if (_home.Settings.Theme == theme) return;
+        _home.Settings.Theme = theme;
+        if (save) try { _home.Save(); } catch (IOException) { } catch (UnauthorizedAccessException) { }
     }
 
     private void ChannelChecked(object sender, RoutedEventArgs e)

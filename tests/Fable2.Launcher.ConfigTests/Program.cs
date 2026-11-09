@@ -426,6 +426,11 @@ try
     Directory.CreateDirectory(Path.Combine(testDirectory, "busy"));
     File.WriteAllText(Path.Combine(testDirectory, "busy", "x.txt"), "x");
     RequireThrows(() => home.MoveDataFolder(Path.Combine(testDirectory, "busy")), "moved into a non-empty folder");
+    // Theme defaults to Dusk and is remembered.
+    Require(new LauncherSettings().Theme == "dusk", "default theme is not dusk");
+    home.Settings.Theme = "night";
+    home.Save();
+    Require(new LauncherHome(homeDir, install).Settings.Theme == "night", "theme was not remembered");
     Console.WriteLine("Data folder migration, script sync and folder moves passed.");
 
     // Editions: matching decides whether the ribbon shows "Custom changes".

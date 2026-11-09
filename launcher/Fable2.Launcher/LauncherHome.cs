@@ -16,6 +16,8 @@ public sealed class LauncherSettings
     public string? GameFolder { get; set; }
     public string Channel { get; set; } = "stable";
     public string Edition { get; set; } = "original";
+    /// <summary>Window theme: "night", "dusk" (default) or "day".</summary>
+    public string Theme { get; set; } = "dusk";
     public bool Migrated { get; set; }
 }
 

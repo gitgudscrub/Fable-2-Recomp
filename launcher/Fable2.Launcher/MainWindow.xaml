@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Project Sparrow" Width="1180" Height="740" MinWidth="980" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="#FF07140E"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource Night}"
         Icon="pack://application:,,,/Assets/app-icon.png"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal">
   <!-- Design: launcher/design/mockup.html. The window is a storybook scene: centred
@@ -29,6 +29,53 @@
     <SolidColorBrush x:Key="InkSoft" Color="#FF6A5C3D" />
     <SolidColorBrush x:Key="InkGreen" Color="#FF1F4A37" />
     <SolidColorBrush x:Key="Rule" Color="#FFD3C392" />
+    <!-- Theme brushes: Dusk values here; Themes.cs replaces them for Night and Day. -->
+    <SolidColorBrush x:Key="TitleBar" Color="#FF0A1A13" />
+    <SolidColorBrush x:Key="Pill" Color="#99071410" />
+    <SolidColorBrush x:Key="Well" Color="#CC071410" />
+    <SolidColorBrush x:Key="EdBg" Color="#B3071410" />
+    <SolidColorBrush x:Key="GoldLine" Color="#73D6B25E" />
+    <SolidColorBrush x:Key="GoldLineSoft" Color="#40D6B25E" />
+    <SolidColorBrush x:Key="ScrimBrush" Color="#73030A07" />
+    <SolidColorBrush x:Key="Hill1" Color="#FF163A2B" />
+    <SolidColorBrush x:Key="Tower" Color="#FF122F23" />
+    <SolidColorBrush x:Key="Hill2" Color="#FF0F2A1F" />
+    <SolidColorBrush x:Key="Hill3" Color="#FF0A1D16" />
+    <SolidColorBrush x:Key="Moon" Color="#D9EFE5C9" />
+    <SolidColorBrush x:Key="PageLine" Color="#FFD9C99F" />
+    <SolidColorBrush x:Key="CtlLine" Color="#FFBFAE80" />
+    <SolidColorBrush x:Key="WellPage" Color="#FFF6EED6" />
+    <SolidColorBrush x:Key="SwOff" Color="#FFE2D4AD" />
+    <SolidColorBrush x:Key="KnobOff" Color="#FFA99868" />
+    <SolidColorBrush x:Key="OnBg" Color="#FF1F4A37" />
+    <SolidColorBrush x:Key="OnText" Color="#FFEFE4C6" />
+    <SolidColorBrush x:Key="KnobOn" Color="#FFF1D98F" />
+    <SolidColorBrush x:Key="TabOnText" Color="#FF1F4A37" />
+    <LinearGradientBrush x:Key="SkyBrush" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#FF05110C" Offset="0" />
+      <GradientStop Color="#FF0D281D" Offset="0.5" />
+      <GradientStop Color="#FF1C4130" Offset="1" />
+    </LinearGradientBrush>
+    <RadialGradientBrush x:Key="GlowBrush" Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.5" RadiusY="0.5">
+      <GradientStop Color="#38F1D98F" Offset="0" />
+      <GradientStop Color="#00F1D98F" Offset="1" />
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="VignetteBrush" Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.62" RadiusY="0.62">
+      <GradientStop Color="#00040C08" Offset="0" />
+      <GradientStop Color="#8C040C08" Offset="1" />
+    </RadialGradientBrush>
+    <LinearGradientBrush x:Key="RibbonBrush" StartPoint="0,0" EndPoint="0,1">
+      <GradientStop Color="#00050E0A" Offset="0" />
+      <GradientStop Color="#D9050E0A" Offset="0.45" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="SheetBrush" StartPoint="0,0" EndPoint="1,0">
+      <GradientStop Color="#FFE4D6B0" Offset="0" />
+      <GradientStop Color="#FFEFE4C6" Offset="0.04" />
+      <GradientStop Color="#FFEFE4C6" Offset="0.97" />
+      <GradientStop Color="#FFDCCDA4" Offset="0.975" />
+      <GradientStop Color="#FFE9DCBA" Offset="0.985" />
+      <GradientStop Color="#FFD6C597" Offset="1" />
+    </LinearGradientBrush>
     <LinearGradientBrush x:Key="GoldFill" StartPoint="0,0" EndPoint="0,1">
       <GradientStop Color="#FFF1D98F" Offset="0" />
       <GradientStop Color="#FFC99A3C" Offset="1" />
@@ -41,7 +88,7 @@
     <Style x:Key="ChromeButton" TargetType="Button">
       <Setter Property="WindowChrome.IsHitTestVisibleInChrome" Value="True" />
       <Setter Property="Width" Value="46" />
-      <Setter Property="Foreground" Value="{StaticResource Sage}" />
+      <Setter Property="Foreground" Value="{DynamicResource Sage}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
@@ -76,7 +123,7 @@
 
     <!-- Corner tools on the scene (Settings, Help) -->
     <Style x:Key="ToolPill" TargetType="Button">
-      <Setter Property="Foreground" Value="{StaticResource Ivory}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ivory}" />
       <Setter Property="FontFamily" Value="{StaticResource Body}" />
       <Setter Property="FontSize" Value="15" />
       <Setter Property="Cursor" Value="Hand" />
@@ -84,16 +131,16 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bg" Background="#99071410" BorderBrush="#59D6B25E" BorderThickness="1"
+            <Border x:Name="Bg" Background="{DynamicResource Pill}" BorderBrush="{DynamicResource GoldLine}" BorderThickness="1"
                     CornerRadius="17" Padding="12,6,16,6">
               <ContentPresenter VerticalAlignment="Center" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldHi}" />
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldHi}" />
               </Trigger>
               <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldHi}" />
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldHi}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -137,7 +184,7 @@
                 <Setter Property="Cursor" Value="Wait" />
               </Trigger>
               <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Disc" Property="Stroke" Value="{StaticResource Ivory}" />
+                <Setter TargetName="Disc" Property="Stroke" Value="{DynamicResource Ivory}" />
                 <Setter TargetName="Disc" Property="StrokeThickness" Value="2" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -148,7 +195,7 @@
 
     <!-- Small buttons on the dark scene (extraction prompt) -->
     <Style x:Key="SceneButton" TargetType="Button">
-      <Setter Property="Foreground" Value="{StaticResource Ivory}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ivory}" />
       <Setter Property="FontFamily" Value="{StaticResource Body}" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Cursor" Value="Hand" />
@@ -156,13 +203,13 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bg" Background="#CC071410" BorderBrush="{StaticResource MossLine}"
+            <Border x:Name="Bg" Background="{DynamicResource Well}" BorderBrush="{DynamicResource MossLine}"
                     BorderThickness="1" CornerRadius="6" Padding="14,6">
               <ContentPresenter HorizontalAlignment="Center" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource Gold}" />
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource Gold}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -180,9 +227,9 @@
             <Border x:Name="Bg" Background="Transparent" Padding="18,8,22,9" MinWidth="150">
               <StackPanel>
                 <TextBlock x:Name="Title" Text="{TemplateBinding Content}" FontFamily="{StaticResource Display}"
-                           FontSize="19" Foreground="{StaticResource Ivory}" />
+                           FontSize="19" Foreground="{DynamicResource Ivory}" />
                 <TextBlock x:Name="Sub" Text="{TemplateBinding Tag}" FontSize="13"
-                           Foreground="{StaticResource SageDim}" />
+                           Foreground="{DynamicResource SageDim}" />
               </StackPanel>
             </Border>
             <ControlTemplate.Triggers>
@@ -212,13 +259,13 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="RadioButton">
-            <Border x:Name="Bg" Background="{StaticResource GoldDeep}" CornerRadius="6,0,0,6"
+            <Border x:Name="Bg" Background="{DynamicResource GoldDeep}" CornerRadius="6,0,0,6"
                     Padding="8,14" Width="34">
               <Border.Effect>
                 <DropShadowEffect BlurRadius="6" ShadowDepth="2" Direction="200" Opacity="0.3" />
               </Border.Effect>
               <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontSize="13" FontWeight="Bold"
-                         Foreground="{StaticResource Page}" HorizontalAlignment="Center">
+                         Foreground="{DynamicResource Page}" HorizontalAlignment="Center">
                 <TextBlock.LayoutTransform>
                   <RotateTransform Angle="-90" />
                 </TextBlock.LayoutTransform>
@@ -226,8 +273,8 @@
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Bg" Property="Background" Value="{StaticResource Page}" />
-                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource InkGreen}" />
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Page}" />
+                <Setter TargetName="Label" Property="Foreground" Value="{DynamicResource TabOnText}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -239,27 +286,27 @@
     <Style x:Key="PageTitle" TargetType="TextBlock">
       <Setter Property="FontFamily" Value="{StaticResource Display}" />
       <Setter Property="FontSize" Value="32" />
-      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
     </Style>
     <Style x:Key="PageSection" TargetType="TextBlock">
       <Setter Property="FontSize" Value="13" />
       <Setter Property="FontWeight" Value="Bold" />
-      <Setter Property="Foreground" Value="{StaticResource GoldDeep}" />
+      <Setter Property="Foreground" Value="{DynamicResource GoldDeep}" />
       <Setter Property="Margin" Value="0,20,0,2" />
     </Style>
     <Style x:Key="PageText" TargetType="TextBlock">
       <Setter Property="FontSize" Value="15" />
-      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
       <Setter Property="VerticalAlignment" Value="Center" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style x:Key="PageHint" TargetType="TextBlock">
       <Setter Property="FontSize" Value="13.5" />
-      <Setter Property="Foreground" Value="{StaticResource InkSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource InkSoft}" />
       <Setter Property="TextWrapping" Value="Wrap" />
     </Style>
     <Style x:Key="Row" TargetType="Border">
-      <Setter Property="BorderBrush" Value="{StaticResource Rule}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Rule}" />
       <Setter Property="BorderThickness" Value="0,0,0,1" />
       <Setter Property="Padding" Value="0,9" />
       <Setter Property="MinHeight" Value="48" />
@@ -267,13 +314,13 @@
 
     <Style x:Key="PageLink" TargetType="Button">
       <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
       <Setter Property="FontSize" Value="16" />
       <Setter Property="HorizontalContentAlignment" Value="Stretch" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bg" Background="Transparent" BorderBrush="{StaticResource Rule}"
+            <Border x:Name="Bg" Background="Transparent" BorderBrush="{DynamicResource Rule}"
                     BorderThickness="0,0,0,1" Padding="0,11">
               <Grid>
                 <Grid.ColumnDefinitions>
@@ -281,13 +328,13 @@
                   <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <ContentPresenter />
-                <TextBlock Grid.Column="1" Text="›" FontSize="22" Foreground="{StaticResource GoldDeep}"
+                <TextBlock Grid.Column="1" Text="›" FontSize="22" Foreground="{DynamicResource GoldDeep}"
                            VerticalAlignment="Center" Margin="12,0,0,0" />
               </Grid>
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Foreground" Value="{StaticResource InkGreen}" />
+                <Setter Property="Foreground" Value="{DynamicResource InkGreen}" />
                 <Setter TargetName="Bg" Property="Background" Value="#14000000" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -298,11 +345,11 @@
 
     <Style x:Key="PageButton" TargetType="Button">
       <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="Foreground" Value="{StaticResource Ink}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
       <Setter Property="FontSize" Value="14" />
       <Setter Property="Margin" Value="0,0,8,0" />
-      <Setter Property="Background" Value="#FFF6EED6" />
-      <Setter Property="BorderBrush" Value="#FFBFAE80" />
+      <Setter Property="Background" Value="{DynamicResource WellPage}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CtlLine}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
@@ -323,25 +370,25 @@
       </Setter>
     </Style>
     <Style x:Key="PageButtonGreen" TargetType="Button" BasedOn="{StaticResource PageButton}">
-      <Setter Property="Foreground" Value="{StaticResource Page}" />
-      <Setter Property="Background" Value="{StaticResource InkGreen}" />
-      <Setter Property="BorderBrush" Value="{StaticResource InkGreen}" />
+      <Setter Property="Foreground" Value="{DynamicResource OnText}" />
+      <Setter Property="Background" Value="{DynamicResource OnBg}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource OnBg}" />
       <Setter Property="FontWeight" Value="Bold" />
     </Style>
 
     <Style x:Key="CloseLink" TargetType="Button">
       <Setter Property="Cursor" Value="Hand" />
-      <Setter Property="Foreground" Value="{StaticResource InkSoft}" />
+      <Setter Property="Foreground" Value="{DynamicResource InkSoft}" />
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="Button">
-            <Border x:Name="Bg" BorderBrush="#FFD9C99F" BorderThickness="1" CornerRadius="12" Padding="12,3"
+            <Border x:Name="Bg" BorderBrush="{DynamicResource PageLine}" BorderThickness="1" CornerRadius="12" Padding="12,3"
                     Background="Transparent">
               <ContentPresenter />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsMouseOver" Value="True">
-                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource GoldDeep}" />
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldDeep}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -356,21 +403,21 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="CheckBox">
-            <Border x:Name="Track" Width="44" Height="24" CornerRadius="12" Background="#FFE2D4AD"
-                    BorderBrush="#FFBFAE80" BorderThickness="1">
-              <Ellipse x:Name="Knob" Width="16" Height="16" Fill="#FFA99868" HorizontalAlignment="Left"
+            <Border x:Name="Track" Width="44" Height="24" CornerRadius="12" Background="{DynamicResource SwOff}"
+                    BorderBrush="{DynamicResource CtlLine}" BorderThickness="1">
+              <Ellipse x:Name="Knob" Width="16" Height="16" Fill="{DynamicResource KnobOff}" HorizontalAlignment="Left"
                        Margin="3,0,0,0" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Track" Property="Background" Value="{StaticResource InkGreen}" />
-                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource InkGreen}" />
-                <Setter TargetName="Knob" Property="Fill" Value="{StaticResource GoldHi}" />
+                <Setter TargetName="Track" Property="Background" Value="{DynamicResource OnBg}" />
+                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource OnBg}" />
+                <Setter TargetName="Knob" Property="Fill" Value="{DynamicResource KnobOn}" />
                 <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right" />
                 <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0" />
               </Trigger>
               <Trigger Property="IsKeyboardFocused" Value="True">
-                <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource GoldDeep}" />
+                <Setter TargetName="Track" Property="BorderBrush" Value="{DynamicResource GoldDeep}" />
                 <Setter TargetName="Track" Property="BorderThickness" Value="2" />
               </Trigger>
             </ControlTemplate.Triggers>
@@ -387,13 +434,111 @@
           <ControlTemplate TargetType="RadioButton">
             <Border x:Name="Bg" Background="Transparent" Padding="16,6">
               <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontSize="14"
-                         Foreground="{StaticResource InkSoft}" />
+                         Foreground="{DynamicResource InkSoft}" />
             </Border>
             <ControlTemplate.Triggers>
               <Trigger Property="IsChecked" Value="True">
-                <Setter TargetName="Bg" Property="Background" Value="{StaticResource InkGreen}" />
-                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource Page}" />
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource OnBg}" />
+                <Setter TargetName="Label" Property="Foreground" Value="{DynamicResource OnText}" />
                 <Setter TargetName="Label" Property="FontWeight" Value="Bold" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+
+    <!-- Dropdowns follow the theme. The stock template ignores Background, so this
+         replaces it; sizes and fonts still come from App.xaml. -->
+    <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+      <Setter Property="Background" Value="{DynamicResource WellPage}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource CtlLine}" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="ComboBox">
+            <Grid>
+              <ToggleButton x:Name="Toggle" Focusable="False" ClickMode="Press"
+                            IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                <ToggleButton.Template>
+                  <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Box" CornerRadius="6" BorderThickness="1"
+                            Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                            BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}">
+                      <Path HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,12,0"
+                            Data="M0,0 L4.5,4.5 L9,0" StrokeThickness="1.5" Stroke="{DynamicResource GoldDeep}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource GoldDeep}" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </ToggleButton.Template>
+              </ToggleButton>
+              <ContentPresenter Margin="{TemplateBinding Padding}" IsHitTestVisible="False"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                Content="{TemplateBinding SelectionBoxItem}"
+                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" />
+              <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True" Focusable="False"
+                     PopupAnimation="Fade" IsOpen="{TemplateBinding IsDropDownOpen}">
+                <Border Margin="0,2,0,0" CornerRadius="6" BorderThickness="1" Padding="0,4"
+                        MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                        Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource CtlLine}">
+                  <ScrollViewer>
+                    <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                  </ScrollViewer>
+                </Border>
+              </Popup>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource GoldDeep}" />
+              </Trigger>
+              <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.5" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
+    <!-- Theme quick-switch button: Content is the icon's path data (24x24). -->
+    <Style x:Key="QuickTheme" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="QuickTheme" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Foreground" Value="{DynamicResource Sage}" />
+      <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bg" Width="34" Height="28" CornerRadius="14" Background="Transparent">
+              <Viewbox Width="17" Height="17">
+                <Canvas Width="24" Height="24">
+                  <Path x:Name="Icon" Data="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                        Stroke="{TemplateBinding Foreground}" StrokeThickness="1.6"
+                        StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                </Canvas>
+              </Viewbox>
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Foreground" Value="{DynamicResource GoldHi}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldHi}" />
+                <Setter TargetName="Bg" Property="BorderThickness" Value="1.5" />
+              </Trigger>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{DynamicResource Gold}" />
+                <Setter Property="Foreground" Value="{DynamicResource Night}" />
               </Trigger>
             </ControlTemplate.Triggers>
           </ControlTemplate>
@@ -406,7 +551,7 @@
       <Setter Property="Template">
         <Setter.Value>
           <ControlTemplate TargetType="ProgressBar">
-            <Border CornerRadius="3" Background="#CC071410" BorderBrush="{StaticResource MossLine}" BorderThickness="1">
+            <Border CornerRadius="3" Background="{DynamicResource Well}" BorderBrush="{DynamicResource MossLine}" BorderThickness="1">
               <Grid x:Name="PART_Track">
                 <Border x:Name="PART_Indicator" HorizontalAlignment="Left" CornerRadius="3">
                   <Border.Background>
@@ -430,6 +575,10 @@
                        From="0" To="-14" Duration="0:0:6" />
       <DoubleAnimation Storyboard.TargetName="FliesShift" Storyboard.TargetProperty="X"
                        From="0" To="10" Duration="0:0:6" />
+      <DoubleAnimation Storyboard.TargetName="BirdsShift" Storyboard.TargetProperty="X"
+                       From="0" To="40" Duration="0:0:9" />
+      <DoubleAnimation Storyboard.TargetName="BirdsShift" Storyboard.TargetProperty="Y"
+                       From="0" To="-12" Duration="0:0:9" />
     </Storyboard>
   </Window.Resources>
 
@@ -440,25 +589,25 @@
     </Grid.RowDefinitions>
 
     <!-- Title bar -->
-    <Grid Background="#FF0A1A13">
+    <Grid Background="{DynamicResource TitleBar}">
       <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
         <Image Source="pack://application:,,,/Assets/app-icon.png" Width="18" Height="18">
           <Image.Clip>
             <RectangleGeometry Rect="0,0,18,18" RadiusX="4" RadiusY="4" />
           </Image.Clip>
         </Image>
-        <TextBlock Text="Project Sparrow" Margin="10,0,0,0" FontSize="14" Foreground="{StaticResource Sage}"
+        <TextBlock Text="Project Sparrow" Margin="10,0,0,0" FontSize="14" Foreground="{DynamicResource Sage}"
                    VerticalAlignment="Center" />
       </StackPanel>
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <Button Style="{StaticResource ChromeButton}" Click="MinimizeClicked" ToolTip="Minimise">
-          <Path Data="M0,0 L10,0" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+          <Path Data="M0,0 L10,0" Stroke="{DynamicResource Sage}" StrokeThickness="1" />
         </Button>
         <Button Style="{StaticResource ChromeButton}" Click="MaximizeClicked" ToolTip="Maximise">
-          <Rectangle Width="10" Height="10" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+          <Rectangle Width="10" Height="10" Stroke="{DynamicResource Sage}" StrokeThickness="1" />
         </Button>
         <Button Style="{StaticResource CloseButton}" Click="CloseClicked" ToolTip="Close">
-          <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="{StaticResource Sage}" StrokeThickness="1" />
+          <Path Data="M0,0 L10,10 M10,0 L0,10" Stroke="{DynamicResource Sage}" StrokeThickness="1" />
         </Button>
       </StackPanel>
     </Grid>
@@ -468,24 +617,9 @@
       <!-- Scene art (all drawn here, no game artwork) -->
       <Viewbox Stretch="UniformToFill">
         <Canvas Width="1180" Height="700">
-          <Rectangle Width="1180" Height="700">
-            <Rectangle.Fill>
-              <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Color="#FF05110C" Offset="0" />
-                <GradientStop Color="#FF0D281D" Offset="0.5" />
-                <GradientStop Color="#FF1C4130" Offset="1" />
-              </LinearGradientBrush>
-            </Rectangle.Fill>
-          </Rectangle>
-          <Rectangle Width="1180" Height="700">
-            <Rectangle.Fill>
-              <RadialGradientBrush Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.5" RadiusY="0.5">
-                <GradientStop Color="#38F1D98F" Offset="0" />
-                <GradientStop Color="#00F1D98F" Offset="1" />
-              </RadialGradientBrush>
-            </Rectangle.Fill>
-          </Rectangle>
-          <Path Fill="#FFF1D98F" Data="M90,70 m-1.4,0 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0
+          <Rectangle Width="1180" Height="700" Fill="{DynamicResource SkyBrush}" />
+          <Rectangle Width="1180" Height="700" Fill="{DynamicResource GlowBrush}" />
+          <Path x:Name="Stars" Fill="#FFF1D98F" Data="M90,70 m-1.4,0 a1.4,1.4 0 1 0 2.8,0 a1.4,1.4 0 1 0 -2.8,0
                 M240,40 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
                 M360,120 m-1.6,0 a1.6,1.6 0 1 0 3.2,0 a1.6,1.6 0 1 0 -3.2,0
                 M820,60 m-1.1,0 a1.1,1.1 0 1 0 2.2,0 a1.1,1.1 0 1 0 -2.2,0
@@ -496,12 +630,16 @@
                 M700,30 m-1.2,0 a1.2,1.2 0 1 0 2.4,0 a1.2,1.2 0 1 0 -2.4,0
                 M470,60 m-1,0 a1,1 0 1 0 2,0 a1,1 0 1 0 -2,0
                 M1120,300 m-1.1,0 a1.1,1.1 0 1 0 2.2,0 a1.1,1.1 0 1 0 -2.2,0" Opacity="0.8" />
-          <Path Fill="#D9EFE5C9" Data="M1000,110 a34,34 0 1 0 28,52 a27,27 0 1 1 -28,-52 z" />
-          <Path Fill="#FF163A2B" Data="M0,500 C160,450 300,462 440,485 S760,440 900,470 S1100,455 1180,462 V700 H0 Z" />
-          <Path Fill="#FF122F23" Data="M160,382 h18 v96 h-18 z M155,384 L169,348 L183,384 Z M960,482 q30,-70 60,0 z M990,480 q26,-96 52,0 z" />
-          <Rectangle Canvas.Left="166" Canvas.Top="402" Width="6" Height="9" Fill="#E6F1D98F" />
-          <Path Fill="#FF0F2A1F" Data="M0,550 C200,510 380,522 560,542 S900,518 1180,536 V700 H0 Z" />
-          <Path Fill="#FF0A1D16" Data="M0,610 C260,578 480,588 700,604 S1020,590 1180,598 V700 H0 Z" />
+          <Path x:Name="MoonShape" Fill="{DynamicResource Moon}" Data="M1000,110 a34,34 0 1 0 28,52 a27,27 0 1 1 -28,-52 z" />
+          <Canvas x:Name="Sun" Visibility="Collapsed">
+            <Ellipse Canvas.Left="932" Canvas.Top="62" Width="156" Height="156" Fill="#80FFF3C4" />
+            <Ellipse Canvas.Left="968" Canvas.Top="98" Width="84" Height="84" Fill="#FFF4D27A" />
+          </Canvas>
+          <Path Fill="{DynamicResource Hill1}" Data="M0,500 C160,450 300,462 440,485 S760,440 900,470 S1100,455 1180,462 V700 H0 Z" />
+          <Path Fill="{DynamicResource Tower}" Data="M160,382 h18 v96 h-18 z M155,384 L169,348 L183,384 Z M960,482 q30,-70 60,0 z M990,480 q26,-96 52,0 z" />
+          <Rectangle x:Name="Lamp" Canvas.Left="166" Canvas.Top="402" Width="6" Height="9" Fill="#E6F1D98F" />
+          <Path Fill="{DynamicResource Hill2}" Data="M0,550 C200,510 380,522 560,542 S900,518 1180,536 V700 H0 Z" />
+          <Path Fill="{DynamicResource Hill3}" Data="M0,610 C260,578 480,588 700,604 S1020,590 1180,598 V700 H0 Z" />
           <Canvas x:Name="Flies">
             <Canvas.RenderTransform>
               <TranslateTransform x:Name="FliesShift" />
@@ -512,16 +650,17 @@
             <Ellipse Canvas.Left="1038" Canvas.Top="568" Width="3" Height="3" Fill="#FFF1D98F" />
             <Ellipse Canvas.Left="138" Canvas.Top="588" Width="2.8" Height="2.8" Fill="#FFF1D98F" />
           </Canvas>
+          <!-- Day only: sparrows instead of fireflies -->
+          <Canvas x:Name="Birds" Visibility="Collapsed">
+            <Canvas.RenderTransform>
+              <TranslateTransform x:Name="BirdsShift" />
+            </Canvas.RenderTransform>
+            <Path Stroke="#FF3F4D36" StrokeThickness="2.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                  Data="M300,150 q8,-8 16,0 q8,-8 16,0 M350,186 q6,-6 12,0 q6,-6 12,0 M760,118 q7,-7 14,0 q7,-7 14,0" />
+          </Canvas>
         </Canvas>
       </Viewbox>
-      <Rectangle IsHitTestVisible="False">
-        <Rectangle.Fill>
-          <RadialGradientBrush Center="0.5,0.4" GradientOrigin="0.5,0.4" RadiusX="0.62" RadiusY="0.62">
-            <GradientStop Color="#00040C08" Offset="0" />
-            <GradientStop Color="#8C040C08" Offset="1" />
-          </RadialGradientBrush>
-        </Rectangle.Fill>
-      </Rectangle>
+      <Rectangle IsHitTestVisible="False" Fill="{DynamicResource VignetteBrush}" />
 
       <!-- Centre and ribbon -->
       <Grid>
@@ -540,20 +679,20 @@
             </Image.Effect>
           </Image>
           <TextBlock Text="FABLE II  ·  RECOMPILED FOR WINDOWS" HorizontalAlignment="Center" Margin="0,14,0,0"
-                     FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource Gold}" />
+                     FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource Gold}" />
           <TextBlock Text="P R O J E C T" HorizontalAlignment="Center" Margin="0,10,0,0"
-                     FontFamily="{StaticResource DisplaySC}" FontSize="24" Foreground="{StaticResource Gold}" />
+                     FontFamily="{StaticResource DisplaySC}" FontSize="24" Foreground="{DynamicResource Gold}" />
           <TextBlock HorizontalAlignment="Center" FontFamily="{StaticResource Display}" FontSize="82"
-                     Foreground="{StaticResource Ivory}" Margin="0,-10,0,0">
+                     Foreground="{DynamicResource Ivory}" Margin="0,-10,0,0">
             <TextBlock.Effect>
               <DropShadowEffect ShadowDepth="3" Direction="270" BlurRadius="0" Opacity="0.35" />
             </TextBlock.Effect>
-            <Run Text="S" Foreground="{StaticResource GoldHi}" /><Run Text="parrow" />
+            <Run Text="S" Foreground="{DynamicResource GoldHi}" /><Run Text="parrow" />
           </TextBlock>
-          <Path HorizontalAlignment="Center" Margin="0,2,0,4" Fill="{StaticResource Gold}" Stroke="{StaticResource Gold}"
+          <Path HorizontalAlignment="Center" Margin="0,2,0,4" Fill="{DynamicResource Gold}" Stroke="{DynamicResource Gold}"
                 StrokeThickness="1" Data="M0,7 H130 M190,7 H320 M160,1 L166,7 L160,13 L154,7 Z M138,7 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0 M178,7 a2,2 0 1 0 4,0 a2,2 0 1 0 -4,0" />
           <TextBlock Text="Every hero begins as a sparrow." HorizontalAlignment="Center" FontFamily="{StaticResource Display}"
-                     FontStyle="Italic" FontSize="19" Foreground="{StaticResource Sage}" />
+                     FontStyle="Italic" FontSize="19" Foreground="{DynamicResource Sage}" />
 
           <Button x:Name="SealButton" Style="{StaticResource Seal}" AutomationProperties.Name="Play" Margin="0,30,0,0" Click="SealClicked">
             <StackPanel>
@@ -566,15 +705,15 @@
 
           <StackPanel MaxWidth="580" Margin="0,16,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-              <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{StaticResource Gold}" VerticalAlignment="Center">
+              <Ellipse x:Name="StatusDot" Width="9" Height="9" Fill="{DynamicResource Gold}" VerticalAlignment="Center">
                 <Ellipse.Effect>
                   <DropShadowEffect Color="#FFD6B25E" BlurRadius="10" ShadowDepth="0" />
                 </Ellipse.Effect>
               </Ellipse>
               <TextBlock x:Name="StatusTitle" Text="Ready to play" Margin="10,0,0,0" FontSize="18" FontWeight="Bold"
-                         Foreground="{StaticResource Ivory}" />
+                         Foreground="{DynamicResource Ivory}" />
             </StackPanel>
-            <TextBlock x:Name="StatusText" Margin="0,4,0,0" FontSize="15.5" Foreground="{StaticResource Sage}"
+            <TextBlock x:Name="StatusText" Margin="0,4,0,0" FontSize="15.5" Foreground="{DynamicResource Sage}"
                        TextAlignment="Center" TextWrapping="Wrap" />
             <ProgressBar x:Name="ExtractBar" Style="{StaticResource ThinBar}" Maximum="100" Width="360"
                          Margin="0,10,0,0" Visibility="Collapsed" />
@@ -588,25 +727,19 @@
         </StackPanel>
 
         <!-- Edition ribbon -->
-        <Border Grid.Row="1" Padding="20,14,20,18">
-          <Border.Background>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-              <GradientStop Color="#00050E0A" Offset="0" />
-              <GradientStop Color="#D9050E0A" Offset="0.45" />
-            </LinearGradientBrush>
-          </Border.Background>
+        <Border Grid.Row="1" Padding="20,14,20,18" Background="{DynamicResource RibbonBrush}">
           <Grid>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-              <TextBlock Text="EDITION" FontSize="12.5" FontWeight="Bold" Foreground="{StaticResource Gold}"
+              <TextBlock Text="EDITION" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource Gold}"
                          VerticalAlignment="Center" Margin="0,0,16,0" />
-              <Border BorderBrush="#73D6B25E" BorderThickness="1" CornerRadius="6" Background="#B3071410">
+              <Border BorderBrush="{DynamicResource GoldLine}" BorderThickness="1" CornerRadius="6" Background="{DynamicResource EdBg}">
                 <StackPanel Orientation="Horizontal">
                   <RadioButton x:Name="EditionOriginal" Style="{StaticResource EditionChoice}" Content="Original"
                                Tag="30 fps · 720p · as on Xbox" Checked="EditionChecked" />
-                  <Rectangle Width="1" Fill="#40D6B25E" />
+                  <Rectangle Width="1" Fill="{DynamicResource GoldLineSoft}" />
                   <RadioButton x:Name="EditionEnhanced" Style="{StaticResource EditionChoice}" Content="Enhanced"
                                Tag="60 fps · 1440p · FXAA" Checked="EditionChecked" />
-                  <Rectangle Width="1" Fill="#40D6B25E" />
+                  <Rectangle Width="1" Fill="{DynamicResource GoldLineSoft}" />
                   <RadioButton x:Name="EditionExperimental" Style="{StaticResource EditionChoice}" Content="Experimental"
                                Tag="Uncapped · 4x scale · may glitch" Checked="EditionChecked" />
                 </StackPanel>
@@ -615,23 +748,39 @@
                          VerticalAlignment="Center" Margin="16,0,0,0" Visibility="Collapsed" />
             </StackPanel>
             <TextBlock x:Name="VersionText" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="13"
-                       Foreground="{StaticResource SageDim}" />
+                       Foreground="{DynamicResource SageDim}" />
           </Grid>
         </Border>
       </Grid>
+
+      <!-- Theme quick switch -->
+      <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16,14,0,0" Padding="3" CornerRadius="17"
+              Background="{DynamicResource Pill}" BorderBrush="{DynamicResource GoldLine}" BorderThickness="1">
+        <StackPanel Orientation="Horizontal">
+          <RadioButton x:Name="QuickNight" Style="{StaticResource QuickTheme}" Tag="night" ToolTip="Night"
+                       AutomationProperties.Name="Night theme" Checked="ThemeChecked"
+                       Content="M20,14.5 A8,8 0 0 1 9.5,4 A8,8 0 1 0 20,14.5 Z M17,3 V6 M15.5,4.5 H18.5" />
+          <RadioButton x:Name="QuickDusk" Style="{StaticResource QuickTheme}" Tag="dusk" ToolTip="Dusk"
+                       AutomationProperties.Name="Dusk theme" Checked="ThemeChecked"
+                       Content="M6,17 A6,6 0 0 1 18,17 M2,17 H22 M5,21 H19 M12,5 V8 M4.6,9.6 L6.6,11.6 M19.4,9.6 L17.4,11.6" />
+          <RadioButton x:Name="QuickDay" Style="{StaticResource QuickTheme}" Tag="day" ToolTip="Day"
+                       AutomationProperties.Name="Day theme" Checked="ThemeChecked"
+                       Content="M8,12 A4,4 0 1 0 16,12 A4,4 0 1 0 8,12 M12,2 V4.5 M12,19.5 V22 M2,12 H4.5 M19.5,12 H22 M4.9,4.9 L6.7,6.7 M17.3,17.3 L19.1,19.1 M4.9,19.1 L6.7,17.3 M17.3,6.7 L19.1,4.9" />
+        </StackPanel>
+      </Border>
 
       <!-- Corner tools -->
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,16,0">
         <Button Style="{StaticResource ToolPill}" Click="OpenSettingsClicked" AutomationProperties.Name="Settings">
           <StackPanel Orientation="Horizontal">
-            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{StaticResource GoldHi}" StrokeThickness="1.5"
+            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource GoldHi}" StrokeThickness="1.5"
                   Data="M12,9 a3,3 0 1 0 0.01,0 M12,2 V5 M12,19 V22 M2,12 H5 M19,12 H22 M4.9,4.9 L7,7 M17,17 L19.1,19.1 M4.9,19.1 L7,17 M17,7 L19.1,4.9" />
             <TextBlock Text="Settings" Margin="8,0,0,0" VerticalAlignment="Center" />
           </StackPanel>
         </Button>
         <Button Style="{StaticResource ToolPill}" Click="OpenHelpClicked" AutomationProperties.Name="Help">
           <StackPanel Orientation="Horizontal">
-            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{StaticResource GoldHi}" StrokeThickness="1.5"
+            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource GoldHi}" StrokeThickness="1.5"
                   Data="M12,3 a9,9 0 1 0 0.01,0 M9.5,9.5 a2.5,2.5 0 1 1 3.5,2.3 c-0.7,0.3 -1,0.9 -1,1.6 v0.6 M12,17 v0.5" />
             <TextBlock Text="Help" Margin="8,0,0,0" VerticalAlignment="Center" />
           </StackPanel>
@@ -640,13 +789,13 @@
 
       <!-- Toast -->
       <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,96"
-              Background="#FF0E2219" BorderBrush="{StaticResource Gold}" BorderThickness="1" CornerRadius="8"
+              Background="#FF0E2219" BorderBrush="{DynamicResource Gold}" BorderThickness="1" CornerRadius="8"
               Padding="16,10" Visibility="Collapsed" Panel.ZIndex="20" MaxWidth="640">
-        <TextBlock x:Name="ToastText" FontSize="14.5" Foreground="{StaticResource Ivory}" TextWrapping="Wrap" />
+        <TextBlock x:Name="ToastText" FontSize="14.5" Foreground="{DynamicResource Ivory}" TextWrapping="Wrap" />
       </Border>
 
       <!-- Parchment page -->
-      <Rectangle x:Name="Scrim" Fill="#73030A07" Visibility="Collapsed" MouseDown="ScrimMouseDown" Panel.ZIndex="10" />
+      <Rectangle x:Name="Scrim" Fill="{DynamicResource ScrimBrush}" Visibility="Collapsed" MouseDown="ScrimMouseDown" Panel.ZIndex="10" />
       <Grid x:Name="PageHost" HorizontalAlignment="Right" Width="600" Visibility="Collapsed" Panel.ZIndex="11"
             RenderTransformOrigin="1,0.5">
         <Grid.RenderTransform>
@@ -667,17 +816,8 @@
           <RadioButton x:Name="TabHelp" Style="{StaticResource Bookmark}" Content="Help" Checked="TabChecked" />
         </StackPanel>
 
-        <Border Grid.Column="1" BorderBrush="#FFD9C99F" BorderThickness="1,0,0,0">
-          <Border.Background>
-            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-              <GradientStop Color="#FFE4D6B0" Offset="0" />
-              <GradientStop Color="#FFEFE4C6" Offset="0.04" />
-              <GradientStop Color="#FFEFE4C6" Offset="0.97" />
-              <GradientStop Color="#FFDCCDA4" Offset="0.975" />
-              <GradientStop Color="#FFE9DCBA" Offset="0.985" />
-              <GradientStop Color="#FFD6C597" Offset="1" />
-            </LinearGradientBrush>
-          </Border.Background>
+        <Border Grid.Column="1" BorderBrush="{DynamicResource PageLine}" BorderThickness="1,0,0,0"
+                Background="{DynamicResource SheetBrush}">
           <Border.Effect>
             <DropShadowEffect BlurRadius="40" ShadowDepth="0" Opacity="0.5" />
           </Border.Effect>
@@ -695,6 +835,25 @@
                     <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Click="ClosePageClicked" />
                   </Grid>
+                  <TextBlock Text="APPEARANCE" Style="{StaticResource PageSection}" />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <Border DockPanel.Dock="Right" BorderBrush="{DynamicResource CtlLine}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+                        <StackPanel Orientation="Horizontal">
+                          <RadioButton x:Name="ThemeNight" Style="{StaticResource ChannelChoice}" GroupName="PageTheme"
+                                       Content="Night" Tag="night" Checked="ThemeChecked" />
+                          <RadioButton x:Name="ThemeDusk" Style="{StaticResource ChannelChoice}" GroupName="PageTheme"
+                                       Content="Dusk" Tag="dusk" Checked="ThemeChecked" />
+                          <RadioButton x:Name="ThemeDay" Style="{StaticResource ChannelChoice}" GroupName="PageTheme"
+                                       Content="Day" Tag="day" Checked="ThemeChecked" />
+                        </StackPanel>
+                      </Border>
+                      <StackPanel>
+                        <TextBlock Text="Theme" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Night is darkest, Day is light." Style="{StaticResource PageHint}" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
                   <TextBlock Text="DISPLAY" Style="{StaticResource PageSection}" />
                   <Border Style="{StaticResource Row}">
                     <DockPanel>
@@ -904,7 +1063,7 @@
                   <Border Style="{StaticResource Row}">
                     <DockPanel>
                       <TextBox x:Name="SensitivityBox" DockPanel.Dock="Right" Width="56" Margin="10,0,0,0"
-                               VerticalAlignment="Center" FontSize="14" Background="#FFF6EED6" BorderBrush="#FFBFAE80"
+                               VerticalAlignment="Center" FontSize="14" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource CtlLine}"
                                LostFocus="SensitivityBoxLostFocus" />
                       <Slider x:Name="SensitivitySlider" DockPanel.Dock="Right" Width="200" Minimum="1" Maximum="4096"
                               VerticalAlignment="Center" ValueChanged="SensitivityChanged" />
@@ -932,7 +1091,7 @@
                   </Grid>
                   <Border Style="{StaticResource Row}">
                     <DockPanel>
-                      <Border DockPanel.Dock="Right" BorderBrush="#FFBFAE80" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+                      <Border DockPanel.Dock="Right" BorderBrush="{DynamicResource CtlLine}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
                         <StackPanel Orientation="Horizontal">
                           <RadioButton x:Name="ChannelStable" Style="{StaticResource ChannelChoice}" Content="Stable"
                                        Checked="ChannelChecked" />
@@ -944,7 +1103,7 @@
                     </DockPanel>
                   </Border>
                   <TextBlock x:Name="ChannelNote" Style="{StaticResource PageHint}" Margin="0,8,0,0" />
-                  <Border Margin="0,14,0,0" Padding="14,12" CornerRadius="6" Background="#FFF6EED6" BorderBrush="#FFD9C99F"
+                  <Border Margin="0,14,0,0" Padding="14,12" CornerRadius="6" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}"
                           BorderThickness="1">
                     <TextBlock x:Name="UpdateStatusText" Style="{StaticResource PageText}" FontSize="14.5" />
                   </Border>
@@ -964,7 +1123,7 @@
                     </StackPanel>
                   </Button>
                   <Border x:Name="ReportPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
-                          Background="#FFF6EED6" BorderBrush="#FFD9C99F" BorderThickness="1">
+                          Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}" BorderThickness="1">
                     <StackPanel>
                       <TextBlock Style="{StaticResource PageHint}" FontSize="14.5"
                                  Text="This puts the following in one zip on your desktop. Nothing is uploaded; you attach it to the issue yourself." />
@@ -990,7 +1149,7 @@
                     </StackPanel>
                   </Button>
                   <Border x:Name="FolderPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
-                          Background="#FFF6EED6" BorderBrush="#FFD9C99F" BorderThickness="1">
+                          Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}" BorderThickness="1">
                     <StackPanel>
                       <TextBlock x:Name="FolderPanelText" Style="{StaticResource PageHint}" FontSize="14.5" Margin="0,0,0,10" />
                       <WrapPanel>

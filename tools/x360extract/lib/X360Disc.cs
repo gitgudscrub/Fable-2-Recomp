@@ -303,6 +303,37 @@ public sealed class X360Disc : IDisposable
     }
 
     /// <summary>
+    /// Every file on the disc with the '/'-separated path it's extracted to
+    /// (same sanitised names as <see cref="Extract"/>, STFS containers as raw files).
+    /// </summary>
+    public IEnumerable<(string Path, GdfxEntry Entry)> EnumerateFiles()
+    {
+        var pending = new Stack<(string Prefix, GdfxEntry Entry)>();
+        for (int i = RootEntries.Count - 1; i >= 0; i--) pending.Push(("", RootEntries[i]));
+        while (pending.Count > 0)
+        {
+            (string prefix, GdfxEntry entry) = pending.Pop();
+            string path = prefix + SanitizeFileName(entry.Name);
+            if (!entry.IsDirectory)
+            {
+                yield return (path, entry);
+                continue;
+            }
+            List<GdfxEntry> children = Gdfx.ReadDirectory(entry.Sector, entry.Size);
+            for (int i = children.Count - 1; i >= 0; i--) pending.Push((path + "/", children[i]));
+        }
+    }
+
+    /// <summary>SHA-256 (lowercase hex) of one file on the disc.</summary>
+    public string HashFile(GdfxEntry entry)
+    {
+        using var sha = System.Security.Cryptography.IncrementalHash.CreateHash(
+            System.Security.Cryptography.HashAlgorithmName.SHA256);
+        Gdfx.ReadFile(entry.Sector, entry.Size, (buf, off, n) => sha.AppendData(buf, off, n));
+        return Convert.ToHexString(sha.GetHashAndReset()).ToLowerInvariant();
+    }
+
+    /// <summary>
     /// Render the GDFX tree as an indented, human-readable string (like the CLI's
     /// <c>--list</c>).
     /// </summary>

@@ -6,6 +6,7 @@ public sealed class Options
     public string OutDir = ".";
     public bool ListOnly;
     public bool Quiet;
+    public string? ManifestPath;         // --manifest: write sha256/size/path for every file
     public bool UnpackStfs;              // --unpack-stfs: expand STFS containers into directories
     public List<string> Files = new();   // --files: comma-separated root entry names
 }
@@ -28,7 +29,7 @@ public static class Program
 
         try
         {
-            return opts.ListOnly ? ListDisc(opts) : Extract(opts);
+            return opts.ManifestPath != null ? WriteManifest(opts) : opts.ListOnly ? ListDisc(opts) : Extract(opts);
         }
         catch (OptionException ex)
         {
@@ -57,10 +58,12 @@ public static class Program
 Usage:
   x360extract <iso> [options]          Extract game content from an Xbox 360 ISO
   x360extract --list <iso>             List the GDFX file tree without extracting
+  x360extract <iso> --manifest <file>  Write a reference list (sha256 size path) of every file
 
 Options:
   -o, --out <dir>       Output directory (default: current directory)
   --list                List the GDFX directory tree
+  --manifest <file>     Hash every file on the disc into a reference list
   --files <a,b,c>       Only extract the named root entries (case-insensitive)
   --unpack-stfs         Expand STFS (PIRS/LIVE/CON) file entries into directories
                         (default: copy them as raw files, matching retail tools)
@@ -99,6 +102,10 @@ Behavior:
                 case "--files":
                     if (i + 1 >= args.Length) throw new OptionException("--files requires a list");
                     o.Files = args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                    break;
+                case "--manifest":
+                    if (i + 1 >= args.Length) throw new OptionException("--manifest requires a file");
+                    o.ManifestPath = args[++i];
                     break;
                 case "--unpack-stfs":
                     o.UnpackStfs = true;
@@ -167,6 +174,38 @@ Behavior:
             Console.WriteLine();
             Console.Write(disc.ListTree());
         }
+        return 0;
+    }
+
+    /// <summary>
+    /// Reference list for the launcher's "Check game files": a header with the
+    /// default.xex hash, then one "sha256 size path" line per file, paths as
+    /// extracted (sanitised names, STFS containers kept raw), sorted by path.
+    /// </summary>
+    private static int WriteManifest(Options o)
+    {
+        if (!File.Exists(o.IsoPath))
+            throw new OptionException($"ISO not found: {o.IsoPath}");
+
+        using var disc = X360Disc.Open(o.IsoPath, p => OnProgress(p, o.Quiet));
+        if (!o.Quiet) Console.WriteLine();
+
+        var files = new List<(string Path, string Line)>();
+        string? xexHash = null;
+        foreach ((string path, GdfxEntry entry) in disc.EnumerateFiles())
+        {
+            string hash = disc.HashFile(entry);
+            if (path.Equals("default.xex", StringComparison.OrdinalIgnoreCase)) xexHash = hash;
+            files.Add((path, $"{hash} {entry.Size} {path}"));
+            if (!o.Quiet) Console.WriteLine($"  {path}");
+        }
+        files.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
+
+        using var w = new StreamWriter(o.ManifestPath!, false, new System.Text.UTF8Encoding(false)) { NewLine = "\n" };
+        w.WriteLine("# Project Sparrow disc reference list: sha256 size path");
+        w.WriteLine($"# default.xex {xexHash ?? "missing"}");
+        foreach (var f in files) w.WriteLine(f.Line);
+        if (!o.Quiet) Console.WriteLine($"Wrote {files.Count} files -> {Path.GetFullPath(o.ManifestPath!)}");
         return 0;
     }
 

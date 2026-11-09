@@ -34,7 +34,7 @@ public static class Themes
         ["Moon"] = "#D9EFE5C9",
         ["PageLine"] = "#FFD9C99F", ["CtlLine"] = "#FFBFAE80", ["WellPage"] = "#FFF6EED6", ["SwOff"] = "#FFE2D4AD",
         ["KnobOff"] = "#FFA99868", ["OnBg"] = "#FF1F4A37", ["OnText"] = "#FFEFE4C6", ["KnobOn"] = "#FFF1D98F",
-        ["TabOnText"] = "#FF1F4A37",
+        ["TabOnText"] = "#FF1F4A37", ["KeyListen"] = "#FFE4EFE4",
     };
 
     // Night: darker scene; the page becomes dark leather with ivory text and gold accents.
@@ -50,7 +50,7 @@ public static class Themes
         ["Moon"] = "#B3D9D0B4",
         ["PageLine"] = "#FF2F3A2E", ["CtlLine"] = "#FF4A5747", ["WellPage"] = "#FF232D24", ["SwOff"] = "#FF2A352B",
         ["KnobOff"] = "#FF6F7A68", ["OnBg"] = "#FFD6B25E", ["OnText"] = "#FF1D1405", ["KnobOn"] = "#FF1D1405",
-        ["TabOnText"] = "#FFD6B25E",
+        ["TabOnText"] = "#FFD6B25E", ["KeyListen"] = "#FF33402A",
     };
 
     // Day: sunlit morning, dark ink on the scene, parchment page as in Dusk.

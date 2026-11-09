@@ -443,10 +443,66 @@ try
             "borderless", true, edition.FrameLimit);   // throws if an edition uses an unsupported value
     Console.WriteLine("Edition matching and validity passed.");
 
+    // Disc reference lists: the embedded GOTY list parses, belongs to its xex, and the check
+    // finds missing/damaged files, ignores extras, and skips files the game rewrites.
+    GameVersion goty = GameVersions.All.Single(v => v.Id == "goty-us-eu");
+    DiscManifest? gotyList = DiscManifest.ForXex(goty.Hash.ToUpperInvariant());
+    Require(gotyList is not null && gotyList.XexHash == goty.Hash, "GOTY reference list is not embedded");
+    Require(gotyList!.CheckedFiles.Count() == 447 && gotyList.CheckedFiles.All(f => f.Path == "default.xex" || f.Path.StartsWith("data/")),
+        "GOTY reference list should check default.xex and the 446 data files other than dir.manifest");
+    Require(gotyList.Files.Any(f => f.Path == "data/dir.manifest") && !DiscManifest.IsChecked("data/dir.manifest"),
+        "dir.manifest must be listed but not checked");
+    Require(!DiscManifest.IsChecked("nxeart") && !DiscManifest.IsChecked("$SystemUpdate/system.manifest"), "unused disc files are checked");
+    Require(DiscManifest.ForXex(new string('0', 64)) is null, "unknown xex has a reference list");
+    RequireThrows(() => DiscManifest.Parse("# default.xex abc\nnot a line\n"), "bad line accepted");
+    RequireThrows(() => DiscManifest.Parse(new string('a', 64) + " 1 data/x\n"), "list without xex hash accepted");
+    RequireThrows(() => DiscManifest.Parse("# default.xex abc\n" + new string('a', 64) + " 1 data/../../x\n"), "escaping path accepted");
+
+    string checkDir = Path.Combine(testDirectory, "check");
+    Directory.CreateDirectory(Path.Combine(checkDir, "data", "sub"));
+    string sha(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
+    File.WriteAllText(Path.Combine(checkDir, "default.xex"), "xex");
+    File.WriteAllText(Path.Combine(checkDir, "data", "good.bin"), "good");
+    File.WriteAllText(Path.Combine(checkDir, "data", "sub", "bad.bin"), "BAD!");
+    File.WriteAllText(Path.Combine(checkDir, "data", "short.bin"), "shor");
+    File.WriteAllText(Path.Combine(checkDir, "data", "dir.manifest"), "rewritten by the game");
+    File.WriteAllText(Path.Combine(checkDir, "data", "extra.bin"), "mod");
+    DiscManifest list = DiscManifest.Parse(
+        $"# Project Sparrow disc reference list\r\n# default.xex {sha("xex")}\r\n" +
+        $"{sha("xex")} 3 default.xex\r\n" +
+        $"{sha("good")} 4 data/good.bin\r\n" +
+        $"{sha("bad!")} 4 data/sub/bad.bin\r\n" +
+        $"{sha("short.")} 6 data/short.bin\r\n" +
+        $"{sha("gone")} 4 data/gone.bin\r\n" +
+        $"{sha("orig")} 4 data/dir.manifest\r\n" +
+        $"{sha("art")} 3 nxeart\r\n");
+    long lastDone = -1, lastTotal = -1;
+    DiscCheckResult check = list.Verify(checkDir, (done, total) => { lastDone = done; lastTotal = total; });
+    Require(check.Checked == 5, "checked count");
+    Require(check.Missing.SequenceEqual(["data/gone.bin"]), "missing file not reported");
+    Require(check.Damaged.SequenceEqual(["data/sub/bad.bin", "data/short.bin"]), "damaged files not reported");
+    Require(lastDone == lastTotal && lastTotal == 3 + 4 + 4 + 6 + 4, "progress did not reach the total");
+    File.WriteAllText(Path.Combine(checkDir, "data", "sub", "bad.bin"), "bad!");
+    File.WriteAllText(Path.Combine(checkDir, "data", "short.bin"), "short.");
+    File.WriteAllText(Path.Combine(checkDir, "data", "gone.bin"), "gone");
+    Require(list.Verify(checkDir).AllGood, "repaired folder still fails");
+    using (var cancelled = new CancellationTokenSource())
+    {
+        cancelled.Cancel();
+        RequireThrows(() => list.Verify(checkDir, null, cancelled.Token), "cancel ignored");
+    }
+    Console.WriteLine("Disc reference list and game file check passed.");
+
     if (args.Length > 0)
     {
         GameCompatibility compatibility = GameCompatibilityInspector.Inspect(args[0]);
         Console.WriteLine($"Compatibility probe: {compatibility.Label} — {compatibility.Message}");
+        string probeXex = Path.Combine(args[0], "default.xex");
+        if (File.Exists(probeXex) && DiscManifest.ForXex(DiscManifest.HashFile(probeXex)) is { } probeList)
+        {
+            DiscCheckResult probe = probeList.Verify(args[0]);
+            Console.WriteLine($"File check probe: {probe.Checked} checked, {probe.Missing.Count} missing, {probe.Damaged.Count} damaged");
+        }
         if (args.Contains("--expect-german-goty", StringComparer.OrdinalIgnoreCase))
             Require(compatibility.Label == "German GOTY detected", "German GOTY profile was not recognized");
     }

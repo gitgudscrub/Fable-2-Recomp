@@ -261,12 +261,3 @@ frame_limiter_sleep = true
 # FPS indoors with nothing missing on screen in testing.
 # false = trust the write tracking. Default: false
 refresh_gpu_memory_each_frame = false
-
-# Refresh GPU Memory During Videos: turns the refresh above on only while a
-# Bink video plays (intro, attract mode, story videos). The video decoder writes
-# its frames in a way the page protection does not always see, so with the
-# refresh off parts of the picture stay stale: washed-out, striped or cyan
-# blocks. Gameplay keeps the faster setting. No effect when
-# refresh_gpu_memory_each_frame = true.
-# true = correct videos. Default: true
-refresh_gpu_memory_during_videos = true

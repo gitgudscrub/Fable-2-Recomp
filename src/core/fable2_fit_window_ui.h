@@ -972,35 +972,6 @@ inline void TickVideo() {
   REXSYS_INFO("[fit-window] video {}: letterbox {} (Bink entry calls:{})",
               playing ? "started" : "ended", playing ? "on" : "off", counts);
 }
-
-// Call once a frame. With refresh_gpu_memory_each_frame off (the default), the
-// GPU misses some of the Bink decoder's writes to the video textures and parts
-// of the picture stay stale (washed-out, striped or cyan blocks). While any
-// video plays, including the attract video on the title screen and a menu's
-// preview video, turn the SDK's per-frame memory refresh
-// (clear_memory_page_state) on, then put it back. Only switches it if it was
-// off, so a value set in the config, on the command line or from the console
-// is left alone.
-inline void TickVideoMemoryRefresh() {
-  static bool playing = false;
-  static bool engaged = false;
-  const int64_t last = detail::g_bink_last_ms.load(std::memory_order_relaxed);
-  const bool now_playing = last != 0 && detail::NowMs() - last < 300;
-  if (now_playing == playing) return;
-  playing = now_playing;
-  if (playing) {
-    if (!fable2::config::Get().refresh_gpu_memory_during_videos) return;
-    if (rex::cvar::GetFlagByName("clear_memory_page_state") == "true") return;
-    if (rex::cvar::SetFlagByName("clear_memory_page_state", "true")) {
-      engaged = true;
-      REXSYS_INFO("[video-refresh] video playing: clear_memory_page_state on");
-    }
-  } else if (engaged) {
-    engaged = false;
-    rex::cvar::SetFlagByName("clear_memory_page_state", "false");
-    REXSYS_INFO("[video-refresh] video ended: clear_memory_page_state off");
-  }
-}
 }  // namespace fable2::fitwindow::ui
 
 DECLARE_REX_FUNC(sub_832B3DE0);

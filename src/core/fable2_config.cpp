@@ -294,15 +294,6 @@ frame_limiter_sleep = true
 # FPS indoors with nothing missing on screen in testing.
 # false = trust the write tracking. Default: false
 refresh_gpu_memory_each_frame = false
-
-# Refresh GPU Memory During Videos: turns the refresh above on only while a
-# Bink video plays (intro, attract mode, story videos). The video decoder writes
-# its frames in a way the page protection does not always see, so with the
-# refresh off parts of the picture stay stale: washed-out, striped or cyan
-# blocks. Gameplay keeps the faster setting. No effect when
-# refresh_gpu_memory_each_frame = true.
-# true = correct videos. Default: true
-refresh_gpu_memory_during_videos = true
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -505,9 +496,6 @@ bool Load(const std::filesystem::path& path) {
     values.refresh_gpu_memory_each_frame = Read<bool>(
         perf_table, "perf", "refresh_gpu_memory_each_frame", "boolean",
         values.refresh_gpu_memory_each_frame);
-    values.refresh_gpu_memory_during_videos = Read<bool>(
-        perf_table, "perf", "refresh_gpu_memory_during_videos", "boolean",
-        values.refresh_gpu_memory_during_videos);
   }
 
   g_values = values;

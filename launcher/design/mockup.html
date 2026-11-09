@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Sparrow Launcher</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&family=Alegreya+Sans:wght@400;500;700&family=Alegreya+Sans+SC:wght@500;700&display=swap">
+<style>
+/* Layout: the window IS the storybook scene. Centred title + round gold seal to play, editions on a ribbon at the foot,
+   settings and help open as a parchment page sliding in from the right with bookmark tabs on its edge. */
+:root{
+  color-scheme: dark;
+  --night:#07140e;
+  --forest:#0e2219;
+  --moss-line:#2a4d3e;
+  --gold:#d6b25e;
+  --gold-hi:#f1d98f;
+  --gold-deep:#8a6420;
+  --gold-ink:#1d1405;
+  --ivory:#efe5c9;        /* text on the scene */
+  --sage:#a9bca9;
+  --sage-dim:#7a947f;
+  --ember:#e6955a;
+  --page:#efe4c6;         /* parchment page */
+  --page-edge:#d9c99f;
+  --ink:#2b2414;          /* text on parchment */
+  --ink-soft:#6a5c3d;
+  --ink-green:#1f4a37;    /* accent on parchment */
+  --display:"IM Fell English", "Iowan Old Style", Georgia, serif;
+  --display-sc:"IM Fell English SC", "IM Fell English", Georgia, serif;
+  --body:"Alegreya Sans", "Segoe UI", system-ui, sans-serif;
+  --label:"Alegreya Sans SC", "Alegreya Sans", "Segoe UI", sans-serif;
+}
+html,body{height:100%}
+body{background:var(--night);color:var(--ivory);font-family:var(--body);font-size:16px;line-height:1.45;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:20px 40px}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold-hi);outline-offset:2px}
+
+/* Mockup controls */
+.proto{max-width:1180px;margin:0 auto 14px;display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;color:var(--sage);font-size:14px}
+.proto b{font-family:var(--label);font-weight:700;letter-spacing:.06em;color:var(--sage-dim);font-size:12px;text-transform:uppercase}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{border:1px solid var(--moss-line);background:transparent;border-radius:99px;padding:4px 12px;cursor:pointer;color:var(--sage)}
+.chip[aria-pressed="true"]{border-color:var(--gold);color:var(--gold-hi);background:rgba(214,178,94,.08)}
+
+/* Window */
+.window{position:relative;max-width:1180px;margin:0 auto;border:1px solid var(--moss-line);border-radius:12px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);background:var(--forest)}
+.titlebar{position:relative;z-index:3;display:flex;align-items:center;gap:10px;padding:8px 6px 8px 14px;background:rgba(5,14,10,.55);font-size:14px;color:var(--sage)}
+.titlebar img{width:18px;height:18px;border-radius:4px}
+.titlebar .sp{flex:1}
+.wc{width:40px;height:28px;display:grid;place-items:center}
+.wc svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:1.2}
+
+.stage{position:relative;min-height:660px;display:flex;flex-direction:column}
+.stage svg.scene{position:absolute;inset:0;width:100%;height:100%;z-index:0}
+.stage::after{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(60% 55% at 50% 40%, transparent 0%, rgba(4,12,8,.55) 100%)}
+
+/* Corner tools (open the page) */
+.tools{position:absolute;top:14px;right:16px;z-index:2;display:flex;gap:8px}
+.tool{display:flex;align-items:center;gap:8px;background:rgba(7,20,14,.6);border:1px solid rgba(214,178,94,.35);border-radius:99px;padding:6px 14px 6px 10px;cursor:pointer;color:var(--ivory);font-size:15px;backdrop-filter:blur(4px)}
+.tool svg{width:18px;height:18px;stroke:var(--gold-hi);fill:none;stroke-width:1.5}
+.tool:hover{border-color:var(--gold-hi)}
+
+/* Centre: title + seal */
+.centre{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:56px 24px 24px;gap:6px}
+.emblem{width:96px;height:96px;border-radius:24px;box-shadow:0 0 0 1px rgba(241,217,143,.4),0 0 50px rgba(241,217,143,.28)}
+.eyebrow{margin-top:14px;font-family:var(--label);font-weight:700;letter-spacing:.2em;font-size:12.5px;color:var(--gold);text-transform:uppercase}
+.name{font-family:var(--display);font-weight:400;font-size:clamp(44px,7.2vw,86px);line-height:.95;margin:0;color:var(--ivory);text-shadow:0 3px 0 rgba(0,0,0,.35);text-wrap:balance}
+.name .initial{color:var(--gold-hi)}
+.name .pre{display:block;font-family:var(--display-sc);font-size:.34em;letter-spacing:.35em;color:var(--gold);margin-bottom:.12em;padding-left:.35em}
+.flourish{width:min(320px,70%);height:14px;margin:4px 0 2px}
+.motto{font-family:var(--display);font-style:italic;color:var(--sage);font-size:clamp(16px,1.8vw,20px)}
+
+.seal-wrap{margin-top:30px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.seal{position:relative;width:148px;height:148px;border-radius:50%;cursor:pointer;border:0;padding:0;
+  background:radial-gradient(circle at 38% 32%, #fbeab4 0%, #e3bf68 38%, #a87a2c 78%, #7a5418 100%);
+  box-shadow:0 0 0 6px rgba(214,178,94,.15),0 0 0 7px rgba(241,217,143,.35),0 0 60px rgba(241,217,143,.35),0 16px 30px rgba(0,0,0,.5);
+  color:var(--gold-ink);font-family:var(--display-sc);font-size:30px;letter-spacing:.04em}
+.seal::before{content:"";position:absolute;inset:10px;border-radius:50%;border:1.5px dashed rgba(70,45,10,.45)}
+.seal span{position:relative}
+.seal small{display:block;font-family:var(--label);font-size:12px;letter-spacing:.12em;margin-top:2px;opacity:.75}
+.seal:hover{filter:brightness(1.06)}
+.seal:disabled{cursor:progress;filter:saturate(.55) brightness(.85)}
+.seal.compact{font-size:22px}
+
+.status{max-width:560px;color:var(--sage);font-size:15.5px}
+.status h2{margin:0 0 4px;color:var(--ivory);font-size:18px;font-weight:700;display:flex;gap:10px;align-items:center;justify-content:center}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold)}
+.dot.warn{background:var(--ember);box-shadow:0 0 10px var(--ember)}
+.status p{margin:0}
+.status kbd{font-family:var(--body);font-size:13px;border:1px solid var(--moss-line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--ivory);background:rgba(7,20,14,.8)}
+.bar{height:6px;border-radius:99px;background:rgba(7,20,14,.8);border:1px solid var(--moss-line);margin:10px auto 0;overflow:hidden;max-width:360px}
+.bar i{display:block;height:100%;width:43%;background:linear-gradient(90deg,var(--gold),var(--gold-hi))}
+
+/* Edition ribbon */
+.ribbon{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;gap:16px;flex-wrap:wrap;
+  padding:14px 20px 18px;background:linear-gradient(180deg, rgba(5,14,10,0), rgba(5,14,10,.85) 40%)}
+.ribbon .lbl{font-family:var(--label);font-weight:700;letter-spacing:.14em;font-size:12.5px;color:var(--gold);text-transform:uppercase}
+.editions{display:flex;flex-wrap:wrap;justify-content:center;border:1px solid rgba(214,178,94,.45);border-radius:6px;overflow:hidden;background:rgba(7,20,14,.7)}
+.ed{background:transparent;border:0;border-right:1px solid rgba(214,178,94,.25);padding:8px 18px;cursor:pointer;text-align:left;min-width:0}
+.ed:last-child{border-right:0}
+.ed b{display:block;font-family:var(--display);font-weight:400;font-size:19px;color:var(--ivory)}
+.ed span{display:block;font-size:13px;color:var(--sage-dim)}
+.ed[aria-pressed="true"]{background:linear-gradient(180deg,#f1d98f,#c99a3c)}
+.ed[aria-pressed="true"] b,.ed[aria-pressed="true"] span{color:var(--gold-ink)}
+.custom{font-size:13.5px;color:var(--ember)}
+.ver{position:absolute;right:18px;bottom:18px;z-index:1;color:var(--sage-dim);font-size:13px;font-variant-numeric:tabular-nums}
+
+/* Parchment page */
+.scrim{position:absolute;inset:0;z-index:4;background:rgba(3,10,7,.45);opacity:0;pointer-events:none;transition:opacity .25s}
+/* The page is hinged on the window's right edge and swings in onto the scene like a turned page. */
+.page{position:absolute;top:0;right:0;bottom:0;z-index:5;width:min(560px,100%);display:flex;
+  transform-origin:right center;transform:perspective(1800px) rotateY(100deg);opacity:0;pointer-events:none;
+  transition:transform .7s cubic-bezier(.25,.75,.2,1), opacity .3s ease}
+.open .scrim{opacity:1;pointer-events:auto}
+.open .page{transform:perspective(1800px) rotateY(0deg);opacity:1;pointer-events:auto}
+.sheet{position:relative}
+.sheet::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:linear-gradient(270deg, rgba(60,40,10,.35), rgba(60,40,10,0) 40%, rgba(255,250,230,.25) 85%, rgba(60,40,10,.2))}
+.page.lift .sheet::after{animation:shade .7s ease-out}
+@keyframes shade{0%{opacity:1}100%{opacity:0}}
+/* Switching tabs turns to a new page from the spine */
+.panel.turn{transform-origin:right center;animation:turn .55s cubic-bezier(.25,.75,.2,1)}
+@keyframes turn{0%{transform:perspective(1600px) rotateY(75deg);filter:brightness(.75)}100%{transform:none;filter:none}}
+.tabs{display:flex;flex-direction:column;gap:6px;padding-top:70px;margin-right:-1px}
+.tab{writing-mode:vertical-rl;transform:rotate(180deg);background:var(--gold-deep);color:var(--page);border:0;cursor:pointer;
+  padding:14px 8px;border-radius:0 6px 6px 0;font-family:var(--label);font-weight:700;letter-spacing:.1em;font-size:13px;box-shadow:-2px 2px 6px rgba(0,0,0,.3)}
+.tab[aria-selected="true"]{background:var(--page);color:var(--ink-green)}
+.sheet{flex:1;min-width:0;background:linear-gradient(90deg, #e4d6b0 0, var(--page) 18px), var(--page);color:var(--ink);
+  border-left:1px solid var(--page-edge);overflow:auto;padding:26px 30px 30px;
+  box-shadow:-20px 0 50px rgba(0,0,0,.45), inset -3px 0 0 #dccda4, inset -6px 0 0 #e9dcba, inset -9px 0 0 #d6c597}
+.sheet header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-bottom:1px solid var(--page-edge);padding-bottom:10px;margin-bottom:6px}
+.sheet h3{font-family:var(--display);font-weight:400;font-size:32px;margin:0;color:var(--ink)}
+.close{background:transparent;border:1px solid var(--page-edge);border-radius:99px;padding:3px 12px;cursor:pointer;color:var(--ink-soft)}
+.sheet h4{font-family:var(--label);font-weight:700;letter-spacing:.12em;font-size:12.5px;color:var(--gold-deep);text-transform:uppercase;margin:20px 0 4px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;min-height:46px;border-bottom:1px dotted #c9b88a}
+.row .hint{display:block;color:var(--ink-soft);font-size:13.5px}
+.link{width:100%;background:transparent;border:0;border-bottom:1px dotted #c9b88a;cursor:pointer;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;font-size:16px;color:var(--ink)}
+.link span.hint{display:block;color:var(--ink-soft);font-size:13.5px}
+.link::after{content:"›";color:var(--gold-deep);font-size:22px;line-height:1}
+.link:hover{color:var(--ink-green)}
+.seg{display:inline-grid;grid-auto-flow:column;border:1px solid #bfae80;border-radius:6px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:6px 14px;cursor:pointer;color:var(--ink-soft)}
+.seg button[aria-pressed="true"]{background:var(--ink-green);color:var(--page);font-weight:700}
+.sw{position:relative;width:44px;height:24px;flex:none;border-radius:99px;border:1px solid #bfae80;background:#e2d4ad;cursor:pointer;padding:0}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#a99868;transition:transform .15s, background .15s}
+.sw[aria-checked="true"]{background:var(--ink-green);border-color:var(--ink-green)}
+.sw[aria-checked="true"]::after{transform:translateX(20px);background:var(--gold-hi)}
+select{font:inherit;color:var(--ink);background:#f6eed6;border:1px solid #bfae80;border-radius:6px;padding:5px 8px}
+.note{color:var(--ink-soft);font-size:14px;margin:8px 0 0}
+.panel{display:none}.panel.on{display:block}
+.inline{margin:12px 0 0;padding:12px 14px;border:1px solid var(--page-edge);border-radius:6px;background:#f6eed6;color:var(--ink-soft);font-size:14.5px}
+.inline ul{margin:6px 0 10px;padding-left:20px}
+.btn{border:1px solid #bfae80;background:#f6eed6;border-radius:6px;padding:6px 14px;cursor:pointer;color:var(--ink)}
+.btn.green{background:var(--ink-green);border-color:var(--ink-green);color:var(--page);font-weight:700}
+
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--forest);border:1px solid var(--gold);border-radius:8px;padding:10px 16px;z-index:30;max-width:calc(100% - 32px)}
+
+@media (max-width:700px){
+  .stage{min-height:600px}
+  .centre{padding-top:64px}
+  .tool .t{display:none}
+  .tool{padding:8px}
+  .ver{position:static;text-align:center;padding:0 0 12px;background:rgba(5,14,10,.85)}
+  .editions{flex-direction:column;width:100%}
+  .ed{border-right:0;border-bottom:1px solid rgba(214,178,94,.25)}
+  .sheet{padding:22px 18px}
+}
+@media (prefers-reduced-motion:reduce){ .fly,.panel.turn,.page.lift .sheet::after{animation:none!important} .page,.scrim{transition:none} }
+@keyframes drift{0%{transform:translate(0,0);opacity:.2}50%{opacity:1}100%{transform:translate(14px,-22px);opacity:.15}}
+.fly{animation:drift 6s ease-in-out infinite alternate}
+</style>
+</head>
+<body>
+
+
+<div class="proto" aria-label="Mockup controls">
+  <b>Preview state</b><div class="chips" id="states"></div>
+</div>
+
+<div class="window" id="win">
+  <div class="titlebar">
+    <img src="../../assets/app-icon.png" alt=""><span id="tb-name">Project Sparrow</span><span class="sp"></span>
+    <span class="wc" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M1 6h10"/></svg></span>
+    <span class="wc" aria-hidden="true"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9"/></svg></span>
+    <span class="wc" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9"/></svg></span>
+  </div>
+
+  <div class="stage">
+    <svg class="scene" viewBox="0 0 1180 660" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#05110c"/><stop offset=".5" stop-color="#0d281d"/><stop offset="1" stop-color="#1c4130"/>
+        </linearGradient>
+        <radialGradient id="glow" cx=".5" cy=".42" r=".5">
+          <stop offset="0" stop-color="#f1d98f" stop-opacity=".22"/><stop offset="1" stop-color="#f1d98f" stop-opacity="0"/>
+        </radialGradient>
+      </defs>
+      <rect width="1180" height="660" fill="url(#sky)"/>
+      <rect width="1180" height="660" fill="url(#glow)"/>
+      <g fill="#f1d98f">
+        <circle cx="90" cy="70" r="1.4" opacity=".8"/><circle cx="240" cy="40" r="1"/><circle cx="360" cy="120" r="1.6" opacity=".7"/>
+        <circle cx="820" cy="60" r="1.1"/><circle cx="930" cy="140" r="1" opacity=".6"/><circle cx="1060" cy="50" r="1.5"/>
+        <circle cx="170" cy="200" r="1" opacity=".5"/><circle cx="1010" cy="230" r="1" opacity=".5"/><circle cx="700" cy="30" r="1.2"/>
+        <circle cx="470" cy="60" r="1" opacity=".6"/><circle cx="1120" cy="300" r="1.1" opacity=".5"/>
+      </g>
+      <path d="M1000 110a34 34 0 1 0 28 52 27 27 0 1 1-28-52z" fill="#efe5c9" opacity=".85"/>
+      <path d="M0 470 C 160 420, 300 432, 440 455 S 760 410, 900 440 S 1100 425, 1180 432 V660 H0Z" fill="#163a2b"/>
+      <g fill="#122f23">
+        <rect x="160" y="352" width="18" height="96"/><path d="M155 354 L169 318 L183 354Z"/>
+        <rect x="166" y="372" width="6" height="9" fill="#f1d98f" opacity=".9"/>
+        <path d="M960 452 q 30 -70 60 0z"/><path d="M990 450 q 26 -96 52 0z"/>
+      </g>
+      <path d="M0 520 C 200 480, 380 492, 560 512 S 900 488, 1180 506 V660 H0Z" fill="#0f2a1f"/>
+      <path d="M0 580 C 260 548, 480 558, 700 574 S 1020 560, 1180 568 V660 H0Z" fill="#0a1d16"/>
+      <g fill="#f1d98f">
+        <circle class="fly" cx="300" cy="520" r="2"/><circle class="fly" style="animation-delay:-2s" cx="860" cy="500" r="1.6"/>
+        <circle class="fly" style="animation-delay:-4s" cx="520" cy="560" r="1.8"/><circle class="fly" style="animation-delay:-1s" cx="1040" cy="540" r="1.5"/>
+        <circle class="fly" style="animation-delay:-3s" cx="140" cy="560" r="1.4"/>
+      </g>
+    </svg>
+
+    <div class="tools">
+      <button class="tool" data-open="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg><span class="t">Settings</span></button>
+      <button class="tool" data-open="help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.6v.6M12 17.2v.3"/></svg><span class="t">Help</span></button>
+    </div>
+
+    <div class="centre">
+      <img class="emblem" src="../../assets/app-icon.png" alt="Gold tree growing from an open book">
+      <div class="eyebrow">Fable II · recompiled for Windows</div>
+      <h1 class="name" id="name"><span class="pre">Project</span><span class="initial">S</span>parrow</h1>
+      <svg class="flourish" viewBox="0 0 320 14" aria-hidden="true"><path d="M0 7h130M190 7h130" stroke="#d6b25e" stroke-width="1"/><path d="M160 1l6 6-6 6-6-6z" fill="#d6b25e"/><circle cx="140" cy="7" r="2" fill="#d6b25e"/><circle cx="180" cy="7" r="2" fill="#d6b25e"/></svg>
+      <div class="motto" id="motto">Every hero begins as a sparrow.</div>
+
+      <div class="seal-wrap">
+        <button class="seal" id="play"><span id="play-t">Play</span></button>
+        <div class="status" id="status" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <div class="ribbon">
+      <span class="lbl">Edition</span>
+      <div class="editions" id="eds">
+        <button class="ed" data-p="original" aria-pressed="true"><b>Original</b><span>30 fps · 720p · as on Xbox</span></button>
+        <button class="ed" data-p="enhanced" aria-pressed="false"><b>Enhanced</b><span>60 fps · 1440p · FXAA</span></button>
+        <button class="ed" data-p="experimental" aria-pressed="false"><b>Experimental</b><span>Uncapped · 4x scale · may glitch</span></button>
+      </div>
+      <span class="custom" id="custom" hidden>Custom changes</span>
+    </div>
+    <div class="ver" id="ver">1.7.0 · Stable</div>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="page" id="page" aria-hidden="true">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" data-tab="settings" aria-selected="true">Settings</button>
+        <button class="tab" role="tab" data-tab="controls" aria-selected="false">Controls</button>
+        <button class="tab" role="tab" data-tab="updates" aria-selected="false">Updates</button>
+        <button class="tab" role="tab" data-tab="help" aria-selected="false">Help</button>
+      </div>
+      <div class="sheet">
+        <section class="panel on" data-panel="settings">
+          <header><h3>Settings</h3><button class="close" data-close>Close</button></header>
+          <h4>Display</h4>
+          <div class="row"><label for="wm">Window</label><select id="wm"><option>Windowed</option><option selected>Borderless</option><option>Fullscreen</option></select></div>
+          <div class="row"><label for="res">Resolution</label><select id="res"><option selected>720p</option><option>1080p</option><option>1440p</option><option>4K</option></select></div>
+          <div class="row"><label for="fps">Frame rate limit</label><select id="fps"><option selected>30</option><option>60</option><option>120</option><option>Unlimited</option></select></div>
+          <h4>Game</h4>
+          <div class="row"><span>Skip intro videos</span><button class="sw" role="switch" aria-checked="true" aria-label="Skip intro videos" data-custom></button></div>
+          <div class="row"><span>Motion blur</span><button class="sw" role="switch" aria-checked="true" aria-label="Motion blur" id="blur" data-custom></button></div>
+          <button class="link" data-toast="Opens the full list: render scale, texture filtering, anti-aliasing, VSync and every recomp patch">Advanced settings…</button>
+          <p class="note">Changing anything here turns the edition into Custom.</p>
+        </section>
+
+        <section class="panel" data-panel="controls">
+          <header><h3>Controls</h3><button class="close" data-close>Close</button></header>
+          <div class="row"><span>Play with</span><div class="seg" id="ctl"><button aria-pressed="false">Controller</button><button aria-pressed="true">Keyboard</button></div></div>
+          <div class="row"><span>Mouse look<span class="hint">Move the camera with the mouse</span></span><button class="sw" role="switch" aria-checked="true" aria-label="Mouse look"></button></div>
+          <button class="link" data-toast="Opens the key map: each key mapped to a controller button">Keyboard keys…</button>
+        </section>
+
+        <section class="panel" data-panel="updates">
+          <header><h3>Updates</h3><button class="close" data-close>Close</button></header>
+          <div class="row"><span>Channel</span><div class="seg" id="chan"><button aria-pressed="true">Stable</button><button aria-pressed="false">Beta</button></div></div>
+          <p class="note" id="chan-note">Tested releases. Updates download in the background and install when you close the game.</p>
+          <div class="inline"><b style="color:var(--ink)">You're up to date.</b> Version 1.7.0, checked a minute ago.</div>
+        </section>
+
+        <section class="panel" data-panel="help">
+          <header><h3>Help</h3><button class="close" data-close>Close</button></header>
+          <button class="link" id="report-btn"><span>Report a problem<span class="hint">Bundle logs and settings, open a GitHub issue</span></span></button>
+          <div class="inline" id="report" hidden>We'll put these in one zip on your desktop:
+            <ul><li>The last 3 game logs</li><li>Version, channel and edition</li><li>Your settings files (no saves)</li><li>Graphics card, driver and Windows version</li><li>Screenshots you took with F8</li></ul>
+            <button class="btn green" data-toast="Report zip saved to your desktop. GitHub issue opened.">Create report</button></div>
+          <button class="link" data-toast="All game files match Fable II GOTY (USA/Europe)"><span>Check game files<span class="hint">Compare your files with a known-good disc</span></span></button>
+          <button class="link" data-toast="Opened the saves folder"><span>Open save folder</span></button>
+          <button class="link" id="folder-btn"><span>Change data folder<span class="hint">C:\Users\you\AppData\Local\Fable2Recomp-Data</span></span></button>
+          <div class="inline" id="folder" hidden>Game files (7.2 GB), saves and settings live here. Updates never touch this folder.<br><br>
+            <button class="btn" data-toast="Now using D:\Games\Fable II data">Use an existing folder…</button> <button class="btn green" data-toast="Moving 7.2 GB to D:\Games…">Move to…</button></div>
+          <button class="link" data-toast="Shader cache cleared. The first few minutes may stutter while it rebuilds."><span>Clear shader cache</span></button>
+          <p class="note" style="margin-top:18px">An unofficial, fan-made recompilation. You need your own Fable II Game of the Year disc; no game files are included or downloaded. Not affiliated with or endorsed by Microsoft or Xbox Game Studios. Built on the ReXGlue SDK.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s), $$ = s => document.querySelectorAll(s);
+function pressGroup(g,btn){ g.querySelectorAll('[aria-pressed]').forEach(b=>b.setAttribute('aria-pressed', b===btn)); }
+let tt; function toast(m){ const t=$('#toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>t.hidden=true, 3200); }
+
+
+const STATES = {
+  "Needs disc": {dot:'warn', h:'Choose your Fable II disc image', p:'Pick the .iso you made from your own Fable II Game of the Year disc. We check it, then copy about 7 GB into your data folder. The disc image is never uploaded.', play:'Choose<small>DISC IMAGE</small>', compact:true},
+  "Extracting": {dot:'', h:'Copying game files', p:'Fable II GOTY (USA/Europe) recognised. 3.1 of 7.2 GB copied.', bar:true, play:'43%<small>COPYING</small>', disabled:true, compact:true},
+  "Ready": {dot:'', h:'Ready to play', p:'Keyboard: <kbd>WASD</kbd> move, <kbd>Space</kbd> interact, <kbd>Esc</kbd> pause. Press <kbd>F8</kbd> in game to save a screenshot for a problem report.', play:'Play'},
+  "Update ready": {dot:'', h:'Update 1.7.1 is ready', p:'Example notes: fixes a lighting flicker in towns. Restarting keeps your saves and settings.', play:'Restart<small>TO UPDATE</small>', compact:true}
+};
+const statesEl=$('#states'); let current='Ready';
+Object.keys(STATES).forEach(k=>{ const b=document.createElement('button'); b.className='chip'; b.textContent=k; b.setAttribute('aria-pressed', k===current);
+  b.onclick=()=>{ pressGroup(statesEl,b); setState(k); }; statesEl.append(b); });
+function setState(k){ current=k; const s=STATES[k];
+  $('#status').innerHTML='<h2><span class="dot '+s.dot+'"></span>'+s.h+'</h2><p>'+s.p+'</p>'+(s.bar?'<div class="bar"><i></i></div>':'');
+  $('#play-t').innerHTML=s.play; const p=$('#play'); p.disabled=!!s.disabled; p.classList.toggle('compact',!!s.compact); }
+setState('Ready');
+$('#play').onclick=()=>{ const m={"Ready":"Launching Fable II…","Needs disc":"This opens a file picker for your .iso","Update ready":"Restarting to install 1.7.1…"}[current]; if(m) toast(m); };
+
+// Editions
+const eds=$('#eds'); const BLUR={original:true,enhanced:false,experimental:false};
+eds.querySelectorAll('.ed').forEach(b=>b.onclick=()=>{ pressGroup(eds,b); $('#custom').hidden=true; $('#blur').setAttribute('aria-checked', BLUR[b.dataset.p]); });
+
+// Page open/close + tabs
+const win=$('#win'), page=$('#page');
+function openPage(tab){ selectTab(tab,false); page.classList.remove('lift'); void page.offsetWidth; page.classList.add('lift');
+  win.classList.add('open'); page.setAttribute('aria-hidden','false'); page.querySelector('.panel.on .close').focus({preventScroll:true}); }
+function closePage(){ win.classList.remove('open'); page.setAttribute('aria-hidden','true'); }
+function selectTab(tab, turn=true){
+  $$('.tab').forEach(t=>t.setAttribute('aria-selected', t.dataset.tab===tab));
+  $$('.panel').forEach(p=>{ const on=p.dataset.panel===tab, was=p.classList.contains('on'); p.classList.toggle('on', on);
+    if(on && !was && turn){ p.classList.remove('turn'); void p.offsetWidth; p.classList.add('turn'); } });
+}
+$$('[data-open]').forEach(b=>b.onclick=()=>openPage(b.dataset.open));
+$$('.tab').forEach(t=>t.onclick=()=>selectTab(t.dataset.tab));
+$$('[data-close]').forEach(b=>b.onclick=closePage);
+$('#scrim').onclick=closePage;
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePage(); });
+
+// Controls inside the page
+['#ctl','#chan'].forEach(sel=>{ const g=$(sel); g.querySelectorAll('button').forEach(b=>b.onclick=()=>{ pressGroup(g,b); if(sel==='#chan') setChannel(b.textContent); }); });
+function setChannel(c){
+  $('#ver').textContent = c==='Beta' ? '1.8.0-beta.2 · Beta' : '1.7.0 · Stable';
+  $('#chan-note').textContent = c==='Beta' ? 'Newest fixes first, less tested. Back up your saves before switching back to Stable.' : 'Tested releases. Updates download in the background and install when you close the game.';
+  toast(c==='Beta' ? 'Switched to Beta. 1.8.0-beta.2 downloads in the background.' : 'Switched to Stable. 1.7.0 is reinstalled on next restart.');
+}
+$$('.sw').forEach(s=>s.onclick=()=>{ s.setAttribute('aria-checked', s.getAttribute('aria-checked')!=='true'); if(s.hasAttribute('data-custom')) $('#custom').hidden=false; });
+$$('#res,#fps').forEach(s=>s.onchange=()=>$('#custom').hidden=false);
+$('#report-btn').onclick=()=>$('#report').hidden=!$('#report').hidden;
+$('#folder-btn').onclick=()=>$('#folder').hidden=!$('#folder').hidden;
+$$('[data-toast]').forEach(b=>b.onclick=()=>toast(b.dataset.toast));
+</script>
+
+</body>
+</html>

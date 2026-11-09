@@ -74,7 +74,7 @@ public sealed class Updater
     public string? CurrentVersion => _manager.IsInstalled ? _manager.CurrentVersion?.ToString() : null;
 
     /// <summary>Channel the installed package was built for ("stable" or "beta"), or null.</summary>
-    public string? InstalledChannel => _manager.IsInstalled ? _manager.DefaultChannel : null;
+    public string? InstalledChannel => _manager.IsInstalled ? Velopack.Locators.VelopackLocator.Current.Channel : null;
 
     /// <summary>An update already downloaded (this run or an earlier one) and waiting to install.</summary>
     public VelopackAsset? Pending { get; private set; }

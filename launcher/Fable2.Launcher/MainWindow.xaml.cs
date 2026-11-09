@@ -56,6 +56,13 @@ public partial class MainWindow : Window
         }
 
         _updater = new Updater(_home.Settings.Channel);
+        // A fresh install follows the installer it came from (beta Setup -> Beta channel).
+        if (!_home.Settings.ChannelChosen && _updater.InstalledChannel is "stable" or "beta"
+            && _updater.InstalledChannel != _home.Settings.Channel)
+        {
+            _home.Settings.Channel = _updater.InstalledChannel;
+            _updater.SetChannel(_home.Settings.Channel);
+        }
         _version = _updater.CurrentVersion ?? ReadVersion();
         _updater.LoadPending();
         LoadSettings();
@@ -458,6 +465,7 @@ public partial class MainWindow : Window
     {
         if (_loading) return;
         _home.Settings.Channel = ChannelBeta.IsChecked == true ? "beta" : "stable";
+        _home.Settings.ChannelChosen = true;
         try { _home.Save(); } catch (IOException) { }
         _updater.SetChannel(_home.Settings.Channel);
         RefreshGameState();

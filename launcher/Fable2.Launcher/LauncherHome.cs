@@ -15,6 +15,8 @@ public sealed class LauncherSettings
     /// <summary>Game files folder when the player points at an existing copy. Null = DataFolder\game.</summary>
     public string? GameFolder { get; set; }
     public string Channel { get; set; } = "stable";
+    /// <summary>False until the player picks a channel; until then the installer's channel is used.</summary>
+    public bool ChannelChosen { get; set; }
     public string Edition { get; set; } = "original";
     /// <summary>Window theme: "night", "dusk" (default) or "day".</summary>
     public string Theme { get; set; } = "dusk";

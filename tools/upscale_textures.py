@@ -30,6 +30,7 @@ import argparse
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -38,7 +39,7 @@ import time
 import numpy as np
 from PIL import Image, ImageFilter
 
-PACK_VERSION = 1
+PACK_VERSION = 2
 # Screen-sized render targets that sometimes get dumped. Not art.
 SCREEN_SIZES = {(1280, 720), (640, 360), (320, 180), (160, 90), (560, 360), (280, 180),
                 (1280, 704), (1024, 576), (960, 540)}
@@ -170,15 +171,67 @@ def build_colour(it, up4, scale):
     rgb = Image.fromarray((ai * mask + plain * (1 - mask)).round().clip(0, 255).astype(np.uint8))
     alpha = it['image'].getchannel('A')
     amin, amax = alpha.getextrema()
-    has_alpha = amin < 255
-    if has_alpha:
-        alpha = lanczos(alpha, size)
-        if it['fmt'] == 'DXT1':  # 1-bit cut-out alpha stays 1-bit
-            alpha = alpha.point(lambda v: 255 if v >= 128 else 0)
-    else:
+    if amin == 255:
+        kind = 'opaque'
         alpha = Image.new('L', size, 255)
+    else:
+        a = np.asarray(alpha)
+        # DXT1 alpha is 1-bit; DXT5 foliage often is too in practice.
+        binary = it['fmt'] == 'DXT1' or ((a > 8) & (a < 247)).mean() < 0.01
+        kind = 'cutout' if binary else 'soft'
+        alpha = lanczos(alpha, size)
+        if binary:
+            alpha = alpha.point(lambda v: 255 if v >= 128 else 0)
     r, g, b = rgb.split()
-    return Image.merge('RGBA', (r, g, b, alpha)), has_alpha
+    return Image.merge('RGBA', (r, g, b, alpha)), kind
+
+
+def cutout_mips(img):
+    """Mip chain for a cut-out texture with 1-bit alpha on every level.
+
+    The game draws foliage with alpha-to-coverage. Ordinary mips blur the
+    alpha, which turns distant grass and leaves into a see-through stipple
+    (the originals are DXT1, so their mips are 1-bit too). Each level here is
+    thresholded so it keeps the top level's coverage, and its colour is the
+    alpha-weighted average so transparent texels don't bleed in."""
+    a = np.asarray(img, np.float32) / 255.0
+    rgb, soft = a[..., :3], a[..., 3]
+    coverage = (soft >= 0.5).mean()
+    levels = [np.asarray(img, np.uint8)]
+    w, h = img.size
+
+    def down(x, size):
+        return np.asarray(Image.fromarray(np.ascontiguousarray(x, np.float32), 'F').resize(size, Image.BOX))
+
+    while w > 1 or h > 1:
+        w, h = max(1, w // 2), max(1, h // 2)
+        weight = down(soft, (w, h))
+        prem = np.stack([down(rgb[..., c] * soft, (w, h)) for c in range(3)], axis=2)
+        plain = np.stack([down(rgb[..., c], (w, h)) for c in range(3)], axis=2)
+        rgb = np.where(weight[..., None] > 1e-4, prem / np.maximum(weight, 1e-4)[..., None], plain)
+        soft = weight
+        if coverage <= 0.0:
+            cut = np.zeros_like(soft)
+        elif coverage >= 1.0:
+            cut = np.ones_like(soft)
+        else:
+            t = np.quantile(soft, 1.0 - coverage)
+            cut = (soft >= max(t, 1e-4)).astype(np.float32)
+        lv = np.concatenate([rgb, cut[..., None]], axis=2)
+        levels.append((lv * 255 + 0.5).clip(0, 255).astype(np.uint8))
+    return levels
+
+
+def write_rgba_dds(path, levels):
+    """Uncompressed RGBA8 DDS with the given mip levels (texconv keeps them)."""
+    h, w = levels[0].shape[:2]
+    pf = struct.pack('<II4sIIIII', 32, 0x41, bytes(4), 32, 0xff, 0xff00, 0xff0000, 0xff000000)
+    hdr = (struct.pack('<IIIIIII', 124, 0x1 | 0x2 | 0x4 | 0x8 | 0x1000 | 0x20000, h, w, w * 4, 0,
+                       len(levels)) + bytes(44) + pf + struct.pack('<IIIII', 0x1000 | 0x400000 | 0x8, 0, 0, 0, 0))
+    with open(path, 'wb') as f:
+        f.write(b'DDS ' + hdr)
+        for lv in levels:
+            f.write(np.ascontiguousarray(lv).tobytes())
 
 
 def build_normal(it, scale):
@@ -210,14 +263,13 @@ def build_single(it, scale):
 
 
 def encode_all(tools, jobs, out_dir):
-    """jobs: list of (png_path, dxgi_format, keep_coverage); batched per settings."""
+    """jobs: list of (source_path, dxgi_format, has_mips); batched per settings.
+    Sources with their own mip chain (cut-outs) keep it."""
     groups = {}
-    for png, fmt, cov in jobs:
-        groups.setdefault((fmt, cov), []).append(png)
-    for (fmt, cov), pngs in groups.items():
-        args = ['-f', fmt, '-m', '0', '-o', out_dir]
-        if cov:
-            args += ['-keepcoverage', '0.5']
+    for png, fmt, has_mips in jobs:
+        groups.setdefault((fmt, has_mips), []).append(png)
+    for (fmt, has_mips), pngs in groups.items():
+        args = ['-f', fmt, '-o', out_dir] + ([] if has_mips else ['-m', '0'])
         for i in range(0, len(pngs), 64):
             texconv(tools, args + pngs[i:i + 64])
 
@@ -293,10 +345,15 @@ def main():
             chunk = colour[i:i + args.batch]
             up = upscale_ai(args.tools, args.model, chunk, work, args.deblock, pad=16)
             for it in chunk:
-                img, has_alpha = build_colour(it, up[it['hash']], args.scale)
-                png = os.path.join(staged, it['hash'] + '.png')
-                img.save(png)
-                jobs.append((png, 'BC7_UNORM', has_alpha and it['fmt'] == 'DXT1'))
+                img, kind = build_colour(it, up[it['hash']], args.scale)
+                if kind == 'cutout':
+                    src = os.path.join(staged, it['hash'] + '.dds')
+                    write_rgba_dds(src, cutout_mips(img))
+                    jobs.append((src, 'BC7_UNORM', True))
+                else:
+                    src = os.path.join(staged, it['hash'] + '.png')
+                    img.save(src)
+                    jobs.append((src, 'BC7_UNORM', False))
                 done += 1
             print(f'  upscaled {done}/{len(colour)}  ({time.time() - t0:.0f} s)')
 

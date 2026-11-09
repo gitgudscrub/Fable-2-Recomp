@@ -1,8 +1,8 @@
 // fable_2 - ReXGlue Recompiled Project
 //
 // Recomp user configuration (fable2_config.toml), separate from the ReXGlue
-// SDK cvar config (fable_2.toml). Loaded once at startup from next to the
-// exe; created with defaults if missing.
+// SDK cvar config (fable_2.toml). Loaded once at startup from the user
+// root (--user_root, default next to the exe); created with defaults if missing.
 
 #pragma once
 

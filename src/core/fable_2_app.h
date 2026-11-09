@@ -77,6 +77,29 @@ rex::ui::Presenter* GetWindowPresenter(rex::ui::Window* w) {
 }
 }  // namespace
 
+// Per-user writable root: saves/, cache/, logs/, fable_2.toml and
+// fable2_config.toml. Empty = the exe's own folder (portable/dev layout).
+// The installed build passes it so updates, which replace the install folder,
+// never touch player data. Command line only: fable_2.toml lives inside it.
+REXCVAR_DEFINE_STRING(user_root, "", "Runtime",
+                      "Folder for saves, cache, logs and config files "
+                      "(empty = next to fable_2.exe)");
+
+namespace fable2 {
+// Absolute user root, created if missing. Stable for the whole run.
+inline const std::filesystem::path& UserRoot() {
+  static const std::filesystem::path root = [] {
+    std::filesystem::path p = std::string(REXCVAR_GET(user_root));
+    if (p.empty()) p = rex::filesystem::GetExecutableFolder();
+    std::error_code ec;
+    p = std::filesystem::absolute(p, ec);
+    std::filesystem::create_directories(p, ec);
+    return p;
+  }();
+  return root;
+}
+}  // namespace fable2
+
 class Fable2App : public rex::ReXApp {
  public:
   using rex::ReXApp::ReXApp;
@@ -358,9 +381,7 @@ class Fable2App : public rex::ReXApp {
     // This describes the linked build, not a guarantee about DLLs replaced later.
     REXSYS_INFO("[native-build] configuration={} linked_sdk={}",
                 FABLE2_NATIVE_CONFIGURATION, FABLE2_NATIVE_SDK);
-    const std::filesystem::path exe_dir =
-        rex::filesystem::GetExecutableFolder();
-    fable2::config::Load(exe_dir / "fable2_config.toml");
+    fable2::config::Load(fable2::UserRoot() / "fable2_config.toml");
 
     // Seed cvars from the config. Only when the cvar is still at its
     // compiled default (source kDefault), so higher-priority sources --
@@ -564,14 +585,15 @@ class Fable2App : public rex::ReXApp {
     }
   }
 
-  // Self-contained layout: everything lives next to the executable.
+  // Self-contained layout: by default everything lives next to the executable.
   //   <exe>/               <- content root (default.xex, data/, nxeart/,
   //                           $SystemUpdate/; staged next to the exe by the
   //                           build, see CMakeLists.txt)
-  //   <exe>/saves/         <- user data: save files, settings, profiles
-  //   <exe>/cache/         <- runtime caches (shader cache, etc.)
-  //   <exe>/fable_2.toml   <- cvar config (SDK default)
-  //   <exe>/logs/          <- game logs (SDK default)
+  //   <user>/saves/        <- user data: save files, settings, profiles
+  //   <user>/cache/        <- runtime caches (shader cache, etc.)
+  //   <user>/fable_2.toml  <- cvar config
+  //   <user>/logs/         <- game logs (OnConfigureLogging)
+  // <user> is --user_root, or the exe folder when it is not given.
   // The content root is the exe's own directory ONLY (no ancestor walk), so
   // the whole build folder is portable as-is: copy it anywhere and it runs.
   // Override the content location with --game_data_root=<path>.
@@ -611,16 +633,18 @@ class Fable2App : public rex::ReXApp {
       std::exit(1);
     }
 
-    // Keep saves and caches inside the exe's own folder (self-contained).
-    // The SDK's default user dir is a per-user platform location, which
-    // caused save corruption. NOTE: set unconditionally because the SDK
-    // defaults are non-empty, so empty-checks would never trigger (this
-    // also overrides the cvar/CLI defaults).
+    // Keep saves and caches under the user root (exe folder by default).
+    // The SDK's default user dir is Documents, which caused save corruption.
+    // NOTE: set unconditionally because the SDK defaults are non-empty, so
+    // empty-checks would never trigger (this also overrides the SDK's
+    // --user_data_root / --cache_root; use --user_root instead).
+    const std::filesystem::path& user_root = fable2::UserRoot();
     std::error_code ec;
-    paths.user_data_root = exe_dir / "saves";
+    paths.user_data_root = user_root / "saves";
     std::filesystem::create_directories(paths.user_data_root, ec);
-    paths.cache_root = exe_dir / "cache";
+    paths.cache_root = user_root / "cache";
     std::filesystem::create_directories(paths.cache_root, ec);
+    paths.config_path = user_root / "fable_2.toml";
 
     // Mount the $SystemUpdate folder (inside the content root) as update:\
     // so VdSetGraphicsInterruptCallback-era update partition lookups resolve
@@ -632,6 +656,10 @@ class Fable2App : public rex::ReXApp {
       }
     }
   }
+  void OnConfigureLogging(rex::LogConfig& config) override {
+    config.log_dir = fable2::UserRoot() / "logs";
+  }
+
   std::filesystem::path XexHashMarker() {
     std::filesystem::path cache = cache_root();
     if (cache.empty()) cache = game_data_root() / "cache";

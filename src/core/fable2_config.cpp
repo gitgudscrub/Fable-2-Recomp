@@ -1,7 +1,8 @@
 // fable_2 - ReXGlue Recompiled Project
 //
 // fable2_config.toml: the recomp's own user config (separate from the ReXGlue
-// SDK cvar config fable_2.toml). Look for it next to the exe, create it with
+// SDK cvar config fable_2.toml). Look for it in the user root (--user_root,
+// default next to the exe), create it with
 // defaults if missing, parse it, and expose the values via Get().
 //
 // Growth model: add a member to Values (with its default), read it in Load()

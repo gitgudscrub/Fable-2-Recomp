@@ -85,7 +85,7 @@ float GammaToLinear(float v) {
 // texture binding number (sampler, unsigned and signed views are the
 // descriptor indices 1 + 3 * binding ...). Rewrites use Fetch/FetchLevel;
 // FetchCore is the shared body (`level` < 0 samples with derivatives).
-float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale, float level) {
+float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale, float level, int2 texel_offset) {
   uint base = tf * 6;
   float2 size;
   if (is_1d) {
@@ -107,15 +107,15 @@ float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale,
   uint sampler_index = DescriptorIndex(1 + 3 * binding);
   Texture2DArray<float4> tex_u = xe_textures_2d[NonUniformResourceIndex(DescriptorIndex(2 + 3 * binding))];
   SamplerState smp = xe_samplers[NonUniformResourceIndex(sampler_index)];
-  float4 unsigned_value = level >= 0.0 ? tex_u.SampleLevel(smp, float3(uv, 0.0), level)
-                                       : tex_u.SampleGrad(smp, float3(uv, 0.0), dx, dy);
+  float4 unsigned_value = level >= 0.0 ? tex_u.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
+                                       : tex_u.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset);
   float4 signed_value = unsigned_value;
   bool any_signed = false;
   [unroll] for (uint c = 0; c < 4; ++c) any_signed = any_signed || ((signs >> (2 * c)) & 3) == 1;
   if (any_signed) {
     Texture2DArray<float4> tex_s = xe_textures_2d[NonUniformResourceIndex(DescriptorIndex(3 + 3 * binding))];
-    signed_value = level >= 0.0 ? tex_s.SampleLevel(smp, float3(uv, 0.0), level)
-                                : tex_s.SampleGrad(smp, float3(uv, 0.0), dx, dy);
+    signed_value = level >= 0.0 ? tex_s.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
+                                : tex_s.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset);
   }
   float4 v;
   [unroll] for (uint i = 0; i < 4; ++i) {
@@ -129,12 +129,16 @@ float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale,
   return v * asfloat(exp_adjust * 0x00800000 + 0x3F800000);
 }
 float4 Fetch(uint tf, uint binding, float2 uv, bool is_1d) {
-  return FetchCore(tf, binding, uv, is_1d, 1.0, -1.0);
+  return FetchCore(tf, binding, uv, is_1d, 1.0, -1.0, int2(0, 0));
+}
+// The same fetch with a texel offset (the ucode's OffsetX/OffsetY).
+float4 FetchOffset(uint tf, uint binding, float2 uv, int2 offset) {
+  return FetchCore(tf, binding, uv, false, 1.0, -1.0, offset);
 }
 // The same fetch at an explicit mip level, for rewrites that want a blurred
 // copy of a texture.
 float4 FetchLevel(uint tf, uint binding, float2 uv, bool is_1d, float level) {
-  return FetchCore(tf, binding, uv, is_1d, 1.0, level);
+  return FetchCore(tf, binding, uv, is_1d, 1.0, level, int2(0, 0));
 }
 
 // Width and height of a 2D texture from its fetch constant.
@@ -154,11 +158,60 @@ void AlphaTest(float alpha) {
   if (!keep) discard;
 }
 
+// The guest's alpha-to-coverage, from the tail of the translated pixel
+// shaders (xe_alpha_to_mask holds four 2-bit dither offsets, one per pixel
+// of a 2x2 block). `position` is the host pixel position. Returns the
+// sample mask; discards the pixel when no sample passes.
+uint AlphaToMask(float alpha, float2 position) {
+  if (xe_alpha_to_mask == 0u) return 0xFFFFFFFFu;
+  uint2 p = uint2(position);
+  uint shift = (((p.x & 1u) << 1) | (p.y & 1u)) << 1;
+  float d = float((xe_alpha_to_mask >> shift) & 3u);
+  uint mask = 0u;
+  if (xe_sample_count_log2.y != 0u) {
+    if (xe_sample_count_log2.x != 0u) {
+      mask = (alpha >= d * -0.0625 + 0.75 ? 1u : 0u) | (alpha >= d * -0.0625 + 0.25 ? 2u : 0u) |
+             (alpha >= d * -0.0625 + 0.5 ? 4u : 0u) | (alpha >= d * -0.0625 + 1.0 ? 8u : 0u);
+    } else {
+      mask = (alpha >= d * -0.125 + 0.5 ? 2u : 0u) | (alpha >= d * -0.125 + 1.0 ? 1u : 0u);
+    }
+  } else {
+    mask = alpha >= d * -0.25 + 1.0 ? 1u : 0u;
+  }
+  if (mask == 0u) discard;
+  return mask;
+}
+
+// Guest pixel position as the translator puts it in the register after the
+// last interpolator (resolution scale undone, x negated for back faces when
+// xe_flags bit 4 is set).
+float2 GuestPixelPosition(float4 position, bool front_face) {
+  float2 p = abs(floor(position.xy) * (1.0 / RES_SCALE));
+  if (xe_flags & 16u) p.x = front_face ? p.x : -p.x;
+  return p;
+}
+
 struct PSInput {
   float4 v0 : TEXCOORD0;
   float4 v1 : TEXCOORD1;
   float4 v2 : TEXCOORD2;
   float4 v3 : TEXCOORD3;
+  float4 position : SV_Position;
+  bool front_face : SV_IsFrontFace;
+};
+struct PSInput2 {
+  float4 v0 : TEXCOORD0;
+  float4 v1 : TEXCOORD1;
+  float4 position : SV_Position;
+  bool front_face : SV_IsFrontFace;
+};
+struct PSInput6 {
+  float4 v0 : TEXCOORD0;
+  float4 v1 : TEXCOORD1;
+  float4 v2 : TEXCOORD2;
+  float4 v3 : TEXCOORD3;
+  float4 v4 : TEXCOORD4;
+  float4 v5 : TEXCOORD5;
   float4 position : SV_Position;
   bool front_face : SV_IsFrontFace;
 };

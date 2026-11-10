@@ -260,10 +260,14 @@ def main():
     ap.add_argument('--tools', default=os.path.join(repo, 'out', 'tooling', 'upscale'))
     ap.add_argument('--models', default=os.path.join(repo, 'out', 'tooling', 'reimagine', 'models'),
                     help='Hugging Face cache folder for the models')
-    ap.add_argument('--categories', default='stone,brick,wood,roof',
+    ap.add_argument('--categories', default='stone,brick,wood,roof,bark,ground',
                     help='comma-separated categories to re-imagine (see LABELS). bark and ground '
-                         'exist too but CLIP mixes painted trees and terrain atlases into them')
+                         'come from --lists only, since CLIP mixes painted trees and terrain atlases '
+                         'into them')
     ap.add_argument('--min-score', type=float, default=0.5, help='CLIP confidence needed')
+    ap.add_argument('--lists', default=os.path.join(here, 'reimagine_lists.json'),
+                    help='JSON {category: [hashes]} of hand-picked textures; these override CLIP '
+                         '(bark and ground, where CLIP mixes in painted trees and terrain atlases)')
     ap.add_argument('--min-size', type=int, default=128, help='skip textures smaller than this')
     ap.add_argument('--strength', type=float, default=0.65,
                     help='img2img denoising strength (0.65 redraws the surface; 0.35 barely changes it)')
@@ -298,10 +302,20 @@ def main():
 
     cats = [c for c in args.categories.split(',') if c]
     only = [p.upper() for p in args.only.split(',') if p]
+    hand = {}
+    if args.lists and os.path.exists(args.lists):
+        with open(args.lists, encoding='utf-8') as f:
+            for cat, hashes in json.load(f).items():
+                for h in hashes:
+                    hand[h.upper()] = cat
     todo = []
     for it in items:
         c = cache.get(it['hash'])
+        if it['hash'] in hand:
+            c = {'label': hand[it['hash']], 'score': 1.0}
         if not c or c['label'] not in cats or c['score'] < args.min_score:
+            continue
+        if c['label'] in ('bark', 'ground') and it['hash'] not in hand:
             continue
         if min(it['w'], it['h']) < args.min_size:
             continue

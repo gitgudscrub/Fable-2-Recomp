@@ -44,9 +44,12 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   const config::Values& cfg = config::Get();
   auto seed = [](const char* name, const std::string& value) {
     if (rex::cvar::GetFlagSource(name) != rex::cvar::Source::kDefault) {
+      REXSYS_INFO("[texture-pack] cvar {} already set elsewhere, not seeded", name);
       return;
     }
-    if (!rex::cvar::SetFlagByName(name, value)) {
+    if (rex::cvar::SetFlagByName(name, value)) {
+      REXSYS_INFO("[texture-pack] seeded cvar {} = '{}'", name, value);
+    } else {
       REXSYS_WARN("[texture-pack] cvar {} missing (SDK without texture packs?)", name);
     }
   };
@@ -61,6 +64,8 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("post_ao", cfg.ambient_occlusion ? "true" : "false");
   seed("post_aa", cfg.anti_aliasing ? "true" : "false");
   seed("post_bloom", cfg.bloom ? "true" : "false");
+  // Startup only: the SDK swaps shaders in when it translates them.
+  seed("shader_replace_dir", cfg.shader_rewrites ? "shaders/replace" : "");
 }
 
 // Per-frame poll of the toggle key (game window focused). Flips the SDK cvar;

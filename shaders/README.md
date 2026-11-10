@@ -1,0 +1,52 @@
+# Shader rewrites (Modern graphics, tier 3)
+
+Hand-written HLSL that replaces the game's own shaders at the point where the
+SDK would use its translation of the Xbox 360 microcode. Built by
+`python tools/shaders/build_replace.py` into `shaders/replace/<UCODE
+HASH>.dxbc` (checked in, so builds don't need fxc); CMake stages that folder
+next to the exe, and the SDK cvar `shader_replace_dir` (seeded from
+`[graphics] shader_rewrites`) points there. A replacement is picked up when
+the shader is translated, which happens at every startup (the shader cache
+stores microcode, not the result), so a rebuilt `.dxbc` needs only a restart.
+
+## Finding the shader for a surface
+
+1. Run with `--dump_shaders=<dir>` once. For every shader this writes
+   `shader_<HASH>.ucode.frag` (microcode disassembly) and
+   `shader_<HASH>_<mods>.d3d12_rtv.bin.frag` (the translated DXBC;
+   `fxc /dumpbin` disassembles it).
+2. In the console, `cvar log_frame_shaders 1` logs every vertex/pixel shader
+   pair drawn in the next frame, with draw counts, in draw order.
+3. `--shader_highlight=HASH1,HASH2,...` (up to 8) draws each listed pixel
+   shader's surfaces in a solid colour (magenta, red, green, blue, yellow,
+   cyan, white, orange) so you can see which is which.
+
+## Writing a replacement
+
+The replacement is a complete DXBC pixel (or vertex) shader for the SDK's
+root signature, so it must declare the same resources the translated shader
+does: see the `Buffer Definitions` and `Resource Bindings` blocks at the top
+of the `fxc /dumpbin` output and the interface section of `water.ps.hlsl`.
+In particular:
+
+- `xe_float_cbuffer` holds only the float constants the shader uses, packed in
+  ascending register order (`K[0]` = lowest `c` register used).
+- Textures are fetched through `xe_descriptor_indices`: each texture binding
+  takes three indices (sampler, unsigned view, signed view) in the order the
+  translator lists them; `Fetch()` in `water.ps.hlsl` reproduces the
+  translator's fetch, including guest-gamma decoding and the `exp_adjust`
+  scale from the fetch constants.
+- The output is multiplied by `xe_color_exp_bias.x`; alpha test and
+  alpha-to-coverage are in the translated shader's tail and need porting
+  only if the game enables them for that shader.
+
+Start with a literal port of the microcode (one HLSL line per ucode
+instruction, as in `water.ps.hlsl`), check it against the original with
+screenshots, then add the improvements behind defines so the original look
+stays reachable.
+
+## Current rewrites
+
+| Shader | Hashes | Changes |
+|---|---|---|
+| Water (`water.ps.hlsl`) | `A17D8AEC3A817D45` open water, `F6D98C7B4D98438B` shore edge | finer third ripple layer, tighter sun glint, Fresnel curve on the reflection |

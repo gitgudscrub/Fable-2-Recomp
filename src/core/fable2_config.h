@@ -249,6 +249,9 @@ struct Values {
   // (both run inside the colour grade, so they follow post_grade too).
   bool anti_aliasing = true;
   bool bloom = false;
+  // [graphics] shader_rewrites: seeds the SDK cvar shader_replace_dir with
+  // shaders/replace (startup only; replacements are applied at translation).
+  bool shader_rewrites = true;
   float character_draw_distance = 1.0f;
 };
 

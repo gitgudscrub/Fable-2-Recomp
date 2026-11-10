@@ -303,6 +303,12 @@ anti_aliasing = true
 # Part of Post-Processing. Costs under 1% FPS. Default: false
 bloom = false
 
+# Shader Rewrites: replaces some of the game's own shaders with improved
+# versions (shaderseplace next to the game; see shaders/README.md in the
+# source). Currently: water (finer ripples, sun glint, truer reflection
+# falloff). Read at startup, so F8 does not switch it. Default: true
+shader_rewrites = true
+
 # Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
 # 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
 # game's own filtering. 0 = never override. Default: 16

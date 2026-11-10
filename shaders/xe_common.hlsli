@@ -58,6 +58,7 @@ cbuffer xe_descriptor_indices_cbuffer : register(b4) {
 };
 SamplerState xe_samplers[] : register(s0, space0);
 Texture2DArray<float4> xe_textures_2d[] : register(t0, space1);
+TextureCube<float4> xe_textures_cube[] : register(t0, space3);
 
 // Boolean constant b<n> (n in 0..255).
 bool XeBool(uint n) { return (xe_bool_constants[n >> 7][(n >> 5) & 3] & (1u << (n & 31))) != 0; }
@@ -149,6 +150,76 @@ float4 FetchLevel(uint tf, uint binding, float2 uv, bool is_1d, float level) {
   return FetchCore(tf, binding, uv, is_1d, 1.0, level, false, int2(0, 0));
 }
 
+// Decode of a fetched value by the fetch constant's per-component signs
+// (0 unsigned, 1 signed view, 2 biased, 3 guest gamma) and exp_adjust.
+float4 DecodeFetch(uint tf, uint binding, float4 unsigned_value, float4 signed_value) {
+  uint signs_word = xe_texture_swizzled_signs[tf >> 4][(tf >> 2) & 3];
+  uint signs = (signs_word >> ((tf & 3) * 8)) & 0xFF;
+  float4 v;
+  [unroll] for (uint i = 0; i < 4; ++i) {
+    uint s = (signs >> (2 * i)) & 3;
+    float x = s == 1 ? signed_value[i] : unsigned_value[i];
+    if (s == 2) x = x * 2.0 - 1.0;
+    if (s == 3) x = GammaToLinear(x);
+    v[i] = x;
+  }
+  int exp_adjust = int(FetchDword(tf * 6 + 3) << 13) >> 26;
+  return v * asfloat(exp_adjust * 0x00800000 + 0x3F800000);
+}
+
+// The Xenos `cube` ALU op as the translator emulates it: from a direction
+// returns (s-ish, t-ish, 2 * major axis, face id).
+float4 XeCube(float3 v) {
+  float4 r;
+  if (abs(v.z) >= abs(v.x) && abs(v.z) >= abs(v.y)) {
+    bool w = v.z < 0.0;
+    r = float4(-v.y, w ? -v.x : v.x, 2.0 * v.z, w ? 5.0 : 4.0);
+  } else if (abs(v.y) >= abs(v.x)) {
+    bool w = v.y < 0.0;
+    r = float4(w ? -v.z : v.z, v.x, 2.0 * v.y, w ? 3.0 : 2.0);
+  } else {
+    bool w = v.x < 0.0;
+    r = float4(-v.y, w ? v.z : -v.z, 2.0 * v.x, w ? 1.0 : 0.0);
+  }
+  return r;
+}
+
+// tfetchCube as the translator emits it: `stf` is the ucode's (s, t, face)
+// coordinate (s and t in 1..2 after the usual +1.5), rebuilt into a
+// direction for the host cube map.
+float4 FetchCube(uint tf, uint binding, float3 stf) {
+  uint base = tf * 6;
+  uint d = FetchDword(base + 2);
+  float2 size = float2(float((d & 0x1FFF) + 1), float(((d >> 13) & 0x1FFF) + 1));
+  float2 offset = 0.001465 / size;
+  bool scaled = ((xe_textures_resolution_scaled >> tf) & 1) != 0;
+  float2 st = scaled ? offset * (1.0 / 3.0) + stf.xy : stf.xy + offset;
+  st = st * 2.0 - 3.0;
+  uint face = min(uint(stf.z), 5u);
+  bool neg = (face & 1u) != 0;
+  float3 dir;
+  switch (face >> 1) {
+    case 0u: dir = float3(neg ? -1.0 : 1.0, -st.y, neg ? st.x : -st.x); break;
+    case 1u: dir = float3(st.x, neg ? -1.0 : 1.0, neg ? -st.y : st.y); break;
+    default: dir = float3(neg ? -st.x : st.x, -st.y, neg ? -1.0 : 1.0); break;
+  }
+  float lod_scale = exp2(float(int(FetchDword(base + 4) << 10) >> 22) * 0.03125);
+  float3 dx = ddx_coarse(dir) * lod_scale, dy = ddy_coarse(dir) * lod_scale;
+  uint signs_word = xe_texture_swizzled_signs[tf >> 4][(tf >> 2) & 3];
+  uint signs = (signs_word >> ((tf & 3) * 8)) & 0xFF;
+  SamplerState smp = xe_samplers[NonUniformResourceIndex(DescriptorIndex(1 + 3 * binding))];
+  TextureCube<float4> tex_u = xe_textures_cube[NonUniformResourceIndex(DescriptorIndex(2 + 3 * binding))];
+  float4 unsigned_value = tex_u.SampleGrad(smp, dir, dx, dy);
+  float4 signed_value = unsigned_value;
+  bool any_signed = false;
+  [unroll] for (uint c = 0; c < 4; ++c) any_signed = any_signed || ((signs >> (2 * c)) & 3) == 1;
+  if (any_signed) {
+    TextureCube<float4> tex_s = xe_textures_cube[NonUniformResourceIndex(DescriptorIndex(3 + 3 * binding))];
+    signed_value = tex_s.SampleGrad(smp, dir, dx, dy);
+  }
+  return DecodeFetch(tf, binding, unsigned_value, signed_value);
+}
+
 // Width and height of a 2D texture from its fetch constant.
 float2 TextureSize(uint tf) {
   uint d = FetchDword(tf * 6 + 2);
@@ -210,6 +281,19 @@ struct PSInput {
 struct PSInput2 {
   float4 v0 : TEXCOORD0;
   float4 v1 : TEXCOORD1;
+  float4 position : SV_Position;
+  bool front_face : SV_IsFrontFace;
+};
+// Seven interpolators, the last centroid-sampled (as the translator declares
+// it for shaders whose vertex shader marks it so).
+struct PSInput7 {
+  float4 v0 : TEXCOORD0;
+  float4 v1 : TEXCOORD1;
+  float4 v2 : TEXCOORD2;
+  float4 v3 : TEXCOORD3;
+  float4 v4 : TEXCOORD4;
+  float4 v5 : TEXCOORD5;
+  centroid float4 v6 : TEXCOORD6;
   float4 position : SV_Position;
   bool front_face : SV_IsFrontFace;
 };

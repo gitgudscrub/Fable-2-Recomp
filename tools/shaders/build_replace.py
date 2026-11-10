@@ -26,6 +26,7 @@ SHADERS = [
     ('water.ps.hlsl', 'ps_5_1', ['EDGE=1'], 'F6D98C7B4D98438B'),    # shore edge
     ('foliage.ps.hlsl', 'ps_5_1', [], '7CD57B81550F19E3'),          # tree leaves
     ('sky.ps.hlsl', 'ps_5_1', [], '61976295517D7015'),              # sun-lit cloud layer
+    ('lit.ps.hlsl', 'ps_5_1', [], '8D900846800943C8'),              # lit opaque: rocks, stone, skin, cloth
 ]
 
 

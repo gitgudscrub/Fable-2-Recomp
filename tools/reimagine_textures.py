@@ -72,10 +72,17 @@ PROMPTS = {
               'seamless albedo texture, highly detailed',
     'bark': 'deep ridged tree bark with moss in the grooves, flat even lighting, '
             'seamless albedo texture, highly detailed',
-    'wood': 'aged wooden planks with clear grain and knots, flat even lighting, '
+    'wood': 'aged weathered wooden planks with deep open grain, knots and splits, flat even lighting, '
             'seamless albedo texture, highly detailed',
-    'roof': 'old roof tiles with moss and chips, flat even lighting, seamless albedo texture, '
-            'highly detailed',
+    'roof': 'old roof tiles with faint dull lichen and chips, flat even lighting, '
+            'seamless albedo texture, highly detailed',
+}
+# Per-category departures from the command-line defaults. Wood needs a
+# stronger pass before plank grain deepens at all; roof moss otherwise comes
+# out as bright paint, so it is also pushed away in the negative prompt.
+OVERRIDES = {
+    'wood': {'strength': 0.75},
+    'roof': {'negative': 'bright green, saturated, neon, painted moss'},
 }
 NEGATIVE = ('blurry, smooth, flat colour, painting, cartoon, text, watermark, strong shadows, '
             'specular highlights, people, objects, frame, border')
@@ -192,12 +199,16 @@ def work_size(w, h, max_side):
     return max(64, int(w * s) // 8 * 8), max(64, int(h * s) // 8 * 8)
 
 
-def generate_one(pipe, src_rgba, prompt, args, seed, native):
+def generate_one(pipe, src_rgba, label, args, seed, native):
     """src_rgba: the source (the upscaled pack entry when present); native:
     the dump's own size. Generation always runs with the long side at --size
     (see below); where the source is finer than that, its finer detail (the
     upscaler's grain) is added back afterwards."""
     import torch
+    ov = OVERRIDES.get(label, {})
+    prompt = PROMPTS[label]
+    negative = NEGATIVE + (', ' + ov['negative'] if 'negative' in ov else '')
+    strength = ov.get('strength', args.strength)
     w, h = src_rgba.size
     rgb = up.alpha_bleed(src_rgba)
     pad = args.pad
@@ -210,8 +221,8 @@ def generate_one(pipe, src_rgba, prompt, args, seed, native):
     padded = up.wrap_pad(rgb, pad * w // nw)
     cond = padded.resize((gw, gh), Image.LANCZOS)
     gen = torch.Generator('cuda').manual_seed(seed)
-    out = pipe(prompt=prompt, negative_prompt=NEGATIVE, image=cond, control_image=cond,
-               strength=args.strength, num_inference_steps=args.steps,
+    out = pipe(prompt=prompt, negative_prompt=negative, image=cond, control_image=cond,
+               strength=strength, num_inference_steps=args.steps,
                guidance_scale=args.guidance, controlnet_conditioning_scale=args.control,
                generator=gen, width=gw, height=gh).images[0]
     p = pad * w // nw
@@ -235,6 +246,15 @@ def generate_one(pipe, src_rgba, prompt, args, seed, native):
     # Hold the overall colour: match the mean of the result to the source
     # per channel so the palette does not drift with the prompt.
     arr = arr - arr.mean(axis=(0, 1)) + plain.mean(axis=(0, 1))
+    # ...and its colourfulness: scale the chroma (distance from the pixel's
+    # own grey) so the mean chroma matches the source, which stops the model
+    # painting neon moss or rust onto a muted texture. Never scales up.
+    def chroma(a):
+        return a - a.mean(axis=2, keepdims=True)
+    c_src = np.abs(chroma(plain)).mean()
+    c_out = np.abs(chroma(arr)).mean()
+    if c_out > c_src > 0:
+        arr = arr.mean(axis=2, keepdims=True) + chroma(arr) * (c_src / c_out)
     arr = arr * mask + plain * (1 - mask)
     rgb = Image.fromarray(arr.round().clip(0, 255).astype(np.uint8))
     r, g, b = rgb.split()
@@ -325,8 +345,18 @@ def main():
                 and os.path.exists(os.path.join(out, it['hash'] + '.reimagined')):
             continue
         it['label'] = c['label']
+        # Source: the upscaled pack entry. Once a re-imagined texture has been
+        # installed into replace/, the upscaled one lives in packs/pre-reimagine
+        # (and replace/ carries a .reimagined marker); never feed a re-imagine
+        # back in, as a second pass piles detail on detail.
+        backup = os.path.join(args.pack_root, 'packs', 'pre-reimagine', it['hash'] + '.dds')
         replaced = os.path.join(args.pack_root, 'replace', it['hash'] + '.dds')
-        it['src'] = replaced if os.path.exists(replaced) else it['path']
+        if os.path.exists(backup):
+            it['src'] = backup
+        elif os.path.exists(replaced) and not os.path.exists(replaced[:-4] + '.reimagined'):
+            it['src'] = replaced
+        else:
+            it['src'] = it['path']
         todo.append(it)
     if args.limit:
         todo = todo[:args.limit]
@@ -349,7 +379,7 @@ def main():
         for n, it in enumerate(todo, 1):
             img = decode_to(args.tools, [it], decoded, key='src')[it['hash']]
             seed = args.seed + int(it['hash'][:6], 16)
-            res = generate_one(pipe, img, PROMPTS[it['label']], args, seed, (it['w'], it['h']))
+            res = generate_one(pipe, img, it['label'], args, seed, (it['w'], it['h']))
             if args.keep_png:
                 img.save(os.path.join(args.keep_png, f"{it['hash']}_{it['label']}_before.png"))
                 res.save(os.path.join(args.keep_png,

@@ -242,6 +242,9 @@ struct Values {
   // [graphics] post_processing: seeds the SDK cvar post_grade while Modern
   // graphics are on (colour grade after the gamma ramp, D3D12 only).
   bool post_processing = true;
+  // [graphics] ambient_occlusion: seeds the SDK cvar post_ao (AO from the
+  // scene depth, applied by the colour grade, so it follows post_grade).
+  bool ambient_occlusion = true;
   float character_draw_distance = 1.0f;
 };
 

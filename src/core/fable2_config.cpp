@@ -320,6 +320,12 @@ texture_dump = false
 # brightness is kept. Default: true
 post_processing = true
 
+# Ambient Occlusion: soft contact shadows where surfaces meet (under rocks,
+# ruins and roofs, between leaves), worked out from the game's depth buffer
+# and faded out with distance. Part of Post-Processing: only on when that and
+# Modern graphics are on. Costs about 2% FPS. Default: true
+ambient_occlusion = true
+
 # Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
 # 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
 # game's own filtering. 0 = never override. Default: 16
@@ -549,6 +555,8 @@ bool Load(const std::filesystem::path& path) {
                                      values.texture_dump);
     values.post_processing = Read<bool>(graphics_table, "graphics", "post_processing", "boolean",
                                         values.post_processing);
+    values.ambient_occlusion = Read<bool>(graphics_table, "graphics", "ambient_occlusion",
+                                          "boolean", values.ambient_occlusion);
     values.texture_filtering = static_cast<int32_t>(
         Read<int64_t>(graphics_table, "graphics", "texture_filtering", "integer",
                       values.texture_filtering));

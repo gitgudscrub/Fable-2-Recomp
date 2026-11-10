@@ -21,6 +21,21 @@ stores microcode, not the result), so a rebuilt `.dxbc` needs only a restart.
    shader's surfaces in a solid colour (magenta, red, green, blue, yellow,
    cyan, white, orange) so you can see which is which.
 
+## Finding the texture for a surface
+
+The same two tools exist for textures (texture hashes are the names in the
+texture pack's `dump/` folder, so they feed straight into
+`tools/reimagine_textures.py --only`):
+
+1. In the console, `cvar log_frame_textures 1` logs every (pixel shader, fetch
+   constant, texture hash) used in the next frame, with draw counts. Grep the
+   lines for the surface's pixel shader (from `log_frame_shaders`) and read
+   off its `tf0` (usually the albedo) hashes.
+2. `--texture_highlight=HASH1,HASH2,...` (prefixes of at least 6 hex digits)
+   shows each listed texture as a solid colour, in the same colour order as
+   the shader highlight. The colour still goes through the surface's lighting,
+   so pick one that contrasts with it.
+
 ## Writing a replacement
 
 The replacement is a complete DXBC pixel (or vertex) shader for the SDK's

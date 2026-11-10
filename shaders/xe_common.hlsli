@@ -85,7 +85,7 @@ float GammaToLinear(float v) {
 // texture binding number (sampler, unsigned and signed views are the
 // descriptor indices 1 + 3 * binding ...). Rewrites use Fetch/FetchLevel;
 // FetchCore is the shared body (`level` < 0 samples with derivatives).
-float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale, float level, int2 texel_offset) {
+float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale, float level, bool use_offset, int2 texel_offset) {
   uint base = tf * 6;
   float2 size;
   if (is_1d) {
@@ -107,15 +107,23 @@ float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale,
   uint sampler_index = DescriptorIndex(1 + 3 * binding);
   Texture2DArray<float4> tex_u = xe_textures_2d[NonUniformResourceIndex(DescriptorIndex(2 + 3 * binding))];
   SamplerState smp = xe_samplers[NonUniformResourceIndex(sampler_index)];
-  float4 unsigned_value = level >= 0.0 ? tex_u.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
-                                       : tex_u.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset);
+  // The offset overloads emit sample_*_aoffimmi; keep the plain overloads
+  // when there is no offset so offset-free ports stay byte-identical.
+  float4 unsigned_value = use_offset
+      ? (level >= 0.0 ? tex_u.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
+                      : tex_u.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset))
+      : (level >= 0.0 ? tex_u.SampleLevel(smp, float3(uv, 0.0), level)
+                      : tex_u.SampleGrad(smp, float3(uv, 0.0), dx, dy));
   float4 signed_value = unsigned_value;
   bool any_signed = false;
   [unroll] for (uint c = 0; c < 4; ++c) any_signed = any_signed || ((signs >> (2 * c)) & 3) == 1;
   if (any_signed) {
     Texture2DArray<float4> tex_s = xe_textures_2d[NonUniformResourceIndex(DescriptorIndex(3 + 3 * binding))];
-    signed_value = level >= 0.0 ? tex_s.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
-                                : tex_s.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset);
+    signed_value = use_offset
+        ? (level >= 0.0 ? tex_s.SampleLevel(smp, float3(uv, 0.0), level, texel_offset)
+                        : tex_s.SampleGrad(smp, float3(uv, 0.0), dx, dy, texel_offset))
+        : (level >= 0.0 ? tex_s.SampleLevel(smp, float3(uv, 0.0), level)
+                        : tex_s.SampleGrad(smp, float3(uv, 0.0), dx, dy));
   }
   float4 v;
   [unroll] for (uint i = 0; i < 4; ++i) {
@@ -129,16 +137,16 @@ float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale,
   return v * asfloat(exp_adjust * 0x00800000 + 0x3F800000);
 }
 float4 Fetch(uint tf, uint binding, float2 uv, bool is_1d) {
-  return FetchCore(tf, binding, uv, is_1d, 1.0, -1.0, int2(0, 0));
+  return FetchCore(tf, binding, uv, is_1d, 1.0, -1.0, false, int2(0, 0));
 }
 // The same fetch with a texel offset (the ucode's OffsetX/OffsetY).
 float4 FetchOffset(uint tf, uint binding, float2 uv, int2 offset) {
-  return FetchCore(tf, binding, uv, false, 1.0, -1.0, offset);
+  return FetchCore(tf, binding, uv, false, 1.0, -1.0, true, offset);
 }
 // The same fetch at an explicit mip level, for rewrites that want a blurred
 // copy of a texture.
 float4 FetchLevel(uint tf, uint binding, float2 uv, bool is_1d, float level) {
-  return FetchCore(tf, binding, uv, is_1d, 1.0, level, int2(0, 0));
+  return FetchCore(tf, binding, uv, is_1d, 1.0, level, false, int2(0, 0));
 }
 
 // Width and height of a 2D texture from its fetch constant.

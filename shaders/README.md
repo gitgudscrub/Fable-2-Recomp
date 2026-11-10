@@ -63,6 +63,8 @@ back as threshold steps across the screen, not as absolute values.
 | Water (`water.ps.hlsl`) | `A17D8AEC3A817D45` open water, `F6D98C7B4D98438B` shore edge | finer third ripple layer, tighter sun glint, Fresnel curve on the reflection |
 | Tree leaves (`foliage.ps.hlsl`) | `7CD57B81550F19E3` | stronger, soft-gated translucency when the sun is behind the leaves; low-frequency warm/cool variation across the canopy from the world position |
 | Sky clouds (`sky.ps.hlsl`) | `61976295517D7015` (the sun-lit, bump-mapped cloud layer over the dome) | finer octave of the cloud height map in the lighting normal; clarity on the cloud colour |
+| Tree trunks (`trunk.ps.hlsl`) | `00E09D1BC5295D52` (trunks, branches and the second foliage layer) | low-frequency warm/cool variation of the bark colour from the world position (6 m scale, so each trunk keeps one colour) |
+| Ferns and bushes (`fern.ps.hlsl`) | `165EDCD2CB963868` | the same variation across the undergrowth (2.5 m scale) |
 | Lit opaque / skin (`lit.ps.hlsl`) | `8D900846800943C8` (rocks, stone, buildings, and the characters' skin and cloth) | on character draws whose albedo is a skin tone: wrapped diffuse, a reddened scattering edge where the light fades, and a tighter, weaker sheen than the stone's. Scenery is byte-for-byte the literal port |
 
 ### Skin without a skin shader
@@ -90,7 +92,6 @@ N.L from `r2.x` (instruction 39), while the `C23.w`-scaled copy in `r0.w`
 only gates the specular, so a change to the diffuse falloff has to go into
 `r2.x`.
 
-Confirmed hashes for the next ports (Bower Lake, `--shader_highlight`): tree trunks
-`00E09D1BC5295D52`, ferns/bushes `165EDCD2CB963868`, grass `2F8A0341E8C09698`,
-terrain `7DDAD5C29B3F56EE`,
+Confirmed hashes for the next ports (Bower Lake, `--shader_highlight`): grass
+`2F8A0341E8C09698`, terrain `7DDAD5C29B3F56EE`,
 horizon haze band `F7601FBE485936FD`, distant tree impostor cards `4B1D3E6E8E58D3AC`.

@@ -27,6 +27,8 @@ SHADERS = [
     ('foliage.ps.hlsl', 'ps_5_1', [], '7CD57B81550F19E3'),          # tree leaves
     ('sky.ps.hlsl', 'ps_5_1', [], '61976295517D7015'),              # sun-lit cloud layer
     ('lit.ps.hlsl', 'ps_5_1', [], '8D900846800943C8'),              # lit opaque: rocks, stone, skin, cloth
+    ('trunk.ps.hlsl', 'ps_5_1', [], '00E09D1BC5295D52'),            # tree trunks, second foliage layer
+    ('fern.ps.hlsl', 'ps_5_1', [], '165EDCD2CB963868'),             # ferns and bushes
 ]
 
 

@@ -307,5 +307,32 @@ struct PSInput6 {
   float4 position : SV_Position;
   bool front_face : SV_IsFrontFace;
 };
+// Eight interpolators, the last centroid-sampled (ferns).
+struct PSInput8 {
+  float4 v0 : TEXCOORD0;
+  float4 v1 : TEXCOORD1;
+  float4 v2 : TEXCOORD2;
+  float4 v3 : TEXCOORD3;
+  float4 v4 : TEXCOORD4;
+  float4 v5 : TEXCOORD5;
+  float4 v6 : TEXCOORD6;
+  centroid float4 v7 : TEXCOORD7;
+  float4 position : SV_Position;
+  bool front_face : SV_IsFrontFace;
+};
+// Nine interpolators, all linear (tree trunks).
+struct PSInput9 {
+  float4 v0 : TEXCOORD0;
+  float4 v1 : TEXCOORD1;
+  float4 v2 : TEXCOORD2;
+  float4 v3 : TEXCOORD3;
+  float4 v4 : TEXCOORD4;
+  float4 v5 : TEXCOORD5;
+  float4 v6 : TEXCOORD6;
+  float4 v7 : TEXCOORD7;
+  float4 v8 : TEXCOORD8;
+  float4 position : SV_Position;
+  bool front_face : SV_IsFrontFace;
+};
 
 #endif  // XE_COMMON_HLSLI

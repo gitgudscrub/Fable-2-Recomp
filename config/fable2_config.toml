@@ -293,6 +293,16 @@ post_processing = true
 # Modern graphics are on. Costs about 2% FPS. Default: true
 ambient_occlusion = true
 
+# Anti-Aliasing: FXAA on the final picture. Smooths the stair-stepped edges
+# that remain on leaves and grass. Part of Post-Processing. Costs under 1% FPS.
+# Default: true
+anti_aliasing = true
+
+# Bloom: a soft glow around the brightest parts of the picture. The game
+# already has its own bloom, so this mostly brightens bright skies further.
+# Part of Post-Processing. Costs under 1% FPS. Default: false
+bloom = false
+
 # Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
 # 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
 # game's own filtering. 0 = never override. Default: 16

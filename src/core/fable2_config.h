@@ -245,6 +245,10 @@ struct Values {
   // [graphics] ambient_occlusion: seeds the SDK cvar post_ao (AO from the
   // scene depth, applied by the colour grade, so it follows post_grade).
   bool ambient_occlusion = true;
+  // [graphics] anti_aliasing / bloom: seed the SDK cvars post_aa / post_bloom
+  // (both run inside the colour grade, so they follow post_grade too).
+  bool anti_aliasing = true;
+  bool bloom = false;
   float character_draw_distance = 1.0f;
 };
 

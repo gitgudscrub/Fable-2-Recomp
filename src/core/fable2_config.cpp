@@ -326,6 +326,16 @@ post_processing = true
 # Modern graphics are on. Costs about 2% FPS. Default: true
 ambient_occlusion = true
 
+# Anti-Aliasing: FXAA on the final picture. Smooths the stair-stepped edges
+# that remain on leaves and grass. Part of Post-Processing. Costs under 1% FPS.
+# Default: true
+anti_aliasing = true
+
+# Bloom: a soft glow around the brightest parts of the picture. The game
+# already has its own bloom, so this mostly brightens bright skies further.
+# Part of Post-Processing. Costs under 1% FPS. Default: false
+bloom = false
+
 # Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
 # 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
 # game's own filtering. 0 = never override. Default: 16
@@ -557,6 +567,9 @@ bool Load(const std::filesystem::path& path) {
                                         values.post_processing);
     values.ambient_occlusion = Read<bool>(graphics_table, "graphics", "ambient_occlusion",
                                           "boolean", values.ambient_occlusion);
+    values.anti_aliasing = Read<bool>(graphics_table, "graphics", "anti_aliasing", "boolean",
+                                      values.anti_aliasing);
+    values.bloom = Read<bool>(graphics_table, "graphics", "bloom", "boolean", values.bloom);
     values.texture_filtering = static_cast<int32_t>(
         Read<int64_t>(graphics_table, "graphics", "texture_filtering", "integer",
                       values.texture_filtering));

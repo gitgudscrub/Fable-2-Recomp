@@ -56,8 +56,11 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("texture_dump", cfg.texture_dump ? "true" : "false");
   seed("anisotropic_override", AnisoCvarValue(cfg.texture_pack));
   seed("post_grade", cfg.texture_pack && cfg.post_processing ? "true" : "false");
-  // AO only runs with the grade, so F8 switches it through post_grade.
+  // AO, AA and bloom only run with the grade, so F8 switches them through
+  // post_grade.
   seed("post_ao", cfg.ambient_occlusion ? "true" : "false");
+  seed("post_aa", cfg.anti_aliasing ? "true" : "false");
+  seed("post_bloom", cfg.bloom ? "true" : "false");
 }
 
 // Per-frame poll of the toggle key (game window focused). Flips the SDK cvar;

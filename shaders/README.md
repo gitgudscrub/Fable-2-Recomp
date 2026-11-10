@@ -26,8 +26,11 @@ stores microcode, not the result), so a rebuilt `.dxbc` needs only a restart.
 The replacement is a complete DXBC pixel (or vertex) shader for the SDK's
 root signature, so it must declare the same resources the translated shader
 does: see the `Buffer Definitions` and `Resource Bindings` blocks at the top
-of the `fxc /dumpbin` output and the interface section of `water.ps.hlsl`.
-In particular:
+of the `fxc /dumpbin` output. `xe_common.hlsli` holds that interface
+(constant buffers, the unbounded sampler/texture tables, `Fetch()` /
+`FetchLevel()`, `AlphaTest()`, `PSInput`); a rewrite defines
+`XE_FLOAT_CONSTANTS` and `XE_DESCRIPTOR_INDICES` from the dumpbin output and
+includes it, as `water.ps.hlsl` does. In particular:
 
 - `xe_float_cbuffer` holds only the float constants the shader uses, packed in
   ascending register order (`K[0]` = lowest `c` register used).
@@ -44,6 +47,14 @@ Start with a literal port of the microcode (one HLSL line per ucode
 instruction, as in `water.ps.hlsl`), check it against the original with
 screenshots, then add the improvements behind defines so the original look
 stays reachable.
+
+Two lessons from the sky attempt: confirm the hash with `--shader_highlight`
+*before* porting (a frame's draw counts are not enough; `4B1D3E6E8E58D3AC`
+is the distant tree impostor/haze cards, not the sky, and a highlight colour
+close to the surface's own colour, such as white on sky, is invisible), and
+remember that debug colours written by a shader go through the game's own
+tonemapping and the Modern colour grade before a screenshot, so read them
+back as threshold steps across the screen, not as absolute values.
 
 ## Current rewrites
 

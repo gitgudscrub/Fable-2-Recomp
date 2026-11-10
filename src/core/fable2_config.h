@@ -232,6 +232,14 @@ struct Values {
   std::string texture_pack_toggle_key = "F8";
   // [graphics] texture_dump: seeds the SDK cvar texture_dump.
   bool texture_dump = false;
+  // [graphics] draw_distance / character_draw_distance: guest draw-distance
+  // multipliers (static + animated entities / villagers + creatures), written
+  // as data patches at image load (src/core/fable2_patches.cpp).
+  float draw_distance = 3.0f;
+  // [graphics] texture_filtering: anisotropic level (0/2/4/8/16) seeded into
+  // the SDK cvar anisotropic_override while Modern graphics are on.
+  int32_t texture_filtering = 16;
+  float character_draw_distance = 1.0f;
 };
 
 // Load the config from `path`.

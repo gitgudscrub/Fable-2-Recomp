@@ -10,6 +10,8 @@
 
 #include "fable2_patches.h"
 
+#include <algorithm>
+#include <bit>
 #include <format>
 
 #include <rex/logging.h>
@@ -28,9 +30,35 @@ namespace {
 // of the stores that would overwrite these values) are mid-asm hooks in
 // src/core/fable2_hooks.cpp, gated on the same config keys.
 // ---------------------------------------------------------------------------
+// Big-endian bit pattern of a float, for a kBe32 op.
+uint64_t FloatBits(float f) { return std::bit_cast<uint32_t>(f); }
+
+// Draw-distance multipliers, clamped to a sane range.
+float ClampDrawDistance(float v) { return std::clamp(v, 0.5f, 10.0f); }
+
 std::vector<Patch> BuildPatches() {
   const auto& cfg = fable2::config::Get();
+  const float objects = ClampDrawDistance(cfg.draw_distance);
+  const float characters = ClampDrawDistance(cfg.character_draw_distance);
   return {
+      {
+          "Draw Distance",
+          std::format("World and animated objects x{:.2f}, villagers and "
+                      "creatures x{:.2f}.",
+                      objects, characters),
+          "fable2",
+          objects != 1.0f || characters != 1.0f,
+          {
+              // Globals behind Debug.Set*DrawDistanceMultiplier (setters at
+              // 0x823A5988..0x823A5A00). Written before the game starts, so
+              // every entity is created with them; calling the Lua setters
+              // at runtime instead re-registers entities and loses some.
+              {Op::Width::kBe32, 0x83319368, FloatBits(objects)},     // static
+              {Op::Width::kBe32, 0x8331936C, FloatBits(objects)},     // animated
+              {Op::Width::kBe32, 0x83319370, FloatBits(characters)},  // villager
+              {Op::Width::kBe32, 0x83319374, FloatBits(characters)},  // creature
+          },
+      },
       {
           "High Tick Rate",
           "Doubles the LF tick to 30 Hz. Vastly improves in-game UI framerate. "

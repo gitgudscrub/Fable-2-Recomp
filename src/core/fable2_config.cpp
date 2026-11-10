@@ -313,6 +313,20 @@ texture_pack_toggle_key = "F8"
 # textures\dump folder as a DDS file. These are the input for the upscaling
 # tool. The first town is about 80 MB. Default: false
 texture_dump = false
+
+# Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
+# 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
+# game's own filtering. 0 = never override. Default: 16
+texture_filtering = 16
+
+# Draw Distance: multiplies how far away the game keeps drawing world objects
+# (rocks, ruins, fences, props) and animated objects. 1.0 = original; 3.0
+# fills in distant detail for about 3% of frame rate, 6.0 adds little more for
+# about 11%. Read at startup (not switched by the toggle key). Default: 3.0
+draw_distance = 3.0
+
+# Character Draw Distance: the same for villagers and creatures. Default: 1.0
+character_draw_distance = 1.0
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -527,6 +541,15 @@ bool Load(const std::filesystem::path& path) {
                           values.texture_pack_toggle_key);
     values.texture_dump = Read<bool>(graphics_table, "graphics", "texture_dump", "boolean",
                                      values.texture_dump);
+    values.texture_filtering = static_cast<int32_t>(
+        Read<int64_t>(graphics_table, "graphics", "texture_filtering", "integer",
+                      values.texture_filtering));
+    values.draw_distance = static_cast<float>(
+        Read<double>(graphics_table, "graphics", "draw_distance", "number",
+                     values.draw_distance));
+    values.character_draw_distance = static_cast<float>(
+        Read<double>(graphics_table, "graphics", "character_draw_distance", "number",
+                     values.character_draw_distance));
   }
 
   g_values = values;

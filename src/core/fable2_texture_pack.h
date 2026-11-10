@@ -28,6 +28,18 @@ namespace fable2::texturepack {
 
 // Call once after the GPU plugin is loaded (its cvars must exist) and before
 // the graphics system starts. Command-line values win over the config.
+// anisotropic_override value for a texture_filtering level (-1 = no override).
+inline std::string AnisoCvarValue(bool modern) {
+  if (!modern) return "-1";
+  switch (config::Get().texture_filtering) {
+    case 2: return "2";
+    case 4: return "3";
+    case 8: return "4";
+    case 16: return "5";
+    default: return "-1";
+  }
+}
+
 inline void SeedCvars(const std::filesystem::path& user_root) {
   const config::Values& cfg = config::Get();
   auto seed = [](const char* name, const std::string& value) {
@@ -42,6 +54,7 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("texture_pack_root", std::string(root.begin(), root.end()));
   seed("texture_replacement", cfg.texture_pack ? "true" : "false");
   seed("texture_dump", cfg.texture_dump ? "true" : "false");
+  seed("anisotropic_override", AnisoCvarValue(cfg.texture_pack));
 }
 
 // Per-frame poll of the toggle key (game window focused). Flips the SDK cvar;
@@ -63,6 +76,9 @@ inline void PollToggle(bool focused) {
   const bool modern = rex::cvar::GetFlagByName("texture_replacement") != "true";
   if (rex::cvar::SetFlagByName("texture_replacement", modern ? "true" : "false")) {
     REXSYS_INFO("[texture-pack] graphics: {}", modern ? "Modern (texture pack)" : "Classic");
+  }
+  if (rex::cvar::GetFlagSource("anisotropic_override") != rex::cvar::Source::kCommandLine) {
+    rex::cvar::SetFlagByName("anisotropic_override", AnisoCvarValue(modern));
   }
 #endif
 }

@@ -13,7 +13,9 @@ Tools (download once, see --tools):
 
 Per dump format:
   DXT1/DXT3/DXT5/RGBA8 (colour + alpha)
-      colour: wrap-pad, light de-block blur, AI 4x, Lanczos down to --scale.
+      colour: wrap-pad, light de-block blur, AI 4x, Lanczos down to --scale,
+              then the fine grain the AI painted out (stone, sand, dirt)
+              is added back from the original (--detail).
       alpha:  Lanczos; DXT1 cut-out alpha re-thresholded.
       -> BC7 with mips (cut-out alpha keeps its coverage in the mips).
   DXN (two-channel normal map)
@@ -39,7 +41,7 @@ import time
 import numpy as np
 from PIL import Image, ImageFilter
 
-PACK_VERSION = 2
+PACK_VERSION = 3  # 3: grain restored after the AI pass
 # Screen-sized render targets that sometimes get dumped. Not art.
 SCREEN_SIZES = {(1280, 720), (640, 360), (320, 180), (160, 90), (560, 360), (280, 180),
                 (1280, 704), (1024, 576), (960, 540)}
@@ -156,7 +158,54 @@ def lanczos(img, size):
     return img.resize(size, Image.LANCZOS)
 
 
-def build_colour(it, up4, scale):
+def grain(arr, orig_size):
+    """Fine-detail energy of an image in the band the original texture can
+    hold: std of a 1-texel high-pass after shrinking back to the original size."""
+    small = Image.fromarray(arr.round().clip(0, 255).astype(np.uint8)).convert('L')
+    small = small.resize(orig_size, Image.BOX)
+    g = np.asarray(small, np.float32)
+    b = np.asarray(small.filter(ImageFilter.GaussianBlur(1.0)), np.float32)
+    return float((g - b).std())
+
+
+def blockiness(img):
+    """Mean gradient across 4x4 DXT block edges over the mean gradient inside
+    blocks. Natural grain gives ~1.5 for DXT1; smooth textures whose only
+    fine detail is the compression grid give 2 and more."""
+    g = np.asarray(img.convert('L'), np.float32)
+    dx, dy = np.abs(np.diff(g, axis=1)), np.abs(np.diff(g, axis=0))
+    edge = dx[:, 3::4].mean() + dy[3::4, :].mean()
+    inner = np.delete(dx, np.s_[3::4], axis=1).mean() + np.delete(dy, np.s_[3::4], axis=0).mean()
+    return float(edge / max(inner, 1e-3))
+
+
+def reinject_detail(ai, plain, orig, scale, target):
+    """Put back the grain the AI smoothed away.
+
+    Real-ESRGAN treats the speckle of stone, sand and dirt textures as noise
+    and paints it out, leaving waxy rock. Measure what share r of the
+    original's fine detail survived and add the original's own high-pass
+    back on top, scaled so the result has about `target` of the original's
+    grain (the two add in quadrature, so k = sqrt(target² - r²)). Flat
+    textures and ones the AI kept sharp get nothing; textures whose fine
+    detail is mostly the DXT block grid get less, so the grid stays gone.
+    Returns (rgb, k)."""
+    if target <= 0.0:
+        return ai, 0.0
+    hf_plain = grain(plain, orig.size)
+    if hf_plain < 0.5:
+        return ai, 0.0
+    r = grain(ai, orig.size) / hf_plain
+    k = float(np.sqrt(max(0.0, target * target - r * r)))
+    k *= float(np.clip((2.2 - blockiness(orig)) / 0.6, 0.0, 1.0))
+    if k < 0.02:
+        return ai, 0.0
+    base = Image.fromarray(plain.round().clip(0, 255).astype(np.uint8))
+    low = np.asarray(base.filter(ImageFilter.GaussianBlur(scale)), np.float32)
+    return ai + k * (plain - low), k
+
+
+def build_colour(it, up4, scale, detail=0.9):
     w, h = it['image'].size
     size = (w * scale, h * scale)
     rgb = lanczos(up4, size) if up4.size != size else up4
@@ -166,6 +215,7 @@ def build_colour(it, up4, scale):
     # as the original gets darker.
     plain = np.asarray(lanczos(alpha_bleed(it['image']), size), np.float32)
     ai = np.asarray(rgb, np.float32)
+    ai, it['detail_k'] = reinject_detail(ai, plain, it['image'], scale, detail)
     level = plain.max(axis=2, keepdims=True)
     mask = np.clip((level - 4.0) / 20.0, 0.0, 1.0)
     rgb = Image.fromarray((ai * mask + plain * (1 - mask)).round().clip(0, 255).astype(np.uint8))
@@ -286,6 +336,9 @@ def main():
     ap.add_argument('--scale', type=int, default=2, choices=(2, 4), help='final size multiplier')
     ap.add_argument('--deblock', type=float, default=0.7,
                     help='Gaussian blur radius before the AI, removes DXT block edges (0 = off)')
+    ap.add_argument('--detail', type=float, default=0.9,
+                    help='fine grain to keep, as a share of the original\'s, by adding back what the AI '
+                         'smoothed away (0 = off)')
     ap.add_argument('--min-size', type=int, default=32, help='skip textures smaller than this')
     ap.add_argument('--only', default='', help='comma-separated hash prefixes to process')
     ap.add_argument('--batch', type=int, default=48, help='textures per AI batch')
@@ -345,7 +398,7 @@ def main():
             chunk = colour[i:i + args.batch]
             up = upscale_ai(args.tools, args.model, chunk, work, args.deblock, pad=16)
             for it in chunk:
-                img, kind = build_colour(it, up[it['hash']], args.scale)
+                img, kind = build_colour(it, up[it['hash']], args.scale, args.detail)
                 if kind == 'cutout':
                     src = os.path.join(staged, it['hash'] + '.dds')
                     write_rgba_dds(src, cutout_mips(img))
@@ -355,7 +408,9 @@ def main():
                     img.save(src)
                     jobs.append((src, 'BC7_UNORM', False))
                 done += 1
-            print(f'  upscaled {done}/{len(colour)}  ({time.time() - t0:.0f} s)')
+            ks = [it['detail_k'] for it in chunk]
+            print(f'  upscaled {done}/{len(colour)}  grain restored on {sum(k > 0 for k in ks)}/{len(ks)}'
+                  f' (mean {sum(ks) / len(ks):.2f})  ({time.time() - t0:.0f} s)')
 
         for it in items:
             if it['fmt'] == 'DXN':
@@ -380,7 +435,7 @@ def main():
 
     info_path = os.path.join(out, 'pack.json')
     info = {'version': PACK_VERSION, 'model': args.model, 'scale': args.scale,
-            'deblock': args.deblock, 'updated': time.strftime('%Y-%m-%d %H:%M:%S')}
+            'deblock': args.deblock, 'detail': args.detail, 'updated': time.strftime('%Y-%m-%d %H:%M:%S')}
     with open(info_path, 'w', encoding='utf-8') as f:
         json.dump(info, f, indent=2)
     print(f'done in {time.time() - t0:.0f} s -> {out}')

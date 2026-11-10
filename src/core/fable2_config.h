@@ -239,6 +239,9 @@ struct Values {
   // [graphics] texture_filtering: anisotropic level (0/2/4/8/16) seeded into
   // the SDK cvar anisotropic_override while Modern graphics are on.
   int32_t texture_filtering = 16;
+  // [graphics] post_processing: seeds the SDK cvar post_grade while Modern
+  // graphics are on (colour grade after the gamma ramp, D3D12 only).
+  bool post_processing = true;
   float character_draw_distance = 1.0f;
 };
 

@@ -55,6 +55,7 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("texture_replacement", cfg.texture_pack ? "true" : "false");
   seed("texture_dump", cfg.texture_dump ? "true" : "false");
   seed("anisotropic_override", AnisoCvarValue(cfg.texture_pack));
+  seed("post_grade", cfg.texture_pack && cfg.post_processing ? "true" : "false");
 }
 
 // Per-frame poll of the toggle key (game window focused). Flips the SDK cvar;
@@ -79,6 +80,9 @@ inline void PollToggle(bool focused) {
   }
   if (rex::cvar::GetFlagSource("anisotropic_override") != rex::cvar::Source::kCommandLine) {
     rex::cvar::SetFlagByName("anisotropic_override", AnisoCvarValue(modern));
+  }
+  if (rex::cvar::GetFlagSource("post_grade") != rex::cvar::Source::kCommandLine) {
+    rex::cvar::SetFlagByName("post_grade", modern && config::Get().post_processing ? "true" : "false");
   }
 #endif
 }

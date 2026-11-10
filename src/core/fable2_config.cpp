@@ -314,6 +314,12 @@ texture_pack_toggle_key = "F8"
 # tool. The first town is about 80 MB. Default: false
 texture_dump = false
 
+# Post-Processing: a colour grade in Modern graphics that adds depth without
+# changing the game's look: a little less haze, local contrast, a gentle
+# contrast curve, livelier muted colours and light sharpening. The overall
+# brightness is kept. Default: true
+post_processing = true
+
 # Texture Filtering: anisotropic filtering level in Modern graphics (0, 2, 4,
 # 8 or 16). Keeps ground and walls sharp at shallow angles. Classic uses the
 # game's own filtering. 0 = never override. Default: 16
@@ -541,6 +547,8 @@ bool Load(const std::filesystem::path& path) {
                           values.texture_pack_toggle_key);
     values.texture_dump = Read<bool>(graphics_table, "graphics", "texture_dump", "boolean",
                                      values.texture_dump);
+    values.post_processing = Read<bool>(graphics_table, "graphics", "post_processing", "boolean",
+                                        values.post_processing);
     values.texture_filtering = static_cast<int32_t>(
         Read<int64_t>(graphics_table, "graphics", "texture_filtering", "integer",
                       values.texture_filtering));

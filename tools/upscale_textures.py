@@ -289,16 +289,17 @@ def write_rgba_dds(path, levels):
             f.write(np.ascontiguousarray(lv).tobytes())
 
 
-def build_normal(it, scale, mode='grain', grain=0.7):
+def build_normal(it, scale, mode='grain', grain=0.6):
     """Resample a two-channel normal map.
 
     Fable's rock, sand and plaster get their dusty look from per-texel noise
     in small normal maps magnified many times: each texel tilts the lighting
     its own way. A Lanczos reconstruction (mode 'lanczos') interpolates that
     noise away and the surface turns waxy, so the default keeps every texel
-    exactly ('nearest') and adds finer noise at the new texel size, sized by
-    the original's own texel-to-texel variation so flat maps stay flat
-    ('grain')."""
+    exactly ('nearest', but the dust comes out as 2x2 squares), and the
+    default ('grain') keeps the smooth shape and draws the noise fresh at the
+    new texel size, sized by the original's own texel-to-texel variation so
+    flat maps stay flat."""
     w, h = it['image'].size
     a = np.asarray(it['image'].convert('RGBA'), np.float32) / 255.0
     x, y = a[..., 0] * 2 - 1, a[..., 1] * 2 - 1
@@ -314,17 +315,35 @@ def build_normal(it, scale, mode='grain', grain=0.7):
             arr = np.asarray(im)[pad * scale:(pad + h) * scale, pad * scale:(pad + w) * scale]
             comps.append(arr)
         x, y, z = comps
+    elif mode == 'nearest':
+        x = np.repeat(np.repeat(x, scale, axis=0), scale, axis=1)
+        y = np.repeat(np.repeat(y, scale, axis=0), scale, axis=1)
+        z = np.sqrt(np.clip(1 - x * x - y * y, 1e-4, 1))
     else:
-        up = lambda c: np.repeat(np.repeat(c, scale, axis=0), scale, axis=1)
-        if mode == 'grain' and grain > 0:
-            # Local RMS of the texel noise (the part a 1-texel blur removes).
-            hx, hy = x - blur(x, 1), y - blur(y, 1)
-            amp = np.sqrt(np.maximum(blur(hx * hx + hy * hy, 2), 0.0) * 0.5)
+        # Grain: the smooth shape from a Lanczos resample of the texel-blurred
+        # map, plus noise drawn fresh at the new texel size with the amplitude
+        # the original's texel noise had at that spot. Copying the original
+        # texels (nearest) keeps the dust but as 2x2 squares; this keeps it
+        # finer than the original and with no grid.
+        # Noise amplitude: the local mean texel-to-texel step, capped at its
+        # 75th percentile so edges and ridges (big steps) do not get buried.
+        hx, hy = x - blur(x, 1), y - blur(y, 1)
+        amp = blur(np.abs(hx) + np.abs(hy), 2) * 0.5
+        amp = np.minimum(amp, np.percentile(amp, 75))
+        pad = 8
+
+        def lz(c):
+            cp = np.pad(c, pad, mode='wrap')
+            im = Image.fromarray(cp.astype(np.float32)).resize(((w + 2 * pad) * scale, (h + 2 * pad) * scale),
+                                                      Image.LANCZOS)
+            return np.asarray(im)[pad * scale:(pad + h) * scale, pad * scale:(pad + w) * scale]
+
+        x, y, amp = lz(x), lz(y), lz(amp)
+        if grain > 0:
             rng = np.random.default_rng(int(it['hash'][:8], 16))
-            noise = rng.standard_normal((h * scale, w * scale, 2)).astype(np.float32) * (up(amp) * grain)[..., None]
-            x, y = up(x) + noise[..., 0], up(y) + noise[..., 1]
-        else:
-            x, y = up(x), up(y)
+            noise = rng.standard_normal((h * scale, w * scale, 2)).astype(np.float32)
+            x = x + noise[..., 0] * amp * grain
+            y = y + noise[..., 1] * amp * grain
         z = np.sqrt(np.clip(1 - x * x - y * y, 1e-4, 1))
     n = np.sqrt(x * x + y * y + z * z) + 1e-6
     return x / n, y / n
@@ -405,7 +424,7 @@ def main():
     ap.add_argument('--only', default='', help='comma-separated hash prefixes to process')
     ap.add_argument('--normal-mode', default='grain', choices=('grain', 'nearest', 'lanczos'),
                     help='how normal maps (DXN) are resampled; see build_normal')
-    ap.add_argument('--normal-grain', type=float, default=0.7,
+    ap.add_argument('--normal-grain', type=float, default=0.6,
                     help='finer noise added to normal maps in grain mode, as a share of their own texel noise')
     ap.add_argument('--normals-only', action='store_true',
                     help='rebuild just the normal maps (implies --force for them)')

@@ -50,6 +50,13 @@ def release_files(root, build, launcher):
     # Shader pre-build list (shader hashes only, no game content): the game reads it
     # next to its exe so first-time pipeline builds happen at startup, not mid-game.
     files["shader_prebuild.txt"] = require(root / "config/shader_prebuild.txt")
+    # Shader rewrites for Modern graphics (our own compiled HLSL, no game content);
+    # the game loads them from shaders/replace next to its exe.
+    rewrites = sorted((build / "shaders/replace").glob("*.dxbc"))
+    if not rewrites:
+        raise SystemExit("package_release: no shader rewrites in shaders/replace")
+    for rewrite in rewrites:
+        files[f"shaders/replace/{rewrite.name}"] = rewrite
     # dir.manifest stays out: the real one comes from the disc, and the game lists these scripts itself.
     scripts = sorted((build / "data/scripts/recomp").glob("*.lua"))
     if not scripts:

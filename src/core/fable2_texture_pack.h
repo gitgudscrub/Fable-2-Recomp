@@ -14,6 +14,7 @@
 #include <string>
 
 #include <rex/cvar.h>
+#include <rex/filesystem.h>
 #include <rex/logging.h>
 #include <rex/ui/keybinds.h>
 #include <rex/ui/virtual_key.h>
@@ -64,8 +65,13 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("post_ao", cfg.ambient_occlusion ? "true" : "false");
   seed("post_aa", cfg.anti_aliasing ? "true" : "false");
   seed("post_bloom", cfg.bloom ? "true" : "false");
-  // Startup only: the SDK swaps shaders in when it translates them.
-  seed("shader_replace_dir", cfg.shader_rewrites ? "shaders/replace" : "");
+  // Startup only: the SDK swaps shaders in when it translates them. Next to
+  // the exe, not the working directory: the launcher starts the game in the
+  // player's data folder.
+  const std::u8string shaders =
+      (rex::filesystem::GetExecutableFolder() / "shaders" / "replace").u8string();
+  seed("shader_replace_dir",
+       cfg.shader_rewrites ? std::string(shaders.begin(), shaders.end()) : std::string());
 }
 
 // Per-frame poll of the toggle key (game window focused). Flips the SDK cvar;

@@ -50,6 +50,19 @@ is read in two phases:
 The GDFX/ISO 9660 readers come from the shared `X360Extract` library
 (`tools/x360extract/lib`), so the output matches the standalone tool.
 
+## Modern textures
+
+Settings > Modern textures downloads the pre-built texture pack (about
+6 GB) in 16 parts with a progress bar each, pausable and resumable, from
+the fork's `textures-v<N>` GitHub release. The manifest is signed with the
+release key and every part is checksummed; parts unpack into a temporary
+folder and move into `textureseplace` whole, so the game never sees a
+half-written file. `[graphics] texture_pack` in `fable2_config.toml` stays
+`false` until the last part is in. `PROJECT_SPARROW_TEXTURES=<folder>`
+points the download at a local folder holding `manifest.json`, its `.sig`
+and the parts, and `--preview=textures` starts it on launch. Format and
+flow: [docs/TEXTURE_PACK_DOWNLOAD.md](../docs/TEXTURE_PACK_DOWNLOAD.md).
+
 ## Editions
 
 | Edition | Sets |

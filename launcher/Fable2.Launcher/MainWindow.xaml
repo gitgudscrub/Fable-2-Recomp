@@ -1099,6 +1099,24 @@
                     </DockPanel>
                   </Border>
 
+                  <TextBlock Text="MODERN TEXTURES" Style="{StaticResource PageSection}" />
+                  <Border Padding="14,12" CornerRadius="6" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}"
+                          BorderThickness="1">
+                    <StackPanel>
+                      <TextBlock x:Name="TexturesStatusText" Style="{StaticResource PageText}" FontSize="14.5" />
+                      <TextBlock x:Name="TexturesHintText" Style="{StaticResource PageHint}" Margin="0,4,0,0" TextWrapping="Wrap" />
+                      <UniformGrid x:Name="TexturesParts" Columns="2" Margin="0,8,0,0" Visibility="Collapsed" />
+                      <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button x:Name="TexturesDownloadButton" Style="{StaticResource PageButtonGreen}" Content="Download"
+                                Click="TexturesDownloadClicked" />
+                        <Button x:Name="TexturesPauseButton" Style="{StaticResource PageButton}" Content="Pause"
+                                Click="TexturesPauseClicked" Visibility="Collapsed" />
+                        <Button x:Name="TexturesRemoveButton" Style="{StaticResource PageButton}" Content="Remove"
+                                Click="TexturesRemoveClicked" Visibility="Collapsed" />
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
                   <TextBlock Text="GAME" Style="{StaticResource PageSection}" />
                   <Border Style="{StaticResource Row}">
                     <DockPanel>

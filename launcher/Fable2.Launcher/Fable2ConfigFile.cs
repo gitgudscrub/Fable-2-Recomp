@@ -39,6 +39,10 @@ public class Fable2ConfigValues
     public bool HeroDogTextureReadback { get; set; } = false;
 
     // [perf]
+    // [graphics] texture_pack: Modern graphics (the texture pack, filtering, grade
+    // and shader rewrites). The launcher turns it off while the pack downloads.
+    public bool TexturePack { get; set; } = true;
+
     public int HotFuncYieldEvery { get; set; } = 1;  // 1 = original, 0 = never yield
 }
 
@@ -130,6 +134,9 @@ public static class Fable2ConfigFile
                 case "perf":
                     if (key == "hotfunc_yield_every") values.HotFuncYieldEvery = ParseInt(rawValue, values.HotFuncYieldEvery);
                     break;
+                case "graphics":
+                    if (key == "texture_pack") values.TexturePack = ParseBool(rawValue, values.TexturePack);
+                    break;
             }
         }
         return values;
@@ -172,6 +179,7 @@ public static class Fable2ConfigFile
             ("patches", "realtime_texture_morphing", values.RealtimeTextureMorphing ? "true" : "false"),
             ("patches", "hero_dog_texture_readback", values.HeroDogTextureReadback ? "true" : "false"),
             ("perf", "hotfunc_yield_every", values.HotFuncYieldEvery.ToString(CultureInfo.InvariantCulture)),
+            ("graphics", "texture_pack", values.TexturePack ? "true" : "false"),
         };
 
         var updated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -91,9 +91,21 @@ public partial class MainWindow : Window
                 OpenPage(TabHelp);
                 CheckFilesClicked(this, new RoutedEventArgs());
             }
+            // --preview=textures starts the Modern textures download (PROJECT_SPARROW_TEXTURES
+            // can point it at a local folder with manifest.json and the parts).
+            if (Environment.GetCommandLineArgs().Contains("--preview=textures"))
+            {
+                OpenPage(TabSettings);
+                TexturesDownloadClicked(this, new RoutedEventArgs());
+                // Scroll the section into view once the page has turned in.
+                var scroll = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+                scroll.Tick += (_, _) => { scroll.Stop(); TexturesParts.BringIntoView(); };
+                scroll.Start();
+            }
         };
         Closing += (_, _) =>
         {
+            _texturesCancel?.Cancel();   // a part in progress resumes next time
             if (_dirty) SaveAll(quiet: true);
             // Install a downloaded update once the launcher closes, unless the game is
             // (about to be) running from the folder the update replaces.
@@ -612,7 +624,8 @@ public partial class MainWindow : Window
                 if (cancelled) ShowToast("Stopped copying the disc.");
                 else if (error is not null)
                     MessageBox.Show(this, error, "Could not read the disc image", MessageBoxButton.OK, MessageBoxImage.Error);
-                else ShowToast($"Copied {files:N0} files ({DiscExtraction.FormatSize(bytes)}) from {Path.GetFileName(isoPath)}.");
+                else ShowToast($"Copied {files:N0} files ({DiscExtraction.FormatSize(bytes)}) from {Path.GetFileName(isoPath)}. "
+                               + "Modern textures can be downloaded from Settings.");
             });
         });
     }
@@ -739,6 +752,11 @@ public partial class MainWindow : Window
         PanelUpdates.Visibility = tab == TabUpdates ? Visibility.Visible : Visibility.Collapsed;
         PanelHelp.Visibility = tab == TabHelp ? Visibility.Visible : Visibility.Collapsed;
         PageScroll.ScrollToTop();
+        if (tab == TabSettings)
+        {
+            RefreshTexturesSection();
+            CheckTexturesQuietly();
+        }
     }
 
     // ---------------------------------------------------------------- help actions

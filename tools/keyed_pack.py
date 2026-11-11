@@ -28,17 +28,28 @@ Usage:
       the DDS back. The result must be byte-identical to replace/.
   python tools/keyed_pack.py verify <pack_root> <folder>
       Opens every .edds in memory and compares it with replace/.
+  python tools/keyed_pack.py split <folder> --out <dist> --version N
+      Packs <folder>/replace/*.edds into 16 stored zips by the first hex
+      digit of the hash (so a later pack version changes only the parts
+      whose textures changed) and writes manifest.json beside them: the
+      launcher downloads the parts it lists, checks each SHA-256 and
+      unpacks them into textures\replace. Sign the manifest for release
+      with `dotnet run --project tools/sparrow-sign -- sign manifest.json`
+      (see docs/TEXTURE_PACK_DOWNLOAD.md).
 
 Needs the `cryptography` package (pip install cryptography).
 """
 import argparse
+import datetime
 import glob
 import hashlib
+import json
 import os
 import secrets
 import struct
 import sys
 import time
+import zipfile
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -165,6 +176,70 @@ def check_all(args, write_dir=None):
     return 1 if bad else 0
 
 
+PACK_NAME = 'modern-textures'
+PART_COUNT = 16
+RELEASE_URL = 'https://github.com/gitgudscrub/Fable-2-Recomp/releases/download/{tag}/{name}'
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as fh:
+        for block in iter(lambda: fh.read(1 << 20), b''):
+            h.update(block)
+    return h.hexdigest()
+
+
+def cmd_split(args):
+    files = sorted(glob.glob(os.path.join(args.folder, 'replace', '*.edds')))
+    if not files:
+        raise SystemExit(f'no .edds files under {args.folder}')
+    os.makedirs(args.out, exist_ok=True)
+    tag = f'textures-v{args.version}'
+    groups = [[] for _ in range(PART_COUNT)]
+    for path in files:
+        groups[int(hash_of(path)[0], 16)].append(path)
+    t0 = time.time()
+    parts = []
+    total = 0
+    for index, group in enumerate(groups):
+        name = f'{PACK_NAME}-v{args.version}-part{index:02d}.zip'
+        dst = os.path.join(args.out, name)
+        # Stored (the files are block-compressed and encrypted: nothing to
+        # gain) and deterministic (fixed timestamps, sorted entries), so a
+        # part whose textures did not change is byte-identical to the last
+        # version's and the launcher can skip it by hash.
+        with zipfile.ZipFile(dst, 'w', zipfile.ZIP_STORED) as zf:
+            for path in group:
+                info = zipfile.ZipInfo(os.path.basename(path), date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_STORED
+                info.external_attr = 0o644 << 16
+                with open(path, 'rb') as fh:
+                    zf.writestr(info, fh.read())
+        size = os.path.getsize(dst)
+        total += size
+        parts.append({'name': name, 'size': size, 'sha256': sha256_file(dst), 'files': len(group),
+                      'url': RELEASE_URL.format(tag=tag, name=name)})
+        print(f'  {name}: {len(group)} files, {size / 2**20:.0f} MB  ({time.time() - t0:.0f} s)')
+    manifest = {
+        'pack': PACK_NAME,
+        'version': args.version,
+        'game_profile': args.profile,
+        'created': datetime.date.today().isoformat(),
+        'file_format': 'F2TXPK01',
+        'install_dir': 'textures/replace',
+        'total_bytes': total,
+        'file_count': len(files),
+        'parts': parts,
+    }
+    manifest_path = os.path.join(args.out, 'manifest.json')
+    with open(manifest_path, 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(manifest, fh, indent=2)
+        fh.write('\n')
+    print(f'{len(files)} files in {PART_COUNT} parts, {total / 2**20:.0f} MB, manifest {manifest_path}')
+    print(f'release tag: {tag}')
+    return 0
+
+
 def cmd_decrypt(args):
     out_dir = os.path.join(args.out, 'replace')
     os.makedirs(out_dir, exist_ok=True)
@@ -192,6 +267,12 @@ def main():
     p.add_argument('pack_root', help='folder holding dump/ and replace/')
     p.add_argument('folder', help='folder holding replace/*.edds')
     p.set_defaults(func=cmd_verify)
+    p = sub.add_parser('split', help='<folder>/replace/*.edds -> <out>/*-partNN.zip + manifest.json')
+    p.add_argument('folder', help='folder holding replace/*.edds (the encrypt output)')
+    p.add_argument('--out', required=True, help='folder that receives the parts and manifest')
+    p.add_argument('--version', type=int, required=True, help='pack version (release tag textures-v<N>)')
+    p.add_argument('--profile', default='goty-us-eu', help='game profile the pack was made from')
+    p.set_defaults(func=cmd_split)
     args = ap.parse_args()
     return args.func(args)
 

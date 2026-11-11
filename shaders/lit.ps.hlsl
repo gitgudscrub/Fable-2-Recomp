@@ -49,6 +49,27 @@
 #define SKIN_SPEC 0.7
 #endif
 
+// Procedural wear for stretched surfaces. Some props (the Wraithmarsh pillar
+// shafts, large plain rocks) map their whole face to a handful of albedo
+// texels, so they come out as one flat colour whatever the texture pack
+// holds. Where the albedo is magnified past STRETCH_START texels... that is,
+// where one texel spans more than STRETCH_START screen pixels, a world-space
+// noise is blended into the albedo: broad grime, finer mottling and a sparse
+// crack-like ridge pattern. Ordinary surfaces (a few pixels per texel) are
+// untouched. WEAR = overall strength (0 = original).
+#ifndef WEAR
+#define WEAR 0.6
+#endif
+#ifndef STRETCH_START
+#define STRETCH_START 12.0  // screen pixels per albedo texel where wear starts
+#endif
+#ifndef STRETCH_FULL
+#define STRETCH_FULL 32.0   // ... and where it is fully on
+#endif
+#ifndef STRETCH_TEXELS
+#define STRETCH_TEXELS 1024.0  // assumed albedo size (the pack's are 1024-2048)
+#endif
+
 // --- SDK translator interface (shaders/xe_common.hlsli) -------------------
 #define XE_FLOAT_CONSTANTS 21
 #define XE_DESCRIPTOR_INDICES 7
@@ -97,6 +118,40 @@ float SkinWeight(float3 c) {
   return order * chroma * smoothstep(0.12, 0.3, mx);
 }
 
+float Hash3(float3 p) {
+  p = frac(p * 0.1031);
+  p += dot(p, p.yzx + 33.33);
+  return frac((p.x + p.y) * p.z);
+}
+// Smooth value noise in 0..1.
+float Noise3(float3 p) {
+  float3 i = floor(p), f = frac(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float4 a = float4(Hash3(i), Hash3(i + float3(1, 0, 0)), Hash3(i + float3(0, 1, 0)), Hash3(i + float3(1, 1, 0)));
+  float4 b = float4(Hash3(i + float3(0, 0, 1)), Hash3(i + float3(1, 0, 1)), Hash3(i + float3(0, 1, 1)), Hash3(i + float3(1, 1, 1)));
+  float4 c = lerp(a, b, f.z);
+  float2 d = lerp(c.xy, c.zw, f.y);
+  return lerp(d.x, d.y, f.x);
+}
+// Multiplier (0..1, mostly near 1) that darkens a stretched surface with
+// grime, mottling and cracks, from the world position in metres.
+float Wear(float3 p) {
+  float grime = Noise3(p * 1.5);                       // ~0.7 m patches
+  float mottle = Noise3(p * 12.0) * 0.6 + Noise3(p * 37.0) * 0.4;  // cm detail
+  // Cracks: the mid-level contour of a domain-warped noise, so the lines
+  // wander like fractures instead of closing into round loops.
+  float3 q = p + 0.3 * (float3(Noise3(p * 5.0 + 11.0), Noise3(p * 5.0 + 23.0),
+                               Noise3(p * 5.0 + 41.0)) - 0.5);
+  float ridge = 1.0 - abs(Noise3(q * 2.5 + 7.3) * 2.0 - 1.0);     // ridged noise
+  float crack = smoothstep(0.93, 1.0, ridge)           // thin lines...
+              * smoothstep(0.4, 0.7, Noise3(p * 0.7 + 3.1));  // ...only in some areas
+  float w = 1.0;
+  w -= 0.25 * smoothstep(0.35, 0.8, grime);            // darker grime patches
+  w -= 0.18 * (mottle - 0.5);                          // +-9% mottling
+  w -= 0.35 * crack;
+  return saturate(w);
+}
+
 float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float4 r0 = input.v0, r1 = input.v1, r2 = input.v2, r3 = input.v3;
   float4 r4 = input.v4, r5 = input.v5, r6 = input.v6;
@@ -107,8 +162,22 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
   r8.xy = r0.yx * C8.yx + C8.wz;                                         // 11
   r8.zw = r0.yx * C10.yx + C10.wz;                                       // 12
   r12.xy = TF2(r8.wz).xy;                                                // 13
+  float2 albedo_uv = r8.yx;  // the uv before the fetch overwrites r8 (Modern: stretch)
   { float4 t = TF0(r8.yx); r8 = t.wxyz; }                                // 14
   float3 albedo = r8.yzw;  // kept for SkinWeight: r8.yzw is reused at 18-22
+  // Stretch: screen pixels per albedo texel, from the area of the uv
+  // footprint of one pixel (the Jacobian, as mip selection uses). A face
+  // mapped to a line of texels (the Wraithmarsh pillars keep v fixed and
+  // sweep u round each ring) has zero area; a wall seen at a grazing angle
+  // or with an unequal texel density keeps a normal area, so it stays off.
+  float2 uv_dx = ddx(albedo_uv) * STRETCH_TEXELS, uv_dy = ddy(albedo_uv) * STRETCH_TEXELS;
+  float2 duv = float2(abs(uv_dx.x) + abs(uv_dy.x), abs(uv_dx.y) + abs(uv_dy.y));  // for DEBUG_VIEW
+  float area = abs(uv_dx.x * uv_dy.y - uv_dy.x * uv_dx.y);
+  float stretch = 1.0 / max(sqrt(area), 1e-6);
+  float wear_mask = WEAR * smoothstep(STRETCH_START, STRETCH_FULL, stretch)
+                    * ((xe_flags & 0x80000000u) ? 0.0 : 1.0);  // never on characters
+  float wear = wear_mask > 0.0 ? Wear(r2.xyz) : 1.0;  // skip the noise where it is off
+  r8.yzw *= lerp(1.0, wear, wear_mask);
   r10.xyz = TF1(r0.wz).xyz;                                              // 15
   r1.w = dot(r1.xyz, r1.xyz);                                            // 16
   r9.xyz = C19.zyx - r2.zyx;                                             // 17
@@ -224,6 +293,9 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
 #elif DEBUG_VIEW == 6
   // R dynamic-mesh flag, G skin weight.
   o.xyz = float3((xe_flags & 0x80000000u) ? 1.0 : 0.0, skin, 0.0);
+#elif DEBUG_VIEW == 7
+  // R wear mask, G stretch / 32, B the wear pattern.
+  o.xyz = float3(wear_mask, stretch / 32.0, wear);
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);

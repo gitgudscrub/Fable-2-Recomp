@@ -35,6 +35,17 @@ texture pack's `dump/` folder, so they feed straight into
    shows each listed texture as a solid colour, in the same colour order as
    the shader highlight. The colour still goes through the surface's lighting,
    so pick one that contrasts with it.
+3. When the hash is a prop atlas (most are: one 1024 sheet holding a coffin,
+   a window, a slab of pillar stone), find the tile by dropping a lettered
+   grid into `replace/<HASH>.dds` for one run: an 8x8 sheet of coloured
+   cells labelled A1..H8 (texconv to BC7). The surface shows the letter of
+   its cell. Then `tools/reimagine_tiles.py <pack> <HASH> --tile
+   stone:x,y,w,h` redraws only that rectangle (dump pixel coordinates) and
+   pastes it back with a feathered edge. Tiny tiles need strength 0.9,
+   control 0.4 and `--grain 0 --detail 0`, or the re-added source grain
+   hides the new wear. Entering a region from different neighbours gives
+   different spawn views: `-Only Westcliff,Wraithmarsh` lands on the
+   Wraithmarsh plinth, `-Only Bloodstone,Wraithmarsh` on the cliff.
 
 ## Writing a replacement
 
@@ -71,6 +82,26 @@ remember that debug colours written by a shader go through the game's own
 tonemapping and the Modern colour grade before a screenshot, so read them
 back as threshold steps across the screen, not as absolute values.
 
+## Wear on stretched surfaces
+
+Some props map a whole face to a handful of albedo texels: the Wraithmarsh
+pillar shafts read a 96x112 slab of a prop atlas, and their UVs cover so little
+of it that not even the slab's mortar lines show. No texture pack can put
+detail there, so `lit.ps.hlsl` and `lit_shadow.ps.hlsl` measure the
+magnification from the albedo's UV derivatives (`ddx`/`ddy` of the uv taken
+*before* the fetch overwrites its register, assuming a 1024 texture) as the
+area of one pixel's UV footprint (the Jacobian, as mip
+selection uses it: the pillars keep v fixed and sweep u round each ring, so
+their footprint has no area; a wall at a grazing angle or with an unequal
+texel density keeps a normal area, so it stays off) and, beyond
+`STRETCH_START` screen pixels per texel (12, fully on at 32), blend in a
+world-space noise: broad grime patches, centimetre mottling and sparse
+cracks (the mid-level contour of a domain-warped noise, so the lines wander
+instead of closing into round loops). Ordinary surfaces sit at a few pixels per texel at 4K and
+are untouched; character draws (the dynamic-mesh flag) are excluded.
+`DEBUG_VIEW=1` in `lit_shadow.ps.hlsl` (7 in `lit.ps.hlsl`) shows the mask
+in red, the magnification in green and the pattern in blue.
+
 ## Current rewrites
 
 | Shader | Hashes | Changes |
@@ -81,6 +112,7 @@ back as threshold steps across the screen, not as absolute values.
 | Tree trunks (`trunk.ps.hlsl`) | `00E09D1BC5295D52` (trunks, branches and the second foliage layer) | low-frequency warm/cool variation of the bark colour from the world position (6 m scale, so each trunk keeps one colour) |
 | Ferns and bushes (`fern.ps.hlsl`) | `165EDCD2CB963868` | the same variation across the undergrowth (2.5 m scale) |
 | Lit opaque / skin (`lit.ps.hlsl`) | `8D900846800943C8` (rocks, stone, buildings, and the characters' skin and cloth) | on character draws whose albedo is a skin tone: wrapped diffuse, a reddened scattering edge where the light fades, and a tighter, weaker sheen than the stone's. Scenery is byte-for-byte the literal port |
+| Lit opaque with shadow map (`lit_shadow.ps.hlsl`) | `648B965C200A5113` (Wraithmarsh pillars and ruins, dead trees, props with a projected sun shadow) | procedural wear on stretched surfaces: where the albedo is magnified past `STRETCH_START` screen pixels per texel (12, fully on at 32), a world-space grime / mottle / crack pattern is blended into the albedo (`WEAR` 0.6). Surfaces with ordinary UVs are the literal port. `lit.ps.hlsl` has the same addition |
 
 ### Skin without a skin shader
 

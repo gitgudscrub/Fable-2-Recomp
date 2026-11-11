@@ -266,7 +266,9 @@ refresh_gpu_memory_each_frame = false
 # Texture Pack: shows replacement textures (for example AI-upscaled ones) from
 # the textures\replace folder next to fable2_config.toml in place of the
 # originals. Switch between the pack ("Modern") and the original textures
-# ("Classic") while playing with texture_pack_toggle_key.
+# ("Classic") while playing with texture_pack_toggle_key. A shared pack
+# holds .edds files: each one is locked to the game texture it replaces
+# and only opens next to the game it was made from (tools/keyed_pack.py).
 # true = Modern, false = Classic. Default: true
 texture_pack = true
 
@@ -304,7 +306,7 @@ anti_aliasing = true
 bloom = false
 
 # Shader Rewrites: replaces some of the game's own shaders with improved
-# versions (shaderseplace next to the game; see shaders/README.md in the
+# versions (shaders\replace next to the game; see shaders/README.md in the
 # source). Currently: water (finer ripples, sun glint, truer reflection
 # falloff). Read at startup, so F8 does not switch it. Default: true
 shader_rewrites = true

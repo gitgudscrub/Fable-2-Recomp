@@ -19,7 +19,12 @@ Per dump format:
       alpha:  Lanczos; DXT1 cut-out alpha re-thresholded.
       -> BC7 with mips (cut-out alpha keeps its coverage in the mips).
   DXN (two-channel normal map)
-      Lanczos on the reconstructed normal, renormalised -> BC5 with mips.
+      Nearest-neighbour to --scale (every texel keeps its exact normal, so
+      the per-texel shading noise that gives Fable's rock its dusty look
+      survives; a Lanczos reconstruction smooths it into wax), plus finer
+      noise at the new texel size sized by the original's own texel noise
+      (--normal-mode grain, the default; nearest / lanczos also available)
+      -> BC5 with a mip chain that keeps that noise at every level.
   DXT5A (single channel)  Lanczos -> BC4 with mips.
   R8                      skipped (mostly video planes).
 Skipped: textures smaller than --min-size, and screen-sized buffers.
@@ -41,7 +46,7 @@ import time
 import numpy as np
 from PIL import Image, ImageFilter
 
-PACK_VERSION = 3  # 3: grain restored after the AI pass
+PACK_VERSION = 4  # 3: grain restored after the AI pass; 4: normal maps keep their texel noise
 # Screen-sized render targets that sometimes get dumped. Not art.
 SCREEN_SIZES = {(1280, 720), (640, 360), (320, 180), (160, 90), (560, 360), (280, 180),
                 (1280, 704), (1024, 576), (960, 540)}
@@ -284,27 +289,84 @@ def write_rgba_dds(path, levels):
             f.write(np.ascontiguousarray(lv).tobytes())
 
 
-def build_normal(it, scale):
+def build_normal(it, scale, mode='grain', grain=0.7):
+    """Resample a two-channel normal map.
+
+    Fable's rock, sand and plaster get their dusty look from per-texel noise
+    in small normal maps magnified many times: each texel tilts the lighting
+    its own way. A Lanczos reconstruction (mode 'lanczos') interpolates that
+    noise away and the surface turns waxy, so the default keeps every texel
+    exactly ('nearest') and adds finer noise at the new texel size, sized by
+    the original's own texel-to-texel variation so flat maps stay flat
+    ('grain')."""
     w, h = it['image'].size
     a = np.asarray(it['image'].convert('RGBA'), np.float32) / 255.0
     x, y = a[..., 0] * 2 - 1, a[..., 1] * 2 - 1
-    z = np.sqrt(np.clip(1 - x * x - y * y, 0, 1))
-    # Lanczos per component with wrap padding, then renormalise.
-    pad = 8
-    comps = []
-    for c in (x, y, z):
-        cp = np.pad(c, pad, mode='wrap')
-        im = Image.fromarray(cp.astype(np.float32)).resize(((w + 2 * pad) * scale, (h + 2 * pad) * scale),
-                                                  Image.LANCZOS)
-        arr = np.asarray(im)[pad * scale:(pad + h) * scale, pad * scale:(pad + w) * scale]
-        comps.append(arr)
-    x, y, z = comps
+    if mode == 'lanczos':
+        z = np.sqrt(np.clip(1 - x * x - y * y, 0, 1))
+        # Lanczos per component with wrap padding, then renormalise.
+        pad = 8
+        comps = []
+        for c in (x, y, z):
+            cp = np.pad(c, pad, mode='wrap')
+            im = Image.fromarray(cp.astype(np.float32)).resize(((w + 2 * pad) * scale, (h + 2 * pad) * scale),
+                                                      Image.LANCZOS)
+            arr = np.asarray(im)[pad * scale:(pad + h) * scale, pad * scale:(pad + w) * scale]
+            comps.append(arr)
+        x, y, z = comps
+    else:
+        up = lambda c: np.repeat(np.repeat(c, scale, axis=0), scale, axis=1)
+        if mode == 'grain' and grain > 0:
+            # Local RMS of the texel noise (the part a 1-texel blur removes).
+            hx, hy = x - blur(x, 1), y - blur(y, 1)
+            amp = np.sqrt(np.maximum(blur(hx * hx + hy * hy, 2), 0.0) * 0.5)
+            rng = np.random.default_rng(int(it['hash'][:8], 16))
+            noise = rng.standard_normal((h * scale, w * scale, 2)).astype(np.float32) * (up(amp) * grain)[..., None]
+            x, y = up(x) + noise[..., 0], up(y) + noise[..., 1]
+        else:
+            x, y = up(x), up(y)
+        z = np.sqrt(np.clip(1 - x * x - y * y, 1e-4, 1))
     n = np.sqrt(x * x + y * y + z * z) + 1e-6
-    x, y = x / n, y / n
-    out = np.zeros((h * scale, w * scale, 3), np.uint8)
+    return x / n, y / n
+
+
+def pack_normal(x, y):
+    """Two unit-normal components -> RGBA8 array (B, A unused)."""
+    out = np.zeros(x.shape + (4,), np.uint8)
     out[..., 0] = np.clip((x * 0.5 + 0.5) * 255 + 0.5, 0, 255)
     out[..., 1] = np.clip((y * 0.5 + 0.5) * 255 + 0.5, 0, 255)
-    return Image.fromarray(out, 'RGB')
+    out[..., 3] = 255
+    return out
+
+
+def normal_mips(x, y, seed, grain=1.0):
+    """Mip chain for a normal map that keeps its texel noise at every level.
+
+    Box-filtered mips average the per-texel tilt away, so a surface that is
+    dusty up close goes waxy a few metres back. The game's own small maps
+    stay dusty at any distance, so each level here is the box average plus
+    fresh noise of the amplitude the base level had there (the local RMS of
+    its texel-to-texel variation, box-reduced alongside)."""
+    hx, hy = x - blur(x, 1), y - blur(y, 1)
+    amp = np.sqrt(np.maximum(blur(hx * hx + hy * hy, 2), 0.0) * 0.5)
+    rng = np.random.default_rng(seed)
+    levels = [pack_normal(x, y)]
+    h, w = x.shape
+
+    def down(a, size):
+        return np.asarray(Image.fromarray(np.ascontiguousarray(a, np.float32), 'F').resize(size, Image.BOX))
+
+    while w > 1 or h > 1:
+        w, h = max(1, w // 2), max(1, h // 2)
+        x, y, amp = down(x, (w, h)), down(y, (w, h)), down(amp, (w, h))
+        if grain > 0:
+            x = x + rng.standard_normal(x.shape).astype(np.float32) * amp * grain
+            y = y + rng.standard_normal(y.shape).astype(np.float32) * amp * grain
+        z = np.sqrt(np.clip(1 - x * x - y * y, 1e-4, 1))
+        n = np.sqrt(x * x + y * y + z * z) + 1e-6
+        x, y = x / n, y / n
+        levels.append(pack_normal(x, y))
+    return levels
 
 
 def build_single(it, scale):
@@ -341,6 +403,12 @@ def main():
                          'smoothed away (0 = off)')
     ap.add_argument('--min-size', type=int, default=32, help='skip textures smaller than this')
     ap.add_argument('--only', default='', help='comma-separated hash prefixes to process')
+    ap.add_argument('--normal-mode', default='grain', choices=('grain', 'nearest', 'lanczos'),
+                    help='how normal maps (DXN) are resampled; see build_normal')
+    ap.add_argument('--normal-grain', type=float, default=0.7,
+                    help='finer noise added to normal maps in grain mode, as a share of their own texel noise')
+    ap.add_argument('--normals-only', action='store_true',
+                    help='rebuild just the normal maps (implies --force for them)')
     ap.add_argument('--batch', type=int, default=48, help='textures per AI batch')
     ap.add_argument('--force', action='store_true', help='redo textures already in the output')
     args = ap.parse_args()
@@ -367,7 +435,9 @@ def main():
             reason = 'screen-sized'
         elif ((w * args.scale) % 4 or (hgt * args.scale) % 4):
             reason = 'size not block-aligned'
-        elif not args.force and os.path.exists(os.path.join(out, h + '.dds')):
+        elif args.normals_only and fmt != 'DXN':
+            reason = 'not a normal map'
+        elif not (args.force or args.normals_only) and os.path.exists(os.path.join(out, h + '.dds')):
             reason = 'done'
         if reason:
             skipped[reason] = skipped.get(reason, 0) + 1
@@ -414,14 +484,17 @@ def main():
 
         for it in items:
             if it['fmt'] == 'DXN':
-                img, fmt = build_normal(it, args.scale), 'BC5_UNORM'
+                x, y = build_normal(it, args.scale, args.normal_mode, args.normal_grain)
+                src = os.path.join(staged, it['hash'] + '.dds')
+                write_rgba_dds(src, normal_mips(x, y, int(it['hash'][8:16], 16),
+                                                args.normal_grain if args.normal_mode == 'grain' else 0.0))
+                jobs.append((src, 'BC5_UNORM', True))
             elif it['fmt'] == 'DXT5A':
-                img, fmt = build_single(it, args.scale), 'BC4_UNORM'
+                png = os.path.join(staged, it['hash'] + '.png')
+                build_single(it, args.scale).save(png)
+                jobs.append((png, 'BC4_UNORM', False))
             else:
                 continue
-            png = os.path.join(staged, it['hash'] + '.png')
-            img.save(png)
-            jobs.append((png, fmt, False))
             done += 1
         print(f'  resized {done}/{len(items)}; compressing  ({time.time() - t0:.0f} s)')
         encode_all(args.tools, jobs, encoded)
@@ -435,7 +508,7 @@ def main():
 
     info_path = os.path.join(out, 'pack.json')
     info = {'version': PACK_VERSION, 'model': args.model, 'scale': args.scale,
-            'deblock': args.deblock, 'detail': args.detail, 'updated': time.strftime('%Y-%m-%d %H:%M:%S')}
+            'deblock': args.deblock, 'detail': args.detail, 'normal_mode': args.normal_mode, 'updated': time.strftime('%Y-%m-%d %H:%M:%S')}
     with open(info_path, 'w', encoding='utf-8') as f:
         json.dump(info, f, indent=2)
     print(f'done in {time.time() - t0:.0f} s -> {out}')

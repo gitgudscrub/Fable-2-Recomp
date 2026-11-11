@@ -26,7 +26,10 @@
 #define DEBUG_VIEW 0
 #endif
 #ifndef WEAR
-#define WEAR 0.6
+#define WEAR 1.0
+#endif
+#ifndef BUMP
+#define BUMP 1.0           // normal tilt from the stone relief
 #endif
 #ifndef STRETCH_START
 #define STRETCH_START 12.0  // screen pixels per albedo texel where wear starts
@@ -105,22 +108,28 @@ float Noise3(float3 p) {
   float2 d = lerp(c.xy, c.zw, f.y);
   return lerp(d.x, d.y, f.x);
 }
-// Multiplier (0..1, mostly near 1) that darkens a stretched surface with
-// grime, mottling and cracks, from the world position in metres.
-float Wear(float3 p) {
-  float grime = Noise3(p * 1.5);                       // ~0.7 m patches
-  float mottle = Noise3(p * 12.0) * 0.6 + Noise3(p * 37.0) * 0.4;  // cm detail
-  // Cracks: the mid-level contour of a domain-warped noise, so the lines
-  // wander like fractures instead of closing into round loops.
-  float3 q = p + 0.3 * (float3(Noise3(p * 5.0 + 11.0), Noise3(p * 5.0 + 23.0),
-                               Noise3(p * 5.0 + 41.0)) - 0.5);
-  float ridge = 1.0 - abs(Noise3(q * 2.5 + 7.3) * 2.0 - 1.0);     // ridged noise
-  float crack = smoothstep(0.93, 1.0, ridge)           // thin lines...
-              * smoothstep(0.4, 0.7, Noise3(p * 0.7 + 3.1));  // ...only in some areas
+// Worn stone for stretched surfaces, from the world position in metres: a
+// height field (broad unevenness, fine grain, scattered pits) whose slope
+// along the tangent frame bends the normal, and whose features tint the
+// albedo. Stains alone read as damp patches; the relief is what makes it stone.
+float StoneHeight(float3 p) {
+  float undul = Noise3(p * 6.0);                                   // ~15 cm swell
+  float grain = Noise3(p * 40.0) * 0.6 + Noise3(p * 95.0) * 0.4;  // 1-2 cm grain
+  float pit = smoothstep(0.70, 0.88, Noise3(p * 16.0 + 5.0));     // scattered dents
+  return 0.008 * undul + 0.002 * grain - 0.005 * pit;
+}
+// Albedo multiplier (mostly near 1) and the tangent-space slope dh/dT, dh/dB.
+float StoneWear(float3 p, float3 T, float3 B, out float2 slope) {
+  const float e = 0.003;
+  float h0 = StoneHeight(p);
+  slope = float2(StoneHeight(p + T * e) - h0, StoneHeight(p + B * e) - h0) / e;
+  float speck = Noise3(p * 40.0) * 0.6 + Noise3(p * 95.0) * 0.4;
+  float tone = Noise3(p * 2.5 + 9.0);
+  float pit = smoothstep(0.70, 0.88, Noise3(p * 16.0 + 5.0));
   float w = 1.0;
-  w -= 0.25 * smoothstep(0.35, 0.8, grime);            // darker grime patches
-  w -= 0.18 * (mottle - 0.5);                          // +-9% mottling
-  w -= 0.35 * crack;
+  w += 0.20 * (speck - 0.5);  // granular speckle, +-10%
+  w += 0.12 * (tone - 0.5);   // slow tonal drift
+  w -= 0.18 * pit;            // dents hold dirt
   return saturate(w);
 }
 
@@ -148,7 +157,8 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float stretch = 1.0 / max(sqrt(area), 1e-6);
   float wear_mask = WEAR * smoothstep(STRETCH_START, STRETCH_FULL, stretch)
                     * ((xe_flags & 0x80000000u) ? 0.0 : 1.0);  // never on characters
-  float wear = wear_mask > 0.0 ? Wear(r2.xyz) : 1.0;  // skip the noise where it is off
+  float2 wear_slope = 0.0;
+  float wear = wear_mask > 0.0 ? StoneWear(r2.xyz, normalize(r4.xyz), normalize(r3.xyz), wear_slope) : 1.0;
   r8.yzw *= lerp(1.0, wear, wear_mask);
   r11.xyz = TF1(r0.wz).xyz;                                              // 19
   r1.w = dot(r1.xyz, r1.xyz);                                            // 20
@@ -156,6 +166,11 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float3 v = r8.yzw * r8.yzw; r11.x = r11.x * r11.x; r8.yzw = v; }     // 22
   { float v = dot(r10.xyz, r10.xyz); r11.y = r11.y * r11.y; r0.z = v; }  // 23
   { float2 v = r9.yx * C255.xx + C254.zz; r9.x = v.x; r9.w = v.y; }      // 24
+  if (wear_mask > 0.0) {  // Modern: the stone relief bends the normal
+    float2 n = float2(r9.x, r9.w) - wear_slope * (BUMP * wear_mask);
+    n *= rsqrt(max(1.0, dot(n, n) * 1.2));  // keep room for the z component
+    r9.x = n.x; r9.w = n.y;
+  }
   r0.w = r9.w * r9.w + r9.x * r9.x + C254.x;                             // 25
   { float3 v = r9.x * r4.zxy; r11.z = r11.z * r11.z; r9.xyz = v; }       // 26
   r9.xyz = r9.w * r3.zxy + r9.xyz;                                       // 27

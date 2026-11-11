@@ -95,9 +95,10 @@ selection uses it: the pillars keep v fixed and sweep u round each ring, so
 their footprint has no area; a wall at a grazing angle or with an unequal
 texel density keeps a normal area, so it stays off) and, beyond
 `STRETCH_START` screen pixels per texel (12, fully on at 32), blend in a
-world-space noise: broad grime patches, centimetre mottling and sparse
-cracks (the mid-level contour of a domain-warped noise, so the lines wander
-instead of closing into round loops). Ordinary surfaces sit at a few pixels per texel at 4K and
+world-space worn-stone model: a height field in metres (broad swell, fine
+grain, scattered pits) whose slope along the tangent frame bends the normal
+(`BUMP`), plus a granular speckle and the pits' dirt in the albedo (`WEAR`).
+Colour alone read as damp stains; the relief is what makes it stone. Ordinary surfaces sit at a few pixels per texel at 4K and
 are untouched; character draws (the dynamic-mesh flag) are excluded.
 `DEBUG_VIEW=1` in `lit_shadow.ps.hlsl` (7 in `lit.ps.hlsl`) shows the mask
 in red, the magnification in green and the pattern in blue.
@@ -112,7 +113,7 @@ in red, the magnification in green and the pattern in blue.
 | Tree trunks (`trunk.ps.hlsl`) | `00E09D1BC5295D52` (trunks, branches and the second foliage layer) | low-frequency warm/cool variation of the bark colour from the world position (6 m scale, so each trunk keeps one colour) |
 | Ferns and bushes (`fern.ps.hlsl`) | `165EDCD2CB963868` | the same variation across the undergrowth (2.5 m scale) |
 | Lit opaque / skin (`lit.ps.hlsl`) | `8D900846800943C8` (rocks, stone, buildings, and the characters' skin and cloth) | on character draws whose albedo is a skin tone: wrapped diffuse, a reddened scattering edge where the light fades, and a tighter, weaker sheen than the stone's. Scenery is byte-for-byte the literal port |
-| Lit opaque with shadow map (`lit_shadow.ps.hlsl`) | `648B965C200A5113` (Wraithmarsh pillars and ruins, dead trees, props with a projected sun shadow) | procedural wear on stretched surfaces: where the albedo is magnified past `STRETCH_START` screen pixels per texel (12, fully on at 32), a world-space grime / mottle / crack pattern is blended into the albedo (`WEAR` 0.6). Surfaces with ordinary UVs are the literal port. `lit.ps.hlsl` has the same addition |
+| Lit opaque with shadow map (`lit_shadow.ps.hlsl`) | `648B965C200A5113` (Wraithmarsh pillars and ruins, dead trees, props with a projected sun shadow) | procedural worn stone on stretched surfaces: where the albedo is magnified past `STRETCH_START` screen pixels per texel (12, fully on at 32), a world-space height field bends the normal and speckles the albedo (`BUMP`, `WEAR`). Surfaces with ordinary UVs are the literal port. `lit.ps.hlsl` has the same addition |
 
 ### Skin without a skin shader
 

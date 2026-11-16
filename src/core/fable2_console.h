@@ -60,6 +60,11 @@
 
 #define FABLE2_CONSOLE_BUILD "console-v11"
 
+REXCVAR_DEFINE_STRING(console_dir, "", "Input",
+                      "Folder for the console files (in.txt, out.txt, autoexec.txt...). Empty = "
+                      "<game data root>\console. Give each running game its own folder when several "
+                      "share one game data root.");
+
 REXCVAR_DEFINE_BOOL(console_enabled, true, "Input",
                     "Developer command file transport (console\\in.txt / out.txt / state.txt "
                     "next to the game data). On by default; false or FABLE2_CONSOLE=0 turns it off.");
@@ -173,6 +178,12 @@ inline State& S() {
 
 inline void set_root(const fs::path& p) { S().root = p; }
 
+// The console folder: --console_dir if set, else <game data root>\console.
+inline fs::path dir() {
+  const std::string d = REXCVAR_GET(console_dir);
+  return d.empty() ? S().root / "console" : fs::path(d);
+}
+
 inline bool enabled() {
   static const int env = [] {
     const char* e = std::getenv("FABLE2_CONSOLE");
@@ -197,8 +208,8 @@ inline void out(const std::string& tag, const std::string& msg, bool err = false
   REXLOG_INFO("{}", line);
 #endif
   std::error_code ec;
-  fs::create_directories(s.root / "console", ec);
-  std::ofstream f(s.root / "console" / "out.txt", std::ios::app);
+  fs::create_directories(dir(), ec);
+  std::ofstream f(dir() / "out.txt", std::ios::app);
   f << line << "\n";
 }
 
@@ -681,7 +692,7 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
       return true;
     }
     fs::path p = W[1];
-    if (p.is_relative()) p = s.root / "console" / p;
+    if (p.is_relative()) p = dir() / p;
     std::ifstream f(p, std::ios::binary);
     if (!f) {
       out("exec", "cannot open " + p.string(), true);
@@ -855,8 +866,8 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
     std::string filter = W.size() > 1 ? W[1] : "";
     for (auto& c : filter) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
     std::error_code ec;
-    fs::create_directories(s.root / "console", ec);
-    std::ofstream f(s.root / "console" / "cvars.txt", std::ios::trunc);
+    fs::create_directories(dir(), ec);
+    std::ofstream f(dir() / "cvars.txt", std::ios::trunc);
     size_t n = 0;
     for (const auto& e : rex::cvar::GetRegistry()) {
       std::string low = e.name + " " + e.category + " " + e.description;
@@ -875,7 +886,7 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
       }
       f << "  -- " << e.description << "\n";
     }
-    out("cvars", std::to_string(n) + " written to " + (s.root / "console" / "cvars.txt").string() +
+    out("cvars", std::to_string(n) + " written to " + (dir() / "cvars.txt").string() +
                      ". Set one by typing its name and a value in the ~ console.");
     return true;
   }
@@ -892,9 +903,9 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
       return true;
     }
     std::error_code ec;
-    fs::create_directories(s.root / "console", ec);
+    fs::create_directories(dir(), ec);
     const std::string fname = W.size() > 3 ? W[3] : "mem-" + hex(a, 8) + ".bin";
-    const fs::path p = s.root / "console" / fs::path(fname).filename();
+    const fs::path p = dir() / fs::path(fname).filename();
     std::ofstream f(p, std::ios::binary | std::ios::trunc);
     f.write(reinterpret_cast<const char*>(ta::host_addr(base, a)), static_cast<std::streamsize>(n));
     out("dumpmem", "ok: " + std::to_string(n) + " bytes -> " + p.string());
@@ -918,8 +929,8 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
     }
     if (W.size() > 2 && W[1] == "save") {
       std::error_code ec;
-      fs::create_directories(s.root / "console", ec);
-      const fs::path p = s.root / "console" / fs::path(W[2]).filename();
+      fs::create_directories(dir(), ec);
+      const fs::path p = dir() / fs::path(W[2]).filename();
       std::ofstream f(p, std::ios::trunc);
       for (const auto& h : s.history) f << h << "\n";
       out("history", std::to_string(s.history.size()) + " lines -> " + p.string() + " (run it with: exec " +
@@ -1244,7 +1255,7 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
     return true;
   }
   if (name == "autoexec") {
-    const fs::path p = s.root / "console" / "autoexec.txt";
+    const fs::path p = dir() / "autoexec.txt";
     std::ifstream f(p, std::ios::binary);
     if (!f) {
       out("autoexec", "no " + p.string() + " (one command per line; runs on the first f2 command)");
@@ -1538,15 +1549,15 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
 inline void write_state_file() {
   State& s = S();
   std::error_code ec;
-  fs::create_directories(s.root / "console", ec);
-  const fs::path tmp = s.root / "console" / "state.tmp";
+  fs::create_directories(dir(), ec);
+  const fs::path tmp = dir() / "state.tmp";
   {
     std::ofstream f(tmp, std::ios::trunc);
     f << "build " << FABLE2_CONSOLE_BUILD << "\nframes " << s.frames << "\nqueued " << s.queue.size()
       << "\nbusy " << ((!s.queue.empty() || s.waitfor || s.wait_frames || s.wait_time) ? 1 : 0)
       << "\nerrors " << s.errors << "\npaused " << (s.paused ? 1 : 0) << "\nlast " << s.last << "\n";
   }
-  fs::rename(tmp, s.root / "console" / "state.txt", ec);
+  fs::rename(tmp, dir() / "state.txt", ec);
 }
 
 // Lua commands run inside the game's own script update (console_pump.lua), not
@@ -1573,8 +1584,8 @@ inline void dispatch_lua(const std::string& line) {
   ++s.lua_seq;
   const auto run = s.root / "data" / "scripts" / "recomp" / "console_run.lua";
   std::error_code ec;
-  fs::create_directories(s.root / "console", ec);
-  const auto tmp = s.root / "console" / "run.tmp";
+  fs::create_directories(dir(), ec);
+  const auto tmp = dir() / "run.tmp";
   {
     std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
     f << "return " << s.lua_seq << ", [==[" << line << "]==]\n";
@@ -1646,7 +1657,7 @@ inline void hold_paused(uint8_t* base, bool file_mode) {
   while (s.paused && !s.step_frames) {
     std::this_thread::sleep_for(std::chrono::milliseconds(16));
     std::error_code ec;
-    const auto in = s.root / "console" / "in.txt";
+    const auto in = dir() / "in.txt";
     if (file_mode && fs::exists(in, ec)) {
       std::string text;
       {
@@ -1713,7 +1724,7 @@ inline void poll(PPCContext& ctx, uint8_t* base) {
   if (!s.autoexec_done) {
     s.autoexec_done = true;
     std::error_code ec;
-    if (fs::exists(s.root / "console" / "autoexec.txt", ec)) run_host_command("autoexec", base);
+    if (fs::exists(dir() / "autoexec.txt", ec)) run_host_command("autoexec", base);
   }
 
   // GUI-state chunks: run them here when GameFace Lua shares this thread, and
@@ -1745,7 +1756,7 @@ inline void poll(PPCContext& ctx, uint8_t* base) {
   // New input file (checked every 10 frames; cheap).
   if (file_mode && (s.frames % 10) == 0) {
     std::error_code ec;
-    const auto in = s.root / "console" / "in.txt";
+    const auto in = dir() / "in.txt";
     if (fs::exists(in, ec)) {
       std::string text;
       {

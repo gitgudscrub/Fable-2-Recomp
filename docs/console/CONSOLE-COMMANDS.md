@@ -6,6 +6,7 @@ Build: **console-v9**. Source: `src/core/fable2_console.h` (host commands) and `
 
 - Every command is typed in the SDK's `~` console behind the word `f2`, for example `f2 warp 1 2 3` or `f2 god on`. Chain commands with `;` inside one line: `f2 warp save a; wait 60; warp a`.
 - Commands also come from a file: lines written to `<game root>\console\in.txt` are queued, host replies are appended to `console\out.txt`, and `console\state.txt` is rewritten about once a second. This file transport is on by default (`console_enabled = true`); `console_enabled false` or `FABLE2_CONSOLE=0` turns it off. The game root is the folder with the game data, which can be the build folder itself. `console\autoexec.txt` (if present) runs before the first command.
+- `--console_dir=<folder>` moves these files elsewhere. Use it when several games run at once with the same `--game_data_root`, or they all read the same `in.txt`.
 - The queue runs one command per frame on the game thread (from the `MainRenderLoop` hook). Host commands (memory, files, cvars, timers) are handled in C++; every other line goes to Lua.
 - Host replies go to the `~` console (`REXLOG_INFO`) and to `<game root>\console\out.txt`. Lua replies go through `cprint` as `[console] ...` lines; whether `cprint` reaches the `~` console is unconfirmed, so check `logs\` if they do not show.
 - A leading `!` (for example `f2 !info`) also shows the Lua reply in a message box.

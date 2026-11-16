@@ -22,7 +22,7 @@
 // #include "fable2_ui_render_probe.h"
 #include "keyboard_gamepad.h"
 #include "mp_skel_diag.h"  // multiplayer puppet research (src/net)
-#include "mp_puppet_mirror.h"  // multiplayer spike f35: mirror puppet
+#include "mp_puppets.h"  // multiplayer: network layer + puppet heroes (src/net)
 
 #include <rex/cvar.h>
 
@@ -33,7 +33,7 @@
 void fable2_game_thread_lua_tick(PPCContext& ctx, uint8_t* base) {
   fable2::f5lua::run_pending(ctx, base);
   fable2::net::skeldiag::tick(ctx, base);
-  fable2::net::mirror::tick(ctx, base);
+  fable2::net::puppets::tick(ctx, base);
 }
 
 // Host keyboard -> guest gamepad map (see src/input/keyboard_gamepad.h).

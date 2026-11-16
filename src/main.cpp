@@ -21,6 +21,8 @@
 #include "fable2_stall_dump.h"  // self-installs a render-stall thread dumper
 // #include "fable2_ui_render_probe.h"
 #include "keyboard_gamepad.h"
+#include "mp_skel_diag.h"  // multiplayer puppet research (src/net)
+#include "mp_puppet_mirror.h"  // multiplayer spike f35: mirror puppet
 
 #include <rex/cvar.h>
 
@@ -30,6 +32,8 @@
 // the game's Lua VM; see fable2_f5_lua.h "Threading".
 void fable2_game_thread_lua_tick(PPCContext& ctx, uint8_t* base) {
   fable2::f5lua::run_pending(ctx, base);
+  fable2::net::skeldiag::tick(ctx, base);
+  fable2::net::mirror::tick(ctx, base);
 }
 
 // Host keyboard -> guest gamepad map (see src/input/keyboard_gamepad.h).

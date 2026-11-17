@@ -90,7 +90,8 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float4 v = dot(r1.xzy, r1.xzy).xxxx; float s = C112.y * r4.w; r2.w = v.w; r0.z = s; ps = s; }  // 22
   float sky_vis = -1.0;
 #if SPARROW
-  if (SparrowActive()) r4.xyz = SparrowFoliageAmbient(r4.xyz, input.v2.xyz, C87.xyz, sky_vis);
+  float3 sp_delta = 0.0;  // Sparrow's change to the ambient (sparrow_debug 2)
+  if (SparrowActive()) { float3 a0 = r4.xyz; r4.xyz = SparrowFoliageAmbient(r4.xyz, input.v2.xyz, C87.xyz, sky_vis); sp_delta = r4.xyz - a0; }
 #endif
   { float4 v = (r7.xyzz * r4.xyzz); float s = rsqrt(abs(r2.w)); r3.xyz = v.xyz; r4.x = s; ps = s; }  // 23
   { float4 v = (r1.xyzz * r4.xxxx); float s = sqrt(abs(r1.w)); r1.xyz = v.xyz; r4.y = s; ps = s; }  // 24
@@ -166,6 +167,7 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float4 v = (r4.xxxx * r0.yyyy); o.w = v.w; }  // 82
 
 #if SPARROW
+  if (SparrowDebug() == 2) o.xyz = abs(sp_delta);
   if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
 #endif
   AlphaTest(o.w);

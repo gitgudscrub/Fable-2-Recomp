@@ -97,7 +97,8 @@ float4 main(PSInput6 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float sky_vis = -1.0;
 #if SPARROW
   // Sparrow: the open sky and the sun's bounce on the ambient (ground grid).
-  if (SparrowActive()) r7.xyz = SparrowFoliageAmbient(r7.zyx, input.v0.xyz, input.v2.xyz, sky_vis).zyx;  // v2: the sun (vertex lit)
+  float3 sp_delta = 0.0;  // Sparrow's change to the ambient (sparrow_debug 2)
+  if (SparrowActive()) { float3 a0 = r7.xyz; r7.xyz = SparrowFoliageAmbient(r7.zyx, input.v0.xyz, input.v2.xyz, sky_vis).zyx; sp_delta = r7.xyz - a0; }  // v2: the sun (vertex lit)
 #endif
   r0.w = TF8(r6.zw).x;                                                   // 12
 #if SPARROW
@@ -182,6 +183,7 @@ float4 main(PSInput6 input, out uint coverage : SV_Coverage) : SV_Target0 {
   o.xyz = Noise3(world_pos * (1.0 / VARIATION_SCALE)).xxx;
 #endif
 #if SPARROW
+  if (SparrowDebug() == 2) o.xyz = abs(sp_delta);
   if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
 #endif
   AlphaTest(o.w);

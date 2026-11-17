@@ -87,7 +87,9 @@ translated `.bin`): constants, texture bindings, interpolators and the alpha
 tail come from the dumpbin, and every ucode instruction becomes one block with
 its number in a comment. The Project Sparrow interior, cave, temple, bush and
 grass shaders (`lit7`, `lit7b`, `lit4b`, `lit7_fog`, `lit_fog`, `bush`,
-`bush2`, `grass_clump`, `marsh`) started this way.
+`bush2`, `grass_clump`, `marsh`, `lit_temple`, `terrain_temple`, `lit_fog2`)
+started this way. The Temple of Shadows ones (`lit_temple` 4 lamps, `lit_fog2`
+2 lights, `terrain_temple` 7-lamp ground) follow `lit4b` and `terrain_near`.
 
 Two lessons from the sky attempt: confirm the hash with `--shader_highlight`
 *before* porting (a frame's draw counts are not enough; `4B1D3E6E8E58D3AC`

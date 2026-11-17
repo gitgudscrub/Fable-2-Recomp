@@ -69,6 +69,9 @@ SPARROW_ONLY = [
     ('bush2.ps.hlsl', 'ps_5_1', [], 'F525E023E08AC9BB'),            # leafy bushes, normal map, 2 lights
     ('grass_clump.ps.hlsl', 'ps_5_1', [], 'A7E45D07F5CF6627'),      # grass clumps, sun only
     ('marsh.ps.hlsl', 'ps_5_1', [], '04F23292B2F44077'),            # marsh reeds and cover, 4 lights
+    ('lit_temple.ps.hlsl', 'ps_5_1', [], '28E202861D3E2411'),       # temple walls and statues, 4 lights + fog
+    ('terrain_temple.ps.hlsl', 'ps_5_1', [], 'C8BAFDFD424AE99D'),   # temple ground layers, 7 lights
+    ('lit_fog2.ps.hlsl', 'ps_5_1', [], 'CD2CE6D440B77BCE'),         # temple trim, 1 light + fog
 ]
 
 

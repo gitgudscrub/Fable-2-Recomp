@@ -342,6 +342,7 @@ public partial class MainWindow : Window
             }
             if (_home.Settings.Edition == "sparrow") { _home.Settings.Edition = edition.Id; _dirty = true; }
             UltraCheck.IsChecked = _recomp.Ultra;
+            NewLightingCheck.IsChecked = _home.Settings.NewLighting;
             RemadeModelsCheck.IsChecked = _home.Settings.RemadeModels;
             (edition.Id == "enhanced" ? EditionEnhanced : EditionOriginal).IsChecked = true;
             (_home.Settings.Channel == "beta" ? ChannelBeta : ChannelStable).IsChecked = true;
@@ -384,6 +385,9 @@ public partial class MainWindow : Window
         _recomp.MouseLookScale = (int)SensitivitySlider.Value;
         _recomp.KeyboardGamepadMap = CollectKeybinds();
         _recomp.Ultra = UltraCheck.IsChecked == true;
+        // The new lighting is drawn on top of Modern graphics; Original keeps the game's own.
+        _home.Settings.NewLighting = NewLightingCheck.IsChecked == true;
+        _recomp.SparrowRenderer = _home.Settings.NewLighting && Edition.Find(_home.Settings.Edition).ModernGraphics;
     }
 
     private void RemadeModelsChanged(object sender, RoutedEventArgs e)

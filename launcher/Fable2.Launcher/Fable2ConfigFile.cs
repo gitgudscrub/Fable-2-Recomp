@@ -44,6 +44,8 @@ public class Fable2ConfigValues
     public bool TexturePack { get; set; } = true;
     // [graphics] ultra: Settings > Ultra lighting (on when Enhanced is picked).
     public bool Ultra { get; set; } = false;
+    // [graphics] sparrow_renderer: Settings > New lighting (Modern graphics only).
+    public bool SparrowRenderer { get; set; } = false;
 
     public int HotFuncYieldEvery { get; set; } = 1;  // 1 = original, 0 = never yield
     // [perf] performance_log: Help > Record performance logs (frame rate log, plus the
@@ -143,6 +145,7 @@ public static class Fable2ConfigFile
                 case "graphics":
                     if (key == "texture_pack") values.TexturePack = ParseBool(rawValue, values.TexturePack);
                     else if (key == "ultra") values.Ultra = ParseBool(rawValue, values.Ultra);
+                    else if (key == "sparrow_renderer") values.SparrowRenderer = ParseBool(rawValue, values.SparrowRenderer);
                     break;
             }
         }
@@ -189,6 +192,7 @@ public static class Fable2ConfigFile
             ("perf", "performance_log", values.PerformanceLog ? "true" : "false"),
             ("graphics", "texture_pack", values.TexturePack ? "true" : "false"),
             ("graphics", "ultra", values.Ultra ? "true" : "false"),
+            ("graphics", "sparrow_renderer", values.SparrowRenderer ? "true" : "false"),
         };
 
         var updated = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

@@ -23,6 +23,9 @@ public sealed class LauncherSettings
     /// <summary>True once Ultra lighting has been switched on for a player who picked Enhanced or Sparrow
     /// before the switch existed (it defaults to on).</summary>
     public bool UltraDefaulted { get; set; }
+    /// <summary>Settings > New lighting (the Sparrow renderer). Kept here so it survives a switch to Original,
+    /// which writes sparrow_renderer = false.</summary>
+    public bool NewLighting { get; set; }
     /// <summary>Window theme: "night", "dusk" (default) or "day".</summary>
     public string Theme { get; set; } = "dusk";
     public bool Migrated { get; set; }

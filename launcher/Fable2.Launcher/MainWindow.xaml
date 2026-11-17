@@ -1106,6 +1106,17 @@
                       </StackPanel>
                     </DockPanel>
                   </Border>
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <CheckBox x:Name="NewLightingCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
+                                Checked="SettingChanged" Unchecked="SettingChanged" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="New lighting (preview)" Style="{StaticResource PageText}" />
+                        <TextBlock Text="Light from the sky, soft highlights and lamps that light the walls and ground around them. Up to 6% slower; Modern graphics only"
+                                   Style="{StaticResource PageHint}" TextWrapping="Wrap" />
+                      </StackPanel>
+                    </DockPanel>
+                  </Border>
 
                   <TextBlock Text="MODERN TEXTURES" Style="{StaticResource PageSection}" />
                   <Border Padding="14,12" CornerRadius="6" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}"

@@ -366,6 +366,12 @@ Fable2ConfigFile.Write(advPath, advanced);
 Require(File.ReadAllText(advPath).Contains("performance_log = false") && !Fable2ConfigFile.Read(advPath).PerformanceLog,
 "performance_log roundtrip failed");
 advanced.PerformanceLog = true;
+Require(!new Fable2ConfigValues().SparrowRenderer, "new lighting should default to off");
+advanced.SparrowRenderer = true;
+Fable2ConfigFile.Write(advPath, advanced);
+Require(File.ReadAllText(advPath).Contains("sparrow_renderer = true") && Fable2ConfigFile.Read(advPath).SparrowRenderer,
+"sparrow_renderer roundtrip failed");
+advanced.SparrowRenderer = false;
     List<KeybindEntry> parsed = Fable2ConfigFile.ParseKeybinds(readBack.KeyboardGamepadMap);
     Require(parsed.Count == 4, "keybind parse count failed");
     Require(parsed[0].Key == "LMB" && parsed[0].Button == "X" && parsed[3].Key == "E" && parsed[3].Button == "A",

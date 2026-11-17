@@ -58,6 +58,15 @@ def release_files(root, build, launcher):
         raise SystemExit("package_release: no shader rewrites in shaders/replace")
     for rewrite in rewrites:
         files[f"shaders/replace/{rewrite.name}"] = rewrite
+    # New lighting (Settings > New lighting): the Sparrow set, a full replacement
+    # for shaders/replace that the game loads instead when sparrow_renderer is on.
+    sparrow = build / "shaders/sparrow_replace"
+    sparrow_rewrites = sorted(sparrow.glob("*.dxbc"))
+    if not sparrow_rewrites:
+        raise SystemExit("package_release: no shader rewrites in shaders/sparrow_replace")
+    for rewrite in sparrow_rewrites:
+        files[f"shaders/sparrow_replace/{rewrite.name}"] = rewrite
+    files["shaders/sparrow_replace/character_materials.txt"] = require(sparrow / "character_materials.txt")
     # dir.manifest stays out: the real one comes from the disc, and the game lists these scripts itself.
     scripts = sorted((build / "data/scripts/recomp").glob("*.lua"))
     if not scripts:

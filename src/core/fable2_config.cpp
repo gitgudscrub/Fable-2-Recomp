@@ -355,11 +355,12 @@ sun_shadow_map = true
 # Costs about 5-10% of the frame rate when uncapped. Default: false
 ultra = false
 
-# Project Sparrow (in development): the new renderer. For now, the ground,
-# rocks and buildings take their sun shadows from the sun shadow map inside
-# their own shaders (shaders\sparrow_replace next to the game) instead of
-# the darkening pass. Needs Sun Shadow Map, Ambient Occlusion and Shader
-# Rewrites. Read at startup. Default: false
+# New lighting (preview; the launcher's Settings > New lighting): our own
+# shaders (shaders\sparrow_replace next to the game) light the ground,
+# buildings, plants and characters with light from the sky, soft highlights
+# and the game's lamps, and take sun shadows from the sun shadow map. Up to
+# 6% slower. Needs Shader Rewrites; meant for Modern graphics (Sun Shadow
+# Map and Ambient Occlusion on). Read at startup. Default: false
 sparrow_renderer = false
 
 # Anti-Aliasing: FXAA on the final picture. Smooths the stair-stepped edges

@@ -34,9 +34,6 @@ float SparrowMap(int2 p) {
   return xe_textures_2d[SPARROW_SUN_INDEX].Load(int4(p, 0, 0)).x;
 }
 
-// Whether the SDK handed over a map this frame (sparrow_renderer on, map
-// drawn): the Sparrow-only lighting additions follow it, so with the cvar
-// off the ports render exactly as the game's own shaders.
 // sparrow_debug (SDK cvar): 0 off, 1 no sun where the map covers, 2 only
 // the light the Sparrow materials add.
 int SparrowDebug() {
@@ -44,7 +41,19 @@ int SparrowDebug() {
   return rows >= 2u ? int(SparrowMap(int2(12, int(rows) - 1)) + 0.5) : 0;
 }
 
+// Whether the Sparrow renderer is on (the SDK writes the frame row every
+// frame it has scene depth): the Sparrow-only lighting additions follow it,
+// so with the cvar off the ports render exactly as the game's own shaders.
+// It does not need a sun: indoors and at night there is no sun map, but the
+// lamps still get Sparrow's specular and the characters their materials.
+// Everything that reads the map (sun shadow, sky light, bounce, the ground
+// grid) checks SparrowSunValid itself and keeps the game's term without it.
 bool SparrowActive() {
+  return SparrowSunRows() >= 2u;
+}
+
+// Whether the SDK drew a sun map this frame.
+bool SparrowSunValid() {
   uint rows = SparrowSunRows();
   return rows >= 2u && SparrowMap(int2(6, int(rows) - 1)) > 0.5;
 }
@@ -113,9 +122,15 @@ float SparrowSunShadow(float3 pos, float3 n) {
 // The game's shadow value combined with the map's where the map covers the
 // point: shadowed if either says so (the game's cascade holds casters off
 // screen; ours reaches much further).
+// Shadows only the map casts keep SPARROW_MAP_LEAK of the sun: most of them
+// are tree canopies, which let light through (Brightwood and Fairfax went
+// darker than the game in the shade at noon).
+#ifndef SPARROW_MAP_LEAK
+#define SPARROW_MAP_LEAK 0.4
+#endif
 float SparrowSunOr(float game_shadow, float3 pos, float3 n) {
   float s = SparrowSunShadow(pos, n);
-  return s < 0.0 ? game_shadow : min(game_shadow, s);
+  return s < 0.0 ? game_shadow : min(game_shadow, lerp(SPARROW_MAP_LEAK, 1.0, s));
 }
 
 // No surface normal: leaves, bark, ferns.
@@ -322,7 +337,7 @@ float3 SparrowBounce(float3 pos, float3 n) {
 // vis + F (1 - vis)^2: closed-in points keep F of the game's ambient, while
 // half-open ones (an arch: 0.67 -> 0.71) barely move.
 #ifndef SPARROW_SKY_FLOOR
-#define SPARROW_SKY_FLOOR 0.4
+#define SPARROW_SKY_FLOOR 0.85
 #endif
 float SparrowSkyTerm(float vis) {
   float c = 1.0 - vis;
@@ -382,6 +397,17 @@ float3 SparrowGroundAmbientLight(float3 ambient, float3 pos, float3 n, float3 su
   vis_out = vis;
   return ambient * SparrowSkyTerm(vis) +
          SPARROW_BOUNCE_ALBEDO * bounce * saturate(n.z) * sun * SPARROW_BOUNCE;
+}
+
+// SparrowAmbient for foliage (bushes, grass clumps, leaves): their normals
+// point every way, so the sky visibility comes from the ground grid at the
+// point's height, and the bounce is spread over all sides (half).
+float3 SparrowFoliageAmbient(float3 ambient, float3 pos, float3 sun, out float vis_out) {
+  float bounce;
+  float vis = SparrowGroundAmbient(pos, bounce);
+  vis_out = vis;
+  if (vis < 0.0) return ambient;
+  return ambient * SparrowSkyTerm(vis) + 0.5 * SPARROW_BOUNCE_ALBEDO * bounce * sun * SPARROW_BOUNCE;
 }
 
 // The faint sky sheen the cobbles have (path.ps.hlsl, SPARROW_SKY_REFLECT),
@@ -482,6 +508,70 @@ float3 SparrowCharacterSpecular(float3 n, float3 v, float3 l, float3 light, Spar
 float3 SparrowCharacterSheen(float3 ambient, float3 n, float3 v, SparrowCharMat m) {
   return ambient * SparrowEnvSpecular(n, v, m.rough, m.f0) * (m.tint * m.sheen) +
          SparrowCharMaterialDebug();
+}
+
+// --- Lit world materials with several lights -----------------------------------
+// The Sparrow specular of a lit material (lit4.ps.hlsl's, generalised): GGX
+// for each light with the game's specular map as F0 (floor SPARROW_F0), its
+// shininess setting the roughness, plus a damped sky reflection of the
+// ambient. Character draws (the dynamic-mesh flag) get their material's lobe
+// and sheen instead. The caller drops the game's own Phong specular.
+//   n, v       surface normal and direction to the camera
+//   l[k]       direction to light k; light[k] its colour times attenuation and
+//              shadow (no N.L), zero for unused slots
+//   spec_map   the specular map (linear); albedo: the colour map (linear)
+//   ambient    the ambient light in game units, before the albedo (* c27.w)
+#define SPARROW_MAX_LIGHTS 7
+
+// A lit shader's light from its constants, as the game's shaders work it out
+// (lit4 / lit7 slots: position c80+k with w = 0 for a direction, range
+// c96[k], spot axis c98+k, spot offset c105[k] and scale c107[k], spot amount
+// c94[k]; lights 4-6 use c84+, c97, c102+, c106, c108, c95). Returns the
+// direction to the light; atten = 1 + amount * (spot * range - 1).
+float3 SparrowGameLight(float3 pos, float4 lp, float range, float3 spot_axis, float spot_offset,
+                        float spot_scale, float spot_amount, out float atten) {
+  float3 d = lp.xyz - pos * lp.w;
+  float len = length(d);
+  float3 l = d / max(len, 1e-6);
+  float r = saturate(1.0 - len * range);
+  float s = saturate((dot(l, spot_axis) - spot_offset) * spot_scale);
+  atten = (s * r - 1.0) * spot_amount + 1.0;
+  return l;
+}
+// Lights 0-3 / 4-6 of a lit shader into l[] / c[] (colour * shadow mask *
+// attenuation); `mask` is the game's per-light shadow factor (1 = lit). Use
+// where the shader defines C80..C107 / C84..C108 (expanded at the use site).
+#define SPARROW_GAME_LIGHT(k, pos, P, R, A, O, S, M, COL, mask, l, c) \
+  { float a_; l[k] = SparrowGameLight(pos, P, R, A.xyz, O, S, M, a_); c[k] = COL.xyz * ((mask) * a_); }
+#define SPARROW_GAME_LIGHTS_0_3(pos, mask, l, c) \
+  SPARROW_GAME_LIGHT(0, pos, C80, C96.x, C98, C105.x, C107.x, C94.x, C87, (mask).x, l, c) \
+  SPARROW_GAME_LIGHT(1, pos, C81, C96.y, C99, C105.y, C107.y, C94.y, C88, (mask).y, l, c) \
+  SPARROW_GAME_LIGHT(2, pos, C82, C96.z, C100, C105.z, C107.z, C94.z, C89, (mask).z, l, c) \
+  SPARROW_GAME_LIGHT(3, pos, C83, C96.w, C101, C105.w, C107.w, C94.w, C90, (mask).w, l, c)
+#define SPARROW_GAME_LIGHTS_4_6(pos, mask, l, c) \
+  SPARROW_GAME_LIGHT(4, pos, C84, C97.x, C102, C106.x, C108.x, C95.x, C91, (mask).x, l, c) \
+  SPARROW_GAME_LIGHT(5, pos, C85, C97.y, C103, C106.y, C108.y, C95.y, C92, (mask).y, l, c) \
+  SPARROW_GAME_LIGHT(6, pos, C86, C97.z, C104, C106.z, C108.z, C95.z, C93, (mask).z, l, c)
+float3 SparrowLitSpecular(float3 n, float3 v, float3 l[SPARROW_MAX_LIGHTS],
+                          float3 light[SPARROW_MAX_LIGHTS], uint count, float3 spec_map,
+                          float3 albedo, float3 ambient) {
+  float3 sum = 0.0;
+  if (xe_flags & 0x80000000u) {
+    SparrowCharMat cm = SparrowCharMaterial(albedo);
+    [unroll] for (uint k = 0; k < SPARROW_MAX_LIGHTS; ++k) {
+      if (k < count) sum += SparrowCharacterSpecular(n, v, l[k], light[k], cm);
+    }
+    return sum + SparrowCharacterSheen(ambient, n, v, cm);
+  }
+  float spec_lum = dot(spec_map, float3(0.2126, 0.7152, 0.0722));
+  float rough = lerp(0.75, 0.35, saturate(spec_lum * 4.0));
+  float3 base = 0.0;
+  [unroll] for (uint k2 = 0; k2 < SPARROW_MAX_LIGHTS; ++k2) {
+    if (k2 < count) SparrowSpecularSplit(n, v, l[k2], rough, light[k2], base, sum);
+  }
+  sum += base * max(spec_map, SPARROW_F0);
+  sum += ambient * SparrowEnvSpecular(n, v, rough, max(spec_lum, SPARROW_F0));
+  return sum;
 }
 
 // sparrow_debug 3: sky visibility as red (open) .. green (closed in), blue

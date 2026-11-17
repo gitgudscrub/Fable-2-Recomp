@@ -135,6 +135,11 @@ float4 main(PSInput9 input, out uint coverage : SV_Coverage) : SV_Target0 {
     r8.yzw = lerp(r8.yzw, l * float3(1.12, 1.0, 0.80), AMBIENT_WARM);
   }
   r0.yzw = r0.yzw * r8.yzw + C20.xyz;                                    // 37
+  float sky_vis = -1.0;
+#if SPARROW
+  // Sparrow: the open sky and the sun's bounce on the ambient (ground grid).
+  if (SparrowActive()) r0.yzw = SparrowFoliageAmbient(r0.yzw, world_pos, C87.xyz, sky_vis);
+#endif
   { float3 v = r10.yyx * C87.yzx; r1.x = rcp(r9.w); r8.yzw = v; }        // 38
   { float3 v = r9.xyz * r1.x; ps = r8.w; r1.xyz = v; }                   // 39
   if (VARIATION > 0.0) {
@@ -206,6 +211,9 @@ float4 main(PSInput9 input, out uint coverage : SV_Coverage) : SV_Target0 {
 #endif
 #if DEBUG_VIEW == 1
   o.xyz = Noise3(world_pos * (1.0 / VARIATION_SCALE)).xxx;
+#endif
+#if SPARROW
+  if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);

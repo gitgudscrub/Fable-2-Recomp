@@ -60,6 +60,15 @@ SPARROW_ONLY = [
     ('character4.ps.hlsl', 'ps_5_1', [], 'F2F103F16764043B'),       # characters lit by four lights
     ('char_alpha.ps.hlsl', 'ps_5_1', [], '2FD24989AB04A475'),       # translucent character parts, sun
     ('char_alpha2.ps.hlsl', 'ps_5_1', [], 'F96A4494958BFA12'),      # ... two lights + shadow map (wings)
+    ('lit7.ps.hlsl', 'ps_5_1', [], 'FC0922A3A8D8DA7A'),             # interiors, 7 lamps, no sun
+    ('lit7b.ps.hlsl', 'ps_5_1', [], '31AE85A9275B4A29'),            # ... glossy (Tattered Spire)
+    ('lit4b.ps.hlsl', 'ps_5_1', [], 'A22982E86122DA41'),            # caves, 4 lamps
+    ('lit7_fog.ps.hlsl', 'ps_5_1', [], '356E4E7B9E2B36E6'),         # temple interiors, 7 lamps + fog
+    ('lit_fog.ps.hlsl', 'ps_5_1', [], '999604E7F8EAE7CC'),          # sunlit walls in fog (Crucible, marsh)
+    ('bush.ps.hlsl', 'ps_5_1', [], 'E99F4ACC7A3C78B4'),             # bushes and hedges, 2 lights
+    ('bush2.ps.hlsl', 'ps_5_1', [], 'F525E023E08AC9BB'),            # leafy bushes, normal map, 2 lights
+    ('grass_clump.ps.hlsl', 'ps_5_1', [], 'A7E45D07F5CF6627'),      # grass clumps, sun only
+    ('marsh.ps.hlsl', 'ps_5_1', [], '04F23292B2F44077'),            # marsh reeds and cover, 4 lights
 ]
 
 

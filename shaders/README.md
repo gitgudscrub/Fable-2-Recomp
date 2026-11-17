@@ -81,6 +81,14 @@ instruction, as in `water.ps.hlsl`), check it against the original with
 screenshots, then add the improvements behind defines so the original look
 stays reachable.
 
+`tools/shaders/ucode_port.py <dump dir> <HASH> --out x.ps.hlsl` writes that
+literal port for you from a shader dump (`shader_<HASH>.ucode.frag` plus the
+translated `.bin`): constants, texture bindings, interpolators and the alpha
+tail come from the dumpbin, and every ucode instruction becomes one block with
+its number in a comment. The Project Sparrow interior, cave, temple, bush and
+grass shaders (`lit7`, `lit7b`, `lit4b`, `lit7_fog`, `lit_fog`, `bush`,
+`bush2`, `grass_clump`, `marsh`) started this way.
+
 Two lessons from the sky attempt: confirm the hash with `--shader_highlight`
 *before* porting (a frame's draw counts are not enough; `4B1D3E6E8E58D3AC`
 is the distant tree impostor/haze cards, not the sky, and a highlight colour

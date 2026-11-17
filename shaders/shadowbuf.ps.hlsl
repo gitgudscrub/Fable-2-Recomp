@@ -200,7 +200,7 @@ float4 main(PSInput0 input) : SV_Target0 {
   // Shadowed if either map says so: the game's cascade also holds casters
   // off screen (trees behind the camera), which ours, replayed from the
   // camera's depth pre-pass, does not.
-  if (s >= 0.0) o.xyz = min(o.xyz, s);
+  if (s >= 0.0) o.xyz = min(o.xyz, lerp(SPARROW_MAP_LEAK, 1.0, s));  // canopy leak (SparrowSunOr)
 #endif
   return o * xe_color_exp_bias.x;
 }

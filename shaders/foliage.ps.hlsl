@@ -94,6 +94,11 @@ float4 main(PSInput6 input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float3 v = r1.zyx * C27.w; r6.x = C8.y * r2.w; r7.xyz = v; }         // 9
   { float3 v = r4.xyz * C49.xyz; r6.y = C8.x * r1.w; r4.xyz = v; }       // 10
   r6.xy = r6.xy + C8.wz;                                                 // 11
+  float sky_vis = -1.0;
+#if SPARROW
+  // Sparrow: the open sky and the sun's bounce on the ambient (ground grid).
+  if (SparrowActive()) r7.xyz = SparrowFoliageAmbient(r7.zyx, input.v0.xyz, input.v2.xyz, sky_vis).zyx;  // v2: the sun (vertex lit)
+#endif
   r0.w = TF8(r6.zw).x;                                                   // 12
 #if SPARROW
   // Sparrow: the sun shadow map (sparrow_common.hlsli).
@@ -175,6 +180,9 @@ float4 main(PSInput6 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float4 o = float4(r0.yzw * r2.xyz, C15.w * r0.x);                      // 69
 #if DEBUG_VIEW == 1
   o.xyz = Noise3(world_pos * (1.0 / VARIATION_SCALE)).xxx;
+#endif
+#if SPARROW
+  if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);

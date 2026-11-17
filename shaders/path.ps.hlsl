@@ -170,6 +170,15 @@ float4 main(PSInput8 input) : SV_Target0 {
   { float3 v = r10.xyz * r1.x; r0.w = rsqrt(abs(r0.w)); r10.xyz = v; }   // 74
   r11.xyz = r11.xyz * r0.w; r6.w = sqrt(abs(r7.x));                      // 75
   float3 l0 = r11.xyz, l1 = r10.xyz, l2 = r9.xyz, l3 = float3(r2.y, r2.z, r2.w);  // Sparrow
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis = 1.0;
+  if (SparrowActive()) {
+    lamp_vis = SparrowLampShadows4(input.v2.xyz, input.position.xy, C80, C81, C82, C83, C96);
+    r8 *= lamp_vis;
+  }
+#endif
   r1 = saturate(-r6.wzyx * C96.wzyx + C254.y);                           // 76
   r6.x = dot(r11.zxy, C98.zxy);                                          // 77
   r6.y = dot(r10.zxy, C99.zxy);                                          // 78
@@ -227,6 +236,10 @@ float4 main(PSInput8 input) : SV_Target0 {
   float4 o = float4(r0.xyz * C20.w, r7.x * r7.w);                        // 108-109
 #if SPARROW
   if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);  // red open, green closed
+#endif
+#if SPARROW
+  if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;
 }

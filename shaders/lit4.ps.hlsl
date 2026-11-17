@@ -170,6 +170,15 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
     r5 = r6.x * C114;                                                    // 72
     r7 = max(r7, r5);                                                    // 73
   }
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis = 1.0;
+  if (SparrowActive()) {
+    lamp_vis = SparrowLampShadows4(input.v2.xyz, input.position.xy, C80, C81, C82, C83, C96);
+    r7 = 1.0 - (1.0 - r7) * lamp_vis;
+  }
+#endif
   float4 light_mask = 1.0 - r7;  // Sparrow: per light 0..3, the shadow factor
   r15.xyz = -r2.xyz * C83.w + C83.xyz;                                   // 74
   r14.xyz = -r2.xyz * C82.w + C82.xyz;                                   // 75
@@ -304,5 +313,9 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);
+#if SPARROW
+  if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
+#endif
   return o * xe_color_exp_bias.x;
 }

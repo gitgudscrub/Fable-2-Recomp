@@ -185,6 +185,15 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float4 v = dot(r15.zxy, r15.zxy).xxxx; float s = sqrt(abs(r1.w)); r2.w = v.w; r6.y = s; ps = s; }  // 84
   { float4 v = dot(r16.zxy, r16.zxy).xxxx; float s = sqrt(abs(r2.w)); r6.w = v.w; r6.z = s; ps = s; }  // 85
   { float4 v = (-r11.xzyw + C255.xxxx); float s = rsqrt(abs(r6.w)); r14.xyzw = v.xyzw; r3.w = s; ps = s; }  // 86
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis = 1.0;
+  if (SparrowActive()) {
+    lamp_vis = SparrowLampShadows4(input.v2.xyz, input.position.xy, C80, C81, C82, C83, C96);
+    r14 *= lamp_vis.xzyw;
+  }
+#endif
   float4 light_mask = r14.xzyw;  // Sparrow: lights 0..3, the shadow factor (r14 is x z y w)
   { float4 v = (r16.xyzz * r3.wwww); float s = rsqrt(abs(r2.w)); r18.xyz = v.xyz; r2.w = s; ps = s; }  // 87
   { float4 v = (r15.xyzz * r2.wwww); float s = rsqrt(abs(r1.w)); r15.xyz = v.xyz; r1.w = s; ps = s; }  // 88
@@ -347,5 +356,9 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);
+#if SPARROW
+  if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
+#endif
   return o * xe_color_exp_bias.x;
 }

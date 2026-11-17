@@ -552,6 +552,137 @@ float3 SparrowGameLight(float3 pos, float4 lp, float range, float3 spot_axis, fl
   SPARROW_GAME_LIGHT(4, pos, C84, C97.x, C102, C106.x, C108.x, C95.x, C91, (mask).x, l, c) \
   SPARROW_GAME_LIGHT(5, pos, C85, C97.y, C103, C106.y, C108.y, C95.y, C92, (mask).y, l, c) \
   SPARROW_GAME_LIGHT(6, pos, C86, C97.z, C104, C106.z, C108.z, C95.z, C93, (mask).z, l, c)
+// --- Lamp shadows -----------------------------------------------------------------
+// Screen-space shadows for the game's point lights: from the pixel toward the
+// lamp through the scene depth the SDK copies after the depth pre-pass
+// (SystemBindlessView::kSparrowDepth, sparrow_depth.cs.hlsl), with the camera
+// in the frame row (16-39, sparrow_sun.cs.hlsl). The camera is last frame's
+// (the game resolves its depth before it draws), so each pixel shifts the
+// march by the difference between where last frame's camera puts it and
+// where it is drawn. Anything in front of the ray by up to
+// SPARROW_LAMP_THICKNESS world units blocks the lamp; off screen counts as lit.
+#define SPARROW_DEPTH_INDEX 4
+#ifndef SPARROW_LAMP_STEPS
+#define SPARROW_LAMP_STEPS 12
+#endif
+#ifndef SPARROW_LAMP_THICKNESS
+#define SPARROW_LAMP_THICKNESS 1.5
+#endif
+// Stop this far short of the lamp: its own lantern and post sit around it.
+#ifndef SPARROW_LAMP_STOP
+#define SPARROW_LAMP_STOP 0.6
+#endif
+
+struct SparrowCamera {
+  float4x4 m;      // world -> clip rows
+  float alpha, beta, zs, zo;
+  float2 size;     // depth texture size in pixels
+  bool y_down;
+  float2 shift;    // this pixel's shift since last frame's camera
+  bool valid;
+};
+
+float2 SparrowCameraPixel(SparrowCamera cam, float4 c) {
+  float2 ndc = c.xy / c.w;
+  return float2(ndc.x * 0.5 + 0.5, cam.y_down ? ndc.y * 0.5 + 0.5 : 0.5 - ndc.y * 0.5) * cam.size;
+}
+
+// sparrow_debug 5 shows the lamp shadows alone (white lit, black shadowed);
+// 6 turns them off (A/B).
+SparrowCamera SparrowCameraFor(float3 pos, float2 svpos) {
+  SparrowCamera cam = (SparrowCamera)0;
+  uint rows = SparrowSunRows();
+  if (rows < 2u) return cam;
+  int fr = int(rows) - 1;
+  if (SparrowMap(int2(39, fr)) < 0.5) return cam;
+  if (abs(SparrowMap(int2(12, fr)) - 6.0) < 0.5) return cam;  // sparrow_debug 6: off
+  [unroll] for (int r = 0; r < 4; ++r) {
+    cam.m[r] = float4(SparrowMap(int2(16 + r * 4, fr)), SparrowMap(int2(17 + r * 4, fr)),
+                      SparrowMap(int2(18 + r * 4, fr)), SparrowMap(int2(19 + r * 4, fr)));
+  }
+  cam.alpha = SparrowMap(int2(32, fr));
+  cam.beta = SparrowMap(int2(33, fr));
+  cam.zs = SparrowMap(int2(34, fr));
+  cam.zo = SparrowMap(int2(35, fr));
+  cam.size = float2(SparrowMap(int2(36, fr)), SparrowMap(int2(37, fr)));
+  cam.y_down = SparrowMap(int2(38, fr)) > 0.5;
+  float4 c = mul(cam.m, float4(pos, 1.0));
+  if (c.w <= 0.05) return cam;
+  cam.shift = svpos - SparrowCameraPixel(cam, c);
+  // A large shift is not the camera moving but the game drawing the screen
+  // in EDRAM tiles (the lower tile's pixels are offset): no correction then.
+  if (any(abs(cam.shift) > 24.0)) cam.shift = 0.0;
+  cam.valid = true;
+  return cam;
+}
+
+// 1 lit, 0 blocked, for a point light at lp (w = 1; a direction, w = 0,
+// is the sun's and stays lit here).
+// range: the light's c96 entry (it reaches 1 / range).
+float SparrowLampShadow(SparrowCamera cam, float3 pos, float2 svpos, float3 n, float4 lp,
+                        float range) {
+  if (!cam.valid || lp.w < 0.5) return 1.0;
+  float3 to_light = lp.xyz - pos;
+  // A light behind the surface lights none of it (the game's own shading):
+  // no march, which would only find the surface itself.
+  if (dot(n, to_light) <= 0.0) return 1.0;
+  float len = length(to_light);
+  if (len < 2.0 * SPARROW_LAMP_STOP || len * range >= 1.0) return 1.0;
+  float3 end = lp.xyz - to_light * (SPARROW_LAMP_STOP / len);
+  float4 c0 = mul(cam.m, float4(pos, 1.0));
+  float4 c1 = mul(cam.m, float4(end, 1.0));
+  const float kNear = 0.05;
+  if (c0.w <= kNear) return 1.0;
+  if (c1.w <= kNear) c1 = lerp(c0, c1, (c0.w - kNear) / (c0.w - c1.w));
+  float2 p0 = SparrowCameraPixel(cam, c0) + cam.shift;
+  float2 p1 = SparrowCameraPixel(cam, c1) + cam.shift;
+  float px = length(p1 - p0);
+  if (px < 2.0) return 1.0;
+  // Start a few pixels out (the surface itself), jittered per pixel.
+  float t0 = min(3.0 / px, 0.5);
+  float jitter = frac(52.9829189 * frac(dot(svpos, float2(0.06711056, 0.00583715))));
+  [loop] for (int i = 0; i < SPARROW_LAMP_STEPS; ++i) {
+    float t = lerp(t0, 1.0, (float(i) + jitter) / float(SPARROW_LAMP_STEPS));
+    float4 c = lerp(c0, c1, t);
+    float2 p = SparrowCameraPixel(cam, c) + cam.shift;
+    if (any(p < 0.0) || any(p >= cam.size)) break;
+    float d = xe_textures_2d[SPARROW_DEPTH_INDEX].Load(int4(int2(p), 0, 0)).x;
+    float z = (d - cam.zo) / cam.zs;
+    float w_buf = cam.beta / (z - cam.alpha);
+    float bias = 0.05 + 0.01 * c.w;
+    if (w_buf > 0.0 && w_buf < c.w - bias && w_buf > c.w - SPARROW_LAMP_THICKNESS) return 0.0;
+  }
+  return 1.0;
+}
+
+// The four lights of a lit shader's c80..c83 with ranges c96 (lights 4-6:
+// c84..c86, c97; pass w = 0 for a missing light).
+float4 SparrowLampShadows4(float3 pos, float2 svpos, float4 l0, float4 l1, float4 l2, float4 l3,
+                           float4 range) {
+  SparrowCamera cam = SparrowCameraFor(pos, svpos);
+  // The surface's facing normal from the screen derivatives (moving right,
+  // moving down the screen).
+  float3 n = cross(ddy(pos), ddx(pos));
+  return float4(SparrowLampShadow(cam, pos, svpos, n, l0, range.x),
+                SparrowLampShadow(cam, pos, svpos, n, l1, range.y),
+                SparrowLampShadow(cam, pos, svpos, n, l2, range.z),
+                SparrowLampShadow(cam, pos, svpos, n, l3, range.w));
+}
+// sparrow_debug 7: whether this pixel is in the depth copy (green: its
+// depth matches; red: something else, or nothing, is there).
+float3 SparrowDepthCheck(float3 pos, float2 svpos) {
+  SparrowCamera cam = SparrowCameraFor(pos, svpos);
+  float4 c = mul(cam.m, float4(pos, 1.0));
+  if (!cam.valid) return float3(0.0, 0.0, 0.5);
+  float d = xe_textures_2d[SPARROW_DEPTH_INDEX].Load(int4(int2(SparrowCameraPixel(cam, c) + cam.shift), 0, 0)).x;
+  float w_buf = cam.beta / ((d - cam.zo) / cam.zs - cam.alpha);
+  return abs(w_buf - c.w) < 0.1 + 0.01 * c.w ? float3(0.0, 0.5, 0.0) : float3(0.5, 0.0, 0.0);
+}
+// sparrow_debug 5: the lamp shadows alone.
+float3 SparrowLampDebug(float4 vis) {
+  return min(min(vis.x, vis.y), min(vis.z, vis.w)).xxx * 0.5;
+}
+
 // The game's Blinn-Phong gloss exponent as a GGX roughness (alpha = sqrt(2 / (n + 2)),
 // roughness = sqrt(alpha)), for materials whose narrow game highlight a broad lobe
 // would smear into a wash (wet stone, ice).

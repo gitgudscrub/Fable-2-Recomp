@@ -190,6 +190,15 @@ float4 main(PSInputPort input) : SV_Target0 {
     { float4 v = max(r7.xyzw, r12.xyzw); r7.xyzw = v.xyzw; }  // 80
   }
   { float4 v = (-r7.xyzw + C254.yyyy); r13.xyzw = v.xyzw; }  // 81
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis = 1.0;
+  if (SparrowActive()) {
+    lamp_vis = SparrowLampShadows4(input.v2.xyz, input.position.xy, C80, C81, C82, C83, C96);
+    r13 *= lamp_vis;
+  }
+#endif
   float4 light_mask = r13;  // Sparrow: lights 0..3, the shadow factor
   { float4 v = (-r2.xyzz * C82.wwww + C82.xyzz); r14.xyz = v.xyz; }  // 82
   { float4 v = (-r2.xyzz * C83.wwww + C83.xyzz); r15.xyz = v.xyz; }  // 83
@@ -285,6 +294,15 @@ float4 main(PSInputPort input) : SV_Target0 {
   { float4 v = dot(r12.zxy, r12.zxy).xxxx; float s = sqrt(abs(r1.w)); r2.w = v.w; r14.x = s; ps = s; }  // 162
   { float4 v = dot(r13.zxy, r13.zxy).xxxx; float s = sqrt(abs(r2.w)); r6.x = v.x; r14.y = s; ps = s; }  // 163
   { float4 v = (-r7.xyzz + C254.yyyy); float s = rsqrt(abs(r6.x)); r2.xyz = v.xyz; r3.w = s; ps = s; }  // 164
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis2 = 1.0;
+  if (SparrowActive()) {
+    lamp_vis2 = SparrowLampShadows4(input.v2.xyz, input.position.xy, C84, C85, C86, float4(0.0, 0.0, 0.0, 0.0), float4(C97.xyz, 0.0));
+    r2.xyz *= lamp_vis2.xyz;
+  }
+#endif
   float3 light_mask2 = r2.xyz;  // Sparrow: lights 4..6, the shadow factor
   { float4 v = (r13.xxyz * r3.wwww); float s = rsqrt(abs(r2.w)); r13.yzw = v.yzw; r2.w = s; ps = s; }  // 165
   { float4 v = (r12.xxyz * r2.wwww); float s = rsqrt(abs(r1.w)); r12.yzw = v.yzw; r1.w = s; ps = s; }  // 166
@@ -390,5 +408,9 @@ float4 main(PSInputPort input) : SV_Target0 {
   if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
 #endif
   AlphaTest(o.w);
+#if SPARROW
+  if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(min(lamp_vis, float4(lamp_vis2.xyz, 1.0)));
+  if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
+#endif
   return o * xe_color_exp_bias.x;
 }

@@ -192,6 +192,15 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
     { float4 v = (r6.xxxx * C114.xyzw); r5.xyzw = v.xyzw; }  // 82
     { float4 v = max(r9.xyzw, r5.xyzw); r9.xyzw = v.xyzw; }  // 83
   }
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis = 1.0;
+  if (SparrowActive()) {
+    lamp_vis = SparrowLampShadows4(input.v2.xyz, input.position.xy, C80, C81, C82, C83, C96);
+    r9 = 1.0 - (1.0 - r9) * lamp_vis;
+  }
+#endif
   float4 light_mask = 1.0 - r9;  // Sparrow: lights 0..3, the shadow factor
   { float4 v = (-r2.xyzz * C83.wwww + C83.xyzz); r17.xyz = v.xyz; }  // 84
   { float4 v = (-r2.xyzz * C82.wwww + C82.xyzz); r16.xyz = v.xyz; }  // 85
@@ -288,6 +297,15 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float4 v = dot(r15.zxy, r15.zxy).xxxx; float s = sqrt(abs(r0.w)); r1.w = v.w; r5.x = s; ps = s; }  // 165
   { float4 v = dot(r16.zxy, r16.zxy).xxxx; float s = sqrt(abs(r1.w)); r6.y = v.y; r5.y = s; ps = s; }  // 166
   { float4 v = (-r6.xzww + C255.xxxx); float s = rsqrt(abs(r6.y)); r14.xyz = v.xyz; r6.x = s; ps = s; }  // 167
+#if SPARROW
+  // Sparrow: lamp shadows (screen space) dim the lights' shadow factor
+  // before the game lights with it.
+  float4 lamp_vis2 = 1.0;
+  if (SparrowActive()) {
+    lamp_vis2 = SparrowLampShadows4(input.v2.xyz, input.position.xy, C84, C85, C86, float4(0.0, 0.0, 0.0, 0.0), float4(C97.xyz, 0.0));
+    r14.xyz *= lamp_vis2.xyz;
+  }
+#endif
   float3 light_mask2 = r14.xyz;  // Sparrow: lights 4..6, the shadow factor
   { float4 v = (r16.xyzz * r6.xxxx); float s = rsqrt(abs(r1.w)); r16.xyz = v.xyz; r6.x = s; ps = s; }  // 168
   { float4 v = (r15.xyzz * r6.xxxx); float s = rsqrt(abs(r0.w)); r18.xyz = v.xyz; r6.x = s; ps = s; }  // 169
@@ -442,5 +460,9 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
 #endif
   AlphaTest(o.w);
   coverage = AlphaToMask(o.w, input.position.xy);
+#if SPARROW
+  if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(min(lamp_vis, float4(lamp_vis2.xyz, 1.0)));
+  if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
+#endif
   return o * xe_color_exp_bias.x;
 }

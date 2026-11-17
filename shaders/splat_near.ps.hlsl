@@ -180,8 +180,11 @@ float4 main(PSInputSplatNear input) : SV_Target0 {
   r2.xyz = r2.w * C87.xyz + r2.xyz;                                      // 78
   r0.xyz = r8.xyz * r2.xyz + r0.yzw;                                     // 79
 #if SPARROW
+  SparrowWet sp_wet = (SparrowWet)0;
   if (SparrowActive()) {
-    float3 sheen = SparrowGroundSheen(ambient, n_world, r1.zyx) * C11.x;  // the cobbles' faint sky sheen
+    // the cobbles' faint sky sheen; wet in the rain
+    float3 sheen = SparrowGroundWetSheen(r0.xyz, ambient * C11.x, world, input.position.xy,
+                                         n_world, r1.zyx, C20.w * xe_color_exp_bias.x, sp_wet);
     r0.xyz += sheen;
     if (SparrowDebug() == 2) r0.xyz = sheen;
   }
@@ -204,6 +207,7 @@ float4 main(PSInputSplatNear input) : SV_Target0 {
 #if SPARROW
   // red open sky, green closed in (sparrow_debug 3)
   if (SparrowDebug() == 3) o.xyz = SparrowVisDebug(sky_vis);
+  if (SparrowDebug() == 10) o.xyz = SparrowWetDebug(sp_wet);
 #endif
   return o * xe_color_exp_bias.x;
 }

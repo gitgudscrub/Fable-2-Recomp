@@ -207,6 +207,7 @@ float4 main(PSInput8 input) : SV_Target0 {
   r0.xyz = r0.xyz * r1.xzy + r4.xzy;                                     // 95
 #if SPARROW
   float4 refl = 0.0;
+  SparrowWet wet = (SparrowWet)0;
   if (SparrowActive()) {
     // Specular for the four lights (shadow and range / spot as the diffuse
     // has them) and the sky's reflection at grazing angles. Crevices (dark
@@ -214,6 +215,10 @@ float4 main(PSInput8 input) : SV_Target0 {
     float3 v = r3.zyx;  // toward the camera, normalised at 27
     float lum = sqrt(max(dot(albedo, float3(0.2126, 0.7152, 0.0722)), 0.0));
     float rough = saturate(SPARROW_ROUGHNESS + 0.25 * (0.35 - lum));
+    // Rain: the dark gaps between the stones fill first.
+    float3 geo_n = normalize(cross(ddy(input.v2.xyz), ddx(input.v2.xyz)));
+    wet = SparrowWetGround(input.v2.xyz, saturate((0.4 - lum) * 3.0), abs(geo_n.z));
+    SparrowApplyWet(wet, r0.xyz, rough, n_world);
     float3 spec = SparrowSpecular(n_world, v, l0, rough, SPARROW_F0, C87.xyz * (light_mask.x * light_atten.w))
                 + SparrowSpecular(n_world, v, l1, rough, SPARROW_F0, C88.xyz * (light_mask.y * light_atten.z))
                 + SparrowSpecular(n_world, v, l2, rough, SPARROW_F0, C89.xyz * (light_mask.z * light_atten.y))
@@ -222,7 +227,7 @@ float4 main(PSInput8 input) : SV_Target0 {
     refl = SparrowReflectLight(input.v2.xyz, input.position.xy, n_world, v, rough, SPARROW_F0,
                                C20.w * xe_color_exp_bias.x, SPARROW_REFLECT);
     spec += ambient * C11.x * SparrowEnvSpecular(n_world, v, rough, SPARROW_F0) *
-            SPARROW_SKY_REFLECT * (1.0 - refl.a);
+            lerp(SPARROW_SKY_REFLECT, SPARROW_WET_SKY, saturate(wet.film + wet.puddle)) * (1.0 - refl.a);
     spec += refl.rgb;
     r0.xyz += spec;
     if (SparrowDebug() == 2) r0.xyz = spec;
@@ -249,6 +254,7 @@ float4 main(PSInput8 input) : SV_Target0 {
 #if SPARROW
   if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
   if (SparrowDebug() == 8) o.xyz = refl.rgb * C20.w;
+  if (SparrowDebug() == 10) o.xyz = SparrowWetDebug(wet);
   if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;

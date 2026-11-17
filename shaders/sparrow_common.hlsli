@@ -766,6 +766,99 @@ float4 SparrowReflectLight(float3 pos, float2 svpos, float3 n, float3 v, float r
   return r;
 }
 
+// --- Rain-wet ground ----------------------------------------------------------
+// The SDK raises the wetness (frame row 14) while the game's rain draws and
+// lets it fall slowly after (sparrow_rain_ps, sparrow_wet). Water fills a
+// porous surface (darker) and smooths it; on flat ground it pools into
+// puddles that mirror the scene. World z is up.
+float SparrowWetness() {
+  uint rows = SparrowSunRows();
+  return rows >= 2u ? saturate(SparrowMap(int2(14, int(rows) - 1))) : 0.0;
+}
+
+float SparrowValueNoise(float2 p) {
+  float2 i = floor(p), f = frac(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float4 h = frac(sin(float4(dot(i, float2(127.1, 311.7)), dot(i + float2(1, 0), float2(127.1, 311.7)),
+                             dot(i + float2(0, 1), float2(127.1, 311.7)),
+                             dot(i + float2(1, 1), float2(127.1, 311.7)))) * 43758.5453);
+  return lerp(lerp(h.x, h.y, f.x), lerp(h.z, h.w, f.x), f.y);
+}
+
+#ifndef SPARROW_WET_DARKEN
+#define SPARROW_WET_DARKEN 0.55  // diffuse kept where soaked (wet stone and earth darken)
+#endif
+#ifndef SPARROW_WET_ROUGH
+#define SPARROW_WET_ROUGH 0.2    // roughness of a soaked surface (water film)
+#endif
+#ifndef SPARROW_PUDDLE_ROUGH
+#define SPARROW_PUDDLE_ROUGH 0.03
+#endif
+#ifndef SPARROW_PUDDLE_DARKEN
+#define SPARROW_PUDDLE_DARKEN 0.4  // diffuse kept under standing water
+#endif
+#ifndef SPARROW_WET_SKY
+#define SPARROW_WET_SKY 0.6  // sky sheen strength where wet (dry: the material's own)
+#endif
+#ifndef SPARROW_PUDDLE_SCALE
+#define SPARROW_PUDDLE_SCALE 0.3  // puddle noise frequency per world unit
+#endif
+
+struct SparrowWet {
+  float film;    // 0..1 water on the surface
+  float puddle;  // 0..1 standing water
+};
+
+// cavity 0..1: gaps and crevices, which fill first. n: the shading normal;
+// geo_up: how much the surface faces up (geometric, 0 walls, 1 floor).
+SparrowWet SparrowWetGround(float3 pos, float cavity, float geo_up) {
+  SparrowWet w = (SparrowWet)0;
+  float wet = SparrowWetness();
+  if (wet <= 0.0) return w;
+  float up = saturate((geo_up - 0.55) / 0.35);  // water runs off slopes and walls
+  w.film = wet * lerp(0.35, 1.0, up);
+  float p = SparrowValueNoise(pos.xy * SPARROW_PUDDLE_SCALE) * 0.7 +
+            SparrowValueNoise(pos.xy * SPARROW_PUDDLE_SCALE * 3.7 + 17.0) * 0.3;
+  // Puddles form once the ground is soaked and spread as the rain goes on.
+  float soak = saturate(wet * 1.6 - 0.4);
+  // Water only stands on near-level ground.
+  float level = saturate((geo_up - 0.93) / 0.05);
+  w.puddle = smoothstep(0.7 - 0.1 * soak, 0.74 - 0.1 * soak, p + 0.15 * cavity) * level * soak;
+  return w;
+}
+
+// Applies the water to a material's diffuse and roughness, and flattens the
+// normal in the puddles (standing water is a level mirror).
+void SparrowApplyWet(SparrowWet w, inout float3 diffuse, inout float rough, inout float3 n) {
+  diffuse *= lerp(lerp(1.0, SPARROW_WET_DARKEN, w.film), SPARROW_PUDDLE_DARKEN, w.puddle);
+  rough = lerp(rough, min(rough, SPARROW_WET_ROUGH), w.film);
+  rough = lerp(rough, SPARROW_PUDDLE_ROUGH, w.puddle);
+  n = normalize(lerp(n, float3(0.0, 0.0, 1.0), w.puddle * 0.9));
+}
+
+// For the ground shaders whose only Sparrow specular is the sky sheen
+// (terrain, splats): darkens their finished light where wet and returns the
+// light to add (the sheen, stronger where wet, and where wet the
+// screen-space reflection). sky = the sheen's ambient (ambient x C11.x);
+// to_light as SparrowReflectLight's. Dry, it is SparrowGroundSheen.
+float3 SparrowGroundWetSheen(inout float3 lit, float3 sky, float3 pos, float2 svpos, float3 n,
+                             float3 v, float to_light, out SparrowWet w) {
+  float3 geo = normalize(cross(ddy(pos), ddx(pos)));
+  w = SparrowWetGround(pos, 0.0, abs(geo.z));
+  float amt = saturate(w.film + w.puddle);
+  float rough = SPARROW_GROUND_ROUGHNESS;
+  SparrowApplyWet(w, lit, rough, n);
+  float4 refl = 0.0;
+  if (amt > 0.0) refl = SparrowReflectLight(pos, svpos, n, v, rough, SPARROW_F0, to_light, 1.0);
+  return sky * SparrowEnvSpecular(n, v, rough, SPARROW_F0) * lerp(SPARROW_GROUND_SHEEN, SPARROW_WET_SKY, amt) *
+             (1.0 - refl.a) + refl.rgb;
+}
+
+// sparrow_debug 10: the wet mask.
+float3 SparrowWetDebug(SparrowWet w) {
+  return lerp(float3(0.0, w.film, w.film), float3(0.0, 0.2, 1.0), w.puddle);
+}
+
 // sparrow_debug 5: the lamp shadows alone.
 float3 SparrowLampDebug(float4 vis) {
   return min(min(vis.x, vis.y), min(vis.z, vis.w)).xxx * 0.5;

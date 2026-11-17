@@ -552,6 +552,25 @@ float3 SparrowGameLight(float3 pos, float4 lp, float range, float3 spot_axis, fl
   SPARROW_GAME_LIGHT(4, pos, C84, C97.x, C102, C106.x, C108.x, C95.x, C91, (mask).x, l, c) \
   SPARROW_GAME_LIGHT(5, pos, C85, C97.y, C103, C106.y, C108.y, C95.y, C92, (mask).y, l, c) \
   SPARROW_GAME_LIGHT(6, pos, C86, C97.z, C104, C106.z, C108.z, C95.z, C93, (mask).z, l, c)
+// The game's Blinn-Phong gloss exponent as a GGX roughness (alpha = sqrt(2 / (n + 2)),
+// roughness = sqrt(alpha)), for materials whose narrow game highlight a broad lobe
+// would smear into a wash (wet stone, ice).
+float SparrowGlossRoughness(float gloss) {
+  return clamp(sqrt(sqrt(2.0 / (max(gloss, 0.0) + 2.0))), 0.15, 0.75);
+}
+float3 SparrowLitSpecularRough(float3 n, float3 v, float3 l[SPARROW_MAX_LIGHTS],
+                               float3 light[SPARROW_MAX_LIGHTS], uint count, float3 spec_map,
+                               float rough, float3 ambient) {
+  float spec_lum = dot(spec_map, float3(0.2126, 0.7152, 0.0722));
+  float3 sum = 0.0;
+  float3 base = 0.0;
+  [unroll] for (uint k2 = 0; k2 < SPARROW_MAX_LIGHTS; ++k2) {
+    if (k2 < count) SparrowSpecularSplit(n, v, l[k2], rough, light[k2], base, sum);
+  }
+  sum += base * max(spec_map, SPARROW_F0);
+  sum += ambient * SparrowEnvSpecular(n, v, rough, max(spec_lum, SPARROW_F0));
+  return sum;
+}
 float3 SparrowLitSpecular(float3 n, float3 v, float3 l[SPARROW_MAX_LIGHTS],
                           float3 light[SPARROW_MAX_LIGHTS], uint count, float3 spec_map,
                           float3 albedo, float3 ambient) {
@@ -565,14 +584,9 @@ float3 SparrowLitSpecular(float3 n, float3 v, float3 l[SPARROW_MAX_LIGHTS],
   }
   float spec_lum = dot(spec_map, float3(0.2126, 0.7152, 0.0722));
   float rough = lerp(0.75, 0.35, saturate(spec_lum * 4.0));
-  float3 base = 0.0;
-  [unroll] for (uint k2 = 0; k2 < SPARROW_MAX_LIGHTS; ++k2) {
-    if (k2 < count) SparrowSpecularSplit(n, v, l[k2], rough, light[k2], base, sum);
-  }
-  sum += base * max(spec_map, SPARROW_F0);
-  sum += ambient * SparrowEnvSpecular(n, v, rough, max(spec_lum, SPARROW_F0));
-  return sum;
+  return SparrowLitSpecularRough(n, v, l, light, count, spec_map, rough, ambient);
 }
+
 
 // sparrow_debug 3: sky visibility as red (open) .. green (closed in), blue
 // where Sparrow does not cover the point (vis < 0) and the game's ambient

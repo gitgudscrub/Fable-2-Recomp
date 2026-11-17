@@ -16,6 +16,18 @@
 #include "sparrow_common.hlsli"
 #endif
 #define SPARROW_LIGHTS_DECL 7
+// The cave floors' spec map is near white and the game draws it as a narrow,
+// unnormalised Blinn-Phong highlight. GGX with the same gloss (below) keeps the
+// pools of torchlight, but its normalised lobe and grazing Fresnel are far
+// brighter: the map is taken down to plain stone (0.16 * 0.25 = 0.04 head on)
+// and the whole highlight, grazing reflection included, scaled by 0.25.
+// Tattered Spire floor brightness: 46 vs the game's 28 (unscaled: 145).
+#ifndef LIT4B_SPEC_MAP
+#define LIT4B_SPEC_MAP 0.16
+#endif
+#ifndef LIT4B_SPEC_SCALE
+#define LIT4B_SPEC_SCALE 0.25
+#endif
 
 #define C0 K[0]
 #define C8 K[1]
@@ -237,8 +249,14 @@ float4 main(PSInputPort input) : SV_Target0 {
     float3 pos = input.v2.xyz;
     SPARROW_GAME_LIGHTS_0_3(pos, light_mask, sl, sc)
     sl[4] = 0.0; sl[5] = 0.0; sl[6] = 0.0; sc[4] = 0.0; sc[5] = 0.0; sc[6] = 0.0;
-    float3 add = SparrowLitSpecular(r9.zyx, r11.xyz, sl, sc, 4u, r8.yzw, sp_albedo,
-                                    ambient * C27.w);
+    // Roughness from the game's gloss exponent (r0.w, ucode 24) so torchlight
+    // lands in pools as in the game, not a wash over the whole floor.
+    float3 add;
+    if (xe_flags & 0x80000000u)
+      add = SparrowLitSpecular(r9.zyx, r11.xyz, sl, sc, 4u, r8.yzw, sp_albedo, ambient * C27.w);
+    else
+      add = SparrowLitSpecularRough(r9.zyx, r11.xyz, sl, sc, 4u, r8.yzw * LIT4B_SPEC_MAP,
+                                    SparrowGlossRoughness(r0.w), ambient * C27.w) * LIT4B_SPEC_SCALE;
     r2.xyz = SparrowDebug() == 2 ? add : r2.xyz + add;
   }
 #endif

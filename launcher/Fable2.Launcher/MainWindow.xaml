@@ -902,6 +902,9 @@
                   <Rectangle Width="1" Fill="{DynamicResource GoldLineSoft}" />
                   <RadioButton x:Name="EditionEnhanced" Style="{StaticResource EditionChoice}" Content="Enhanced"
                                Tag="60 fps · sharper textures, detailed models" Checked="EditionChecked" />
+                  <Rectangle Width="1" Fill="{DynamicResource GoldLineSoft}" />
+                  <RadioButton x:Name="EditionSparrow" Style="{StaticResource EditionChoice}" Content="Project Sparrow"
+                               Tag="Enhanced with new lighting (preview)" Checked="EditionChecked" />
                 </StackPanel>
               </Border>
               <TextBlock x:Name="CustomMarker" Text="Custom changes" FontSize="13.5" Foreground="{StaticResource Ember}"
@@ -1106,17 +1109,6 @@
                       </StackPanel>
                     </DockPanel>
                   </Border>
-                  <Border Style="{StaticResource Row}">
-                    <DockPanel>
-                      <CheckBox x:Name="NewLightingCheck" DockPanel.Dock="Right" Style="{StaticResource Switch}"
-                                Checked="SettingChanged" Unchecked="SettingChanged" />
-                      <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="New lighting (preview)" Style="{StaticResource PageText}" />
-                        <TextBlock Text="Light from the sky, soft highlights and lamps that light the walls and ground around them. Up to 6% slower; Modern graphics only"
-                                   Style="{StaticResource PageHint}" TextWrapping="Wrap" />
-                      </StackPanel>
-                    </DockPanel>
-                  </Border>
 
                   <TextBlock Text="MODERN TEXTURES" Style="{StaticResource PageSection}" />
                   <Border Padding="14,12" CornerRadius="6" Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource PageLine}"
@@ -1145,7 +1137,7 @@
                                   Checked="RemadeModelsChanged" Unchecked="RemadeModelsChanged" />
                         <StackPanel VerticalAlignment="Center">
                           <TextBlock Text="Use detailed models" Style="{StaticResource PageText}" />
-                          <TextBlock Text="Enhanced only. Takes effect the next time you play" Style="{StaticResource PageHint}" />
+                          <TextBlock Text="Enhanced and Project Sparrow. Takes effect the next time you play" Style="{StaticResource PageHint}" />
                         </StackPanel>
                       </DockPanel>
                       <TextBlock x:Name="ModelsStatusText" Style="{StaticResource PageText}" FontSize="14.5" />

@@ -35,7 +35,7 @@ public partial class MainWindow
         ModelsRemoveButton.Visibility = downloaded || models.Installed && !models.Custom ? Visibility.Visible : Visibility.Collapsed;
         ModelsDownloadButton.Visibility = Visibility.Visible;
         ModelsDownloadButton.IsEnabled = true;
-        string about = "More detailed characters, creatures and objects for Enhanced, built from your own game files on this PC.";
+        string about = "More detailed characters, creatures and objects for Enhanced and Project Sparrow, built from your own game files on this PC.";
 
         if (models.Custom)
         {
@@ -48,7 +48,7 @@ public partial class MainWindow
         if (manifest is not null && complete && built)
         {
             ModelsStatusText.Text = $"Version {manifest.Version} installed. You're up to date.";
-            ModelsHintText.Text = "Shows when you play Enhanced with Use detailed models on.";
+            ModelsHintText.Text = "Shows in Enhanced and Project Sparrow with Use detailed models on.";
             ModelsDownloadButton.Visibility = Visibility.Collapsed;
         }
         else if (manifest is not null && downloaded && !complete)
@@ -56,20 +56,20 @@ public partial class MainWindow
             ModelsStatusText.Text = pack.State.Version == manifest.Version
                 ? $"Version {manifest.Version}: download stopped part-way."
                 : $"Version {manifest.Version} is available.";
-            ModelsHintText.Text = "Enhanced keeps the original models until the download finishes.";
+            ModelsHintText.Text = "Enhanced and Project Sparrow keep the original models until the download finishes.";
             ModelsDownloadButton.Content = pack.State.Version == manifest.Version ? "Resume" : "Update";
         }
         else if (complete && !built)
         {
             ModelsStatusText.Text = "Downloaded; the models still need to be built for your game files.";
             ModelsHintText.Text = "Takes a few minutes and about " + TexturePack.FormatSize(ModelPack.BuildBytes(_home.GameFolder))
-                                  + " of disk space. It also runs on its own when you play Enhanced.";
+                                  + " of disk space. It also runs on its own when you play Enhanced or Project Sparrow.";
             ModelsDownloadButton.Content = "Build";
         }
         else if (complete)
         {
             ModelsStatusText.Text = $"Version {pack.State.Version} installed.";
-            ModelsHintText.Text = "Shows when you play Enhanced with Use detailed models on.";
+            ModelsHintText.Text = "Shows in Enhanced and Project Sparrow with Use detailed models on.";
             ModelsDownloadButton.Content = "Check for updates";
         }
         else if (manifest is not null)
@@ -156,7 +156,7 @@ public partial class MainWindow
             });
             ModelsHintText.Text = "This takes a few minutes. Your game folder isn't changed.";
             SparrowModels.Result? result = await BuildModelsAsync(steps);
-            if (result is not null) done = $"Detailed models installed ({result.Models} models). They show when you play Enhanced.";
+            if (result is not null) done = $"Detailed models installed ({result.Models} models). They show when you play Enhanced or Project Sparrow.";
         }
         catch (OperationCanceledException)
         {
@@ -189,7 +189,7 @@ public partial class MainWindow
         {
             Models.RemoveBuild();
             ModelDownloads.Remove();
-            ShowToast("Detailed models removed. Enhanced shows the original models.");
+            ShowToast("Detailed models removed. Enhanced and Project Sparrow show the original models.");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

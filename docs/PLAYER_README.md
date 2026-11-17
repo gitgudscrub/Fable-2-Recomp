@@ -23,6 +23,9 @@ Italy, Russia and Spain.
 - **Original**: 30 fps at 720p, as on the Xbox 360.
 - **Enhanced**: 60 fps at 1440p, sharper textures and more detailed models.
   Press **F8** in game to switch between the Modern and Classic look.
+- **Project Sparrow** (preview): Enhanced with new lighting: light from the sky,
+  soft highlights, and lamps that light the walls and ground around them.
+  Up to 6% slower than Enhanced.
 
 Every setting can also be changed on its own under **Settings** and **Controls**.
 

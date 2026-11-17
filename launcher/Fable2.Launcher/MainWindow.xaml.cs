@@ -342,9 +342,9 @@ public partial class MainWindow : Window
             }
             if (_home.Settings.Edition == "sparrow") { _home.Settings.Edition = edition.Id; _dirty = true; }
             UltraCheck.IsChecked = _recomp.Ultra;
-            NewLightingCheck.IsChecked = _home.Settings.NewLighting;
             RemadeModelsCheck.IsChecked = _home.Settings.RemadeModels;
-            (edition.Id == "enhanced" ? EditionEnhanced : EditionOriginal).IsChecked = true;
+            (edition == Edition.ProjectSparrow ? EditionSparrow
+                : edition == Edition.Enhanced ? EditionEnhanced : EditionOriginal).IsChecked = true;
             (_home.Settings.Channel == "beta" ? ChannelBeta : ChannelStable).IsChecked = true;
         SetTheme(_home.Settings.Theme, save: false);
             if (fresh) _dirty = true;   // write the edition's settings on first save
@@ -385,9 +385,8 @@ public partial class MainWindow : Window
         _recomp.MouseLookScale = (int)SensitivitySlider.Value;
         _recomp.KeyboardGamepadMap = CollectKeybinds();
         _recomp.Ultra = UltraCheck.IsChecked == true;
-        // The new lighting is drawn on top of Modern graphics; Original keeps the game's own.
-        _home.Settings.NewLighting = NewLightingCheck.IsChecked == true;
-        _recomp.SparrowRenderer = _home.Settings.NewLighting && Edition.Find(_home.Settings.Edition).ModernGraphics;
+        // Project Sparrow's new lighting comes with the edition, not a setting of its own.
+        _recomp.SparrowRenderer = Edition.Find(_home.Settings.Edition).NewLighting;
     }
 
     private void RemadeModelsChanged(object sender, RoutedEventArgs e)
@@ -479,7 +478,8 @@ public partial class MainWindow : Window
     private void EditionChecked(object sender, RoutedEventArgs e)
     {
         if (_loading || sender is not RadioButton { IsChecked: true } choice) return;
-        Edition edition = choice == EditionEnhanced ? Edition.Enhanced : Edition.Original;
+        Edition edition = choice == EditionSparrow ? Edition.ProjectSparrow
+            : choice == EditionEnhanced ? Edition.Enhanced : Edition.Original;
         _loading = true;
         try
         {
@@ -496,7 +496,7 @@ public partial class MainWindow : Window
         finally { _loading = false; }
         _home.Settings.Edition = edition.Id;
         if (!edition.ModernGraphics || !TexturesHalfInstalled) SetModernGraphics(edition.ModernGraphics);
-        string name = edition.Name + " edition";
+        string name = edition == Edition.ProjectSparrow ? edition.Name : edition.Name + " edition";
         if (SaveAll())
             ShowToast(edition.Models && _home.Settings.RemadeModels && !Models.Available
                 ? $"{name} selected. The detailed models aren't installed yet (Settings > Detailed models), so the original models show for now."

@@ -451,7 +451,9 @@ advanced.SparrowRenderer = false;
     stock.DisableMotionBlur = true;
     Require(!Edition.Original.Matches("720p", "1", "-1", "none", "30", stock), "motion blur change not detected");
     Require(Edition.Find("nonsense") == Edition.Original && Edition.Find("enhanced") == Edition.Enhanced &&
-        Edition.Find("sparrow") == Edition.Enhanced && Edition.Enhanced.Models && Edition.Enhanced.Ultra, "edition lookup");
+        Edition.Find("sparrow") == Edition.Enhanced && Edition.Enhanced.Models && Edition.Enhanced.Ultra &&
+        Edition.Find("project-sparrow") == Edition.ProjectSparrow && Edition.ProjectSparrow.NewLighting &&
+        !Edition.Enhanced.NewLighting, "edition lookup");
     foreach (Edition edition in Edition.All)
         GraphicsSettings.Create(edition.Resolution, edition.RenderScale, edition.Anisotropic, edition.AntiAliasing,
             "borderless", true, edition.FrameLimit);   // throws if an edition uses an unsupported value

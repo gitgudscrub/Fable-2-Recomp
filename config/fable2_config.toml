@@ -323,7 +323,7 @@ sun_shadow_map = true
 # Costs about 5-10% of the frame rate when uncapped. Default: false
 ultra = false
 
-# New lighting (preview; the launcher's Settings > New lighting): our own
+# New lighting (preview; the launcher's Project Sparrow edition): our own
 # shaders (shaders\sparrow_replace next to the game) light the ground,
 # buildings, plants and characters with light from the sky, soft highlights
 # and the game's lamps, and take sun shadows from the sun shadow map. Up to

@@ -678,6 +678,94 @@ float3 SparrowDepthCheck(float3 pos, float2 svpos) {
   float w_buf = cam.beta / ((d - cam.zo) / cam.zs - cam.alpha);
   return abs(w_buf - c.w) < 0.1 + 0.01 * c.w ? float3(0.0, 0.5, 0.0) : float3(0.5, 0.0, 0.0);
 }
+// --- Reflections ------------------------------------------------------------------
+// Screen-space reflections: the reflected ray marched through last frame's
+// scene depth (kSparrowDepth) with its camera, and at a hit last frame's
+// scene colour (kSparrowColor, sparrow_color.cs.hlsl) there. Returns the
+// colour in the target's units (exposure and colour exponent bias
+// included: divide by both before mixing into a material's light) and a
+// weight (0 = no hit: keep the material's own sky reflection). Fades at
+// the screen edges, toward the end of the ray and on rough surfaces.
+// sparrow_debug 8 shows the reflections alone, 9 turns them off.
+#define SPARROW_COLOR_INDEX 5
+#ifndef SPARROW_REFL_STEPS
+#define SPARROW_REFL_STEPS 24
+#endif
+#ifndef SPARROW_REFL_DIST
+#define SPARROW_REFL_DIST 80.0     // world units along the ray
+#endif
+#ifndef SPARROW_REFL_MAX_ROUGH
+#define SPARROW_REFL_MAX_ROUGH 0.6
+#endif
+
+float4 SparrowReflection(float3 pos, float2 svpos, float3 n, float3 v, float rough) {
+  if (rough >= SPARROW_REFL_MAX_ROUGH || abs(SparrowDebug() - 9.0) < 0.5) return 0.0;
+  SparrowCamera cam = SparrowCameraFor(pos, svpos);
+  if (!cam.valid) return 0.0;
+  float3 r = reflect(-v, n);
+  if (dot(r, n) <= 0.0) return 0.0;
+  float4 c0 = mul(cam.m, float4(pos, 1.0));
+  float4 c1 = mul(cam.m, float4(pos + r * SPARROW_REFL_DIST, 1.0));
+  const float kNear = 0.05;
+  if (c0.w <= kNear) return 0.0;
+  if (c1.w <= kNear) c1 = lerp(c0, c1, (c0.w - kNear) / (c0.w - c1.w));
+  float2 p0 = SparrowCameraPixel(cam, c0) + cam.shift;
+  float px = length(SparrowCameraPixel(cam, c1) + cam.shift - p0);
+  if (px < 2.0) return 0.0;
+  float t0 = min(2.0 / px, 0.5);
+  float jitter = frac(52.9829189 * frac(dot(svpos, float2(0.06711056, 0.00583715))));
+  float t_prev = t0;
+  float w_prev = c0.w;
+  [loop] for (int i = 0; i < SPARROW_REFL_STEPS; ++i) {
+    // Denser near the surface, where most reflections are found.
+    float f = (float(i) + jitter) / float(SPARROW_REFL_STEPS);
+    float t = lerp(t0, 1.0, f * f);
+    float4 c = lerp(c0, c1, t);
+    float2 p = SparrowCameraPixel(cam, c) + cam.shift;
+    if (any(p < 0.0) || any(p >= cam.size)) break;
+    float d = xe_textures_2d[SPARROW_DEPTH_INDEX].Load(int4(int2(p), 0, 0)).x;
+    float w_buf = cam.beta / ((d - cam.zo) / cam.zs - cam.alpha);
+    // A hit: the ray went behind the surface since the last step, and the
+    // surface is not far in front of where the ray was (then it is an
+    // occluder the ray passes behind, not what it reflects).
+    float thick = 0.3 + 0.03 * c.w;
+    if (w_buf > 0.0 && w_buf < c.w - 0.02 && w_buf > min(w_prev, c.w) - thick) {
+      // Refine between the last miss and this hit.
+      float lo = t_prev, hi = t;
+      [unroll] for (int k = 0; k < 4; ++k) {
+        float tm = 0.5 * (lo + hi);
+        float4 cm = lerp(c0, c1, tm);
+        float2 pm = SparrowCameraPixel(cam, cm) + cam.shift;
+        float dm = xe_textures_2d[SPARROW_DEPTH_INDEX].Load(int4(int2(pm), 0, 0)).x;
+        float wm = cam.beta / ((dm - cam.zo) / cam.zs - cam.alpha);
+        if (wm > 0.0 && wm < cm.w - 0.02) hi = tm; else lo = tm;
+      }
+      float4 ch = lerp(c0, c1, hi);
+      float2 ph = clamp(SparrowCameraPixel(cam, ch) + cam.shift, 0.0, cam.size - 1.0);
+      float3 col = xe_textures_2d[SPARROW_COLOR_INDEX].Load(int4(int2(ph), 0, 0)).rgb;
+      float2 edge = min(ph, cam.size - ph) / (0.08 * cam.size);
+      float wgt = saturate(min(edge.x, edge.y));
+      wgt *= 1.0 - smoothstep(0.6, 1.0, hi);
+      wgt *= saturate((SPARROW_REFL_MAX_ROUGH - rough) / 0.3);
+      return float4(col, wgt);
+    }
+    t_prev = t;
+    w_prev = c.w;
+  }
+  return 0.0;
+}
+
+// The reflection as light for a material to add: to_light is what the
+// shader multiplies its light by on the way out (exposure, tints, colour
+// exponent bias); Fresnel and roughness from SparrowEnvSpecular. .a = the
+// weight, for fading out the material's own sky / cube reflection.
+float4 SparrowReflectLight(float3 pos, float2 svpos, float3 n, float3 v, float rough, float f0,
+                           float3 to_light, float strength) {
+  float4 r = SparrowReflection(pos, svpos, n, v, rough);
+  r.rgb *= SparrowEnvSpecular(n, v, rough, f0) * r.a * strength / max(to_light, 1e-6);
+  return r;
+}
+
 // sparrow_debug 5: the lamp shadows alone.
 float3 SparrowLampDebug(float4 vis) {
   return min(min(vis.x, vis.y), min(vis.z, vis.w)).xxx * 0.5;

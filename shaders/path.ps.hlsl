@@ -23,6 +23,9 @@
 #ifndef SPARROW_ROUGHNESS
 #define SPARROW_ROUGHNESS 0.55  // worn stone; the gloss rises in the gaps' wet dirt
 #endif
+#ifndef SPARROW_REFLECT
+#define SPARROW_REFLECT 1.0 // screen-space reflection strength (x Fresnel, roughness)
+#endif
 #ifndef SPARROW_SKY_REFLECT
 #define SPARROW_SKY_REFLECT 0.25  // a faint sheen: the ground beside the cobbles has none, and more draws a seam at their edge
 #endif
@@ -203,6 +206,7 @@ float4 main(PSInput8 input) : SV_Target0 {
   r1.xyz = r1.w * C87.xzy + r1.xzy;                                      // 94
   r0.xyz = r0.xyz * r1.xzy + r4.xzy;                                     // 95
 #if SPARROW
+  float4 refl = 0.0;
   if (SparrowActive()) {
     // Specular for the four lights (shadow and range / spot as the diffuse
     // has them) and the sky's reflection at grazing angles. Crevices (dark
@@ -214,7 +218,12 @@ float4 main(PSInput8 input) : SV_Target0 {
                 + SparrowSpecular(n_world, v, l1, rough, SPARROW_F0, C88.xyz * (light_mask.y * light_atten.z))
                 + SparrowSpecular(n_world, v, l2, rough, SPARROW_F0, C89.xyz * (light_mask.z * light_atten.y))
                 + SparrowSpecular(n_world, v, l3, rough, SPARROW_F0, C90.xyz * (light_mask.w * light_atten.x));
-    spec += ambient * C11.x * SparrowEnvSpecular(n_world, v, rough, SPARROW_F0) * SPARROW_SKY_REFLECT;
+    // Screen-space reflection where the ray finds the scene, else the sky.
+    refl = SparrowReflectLight(input.v2.xyz, input.position.xy, n_world, v, rough, SPARROW_F0,
+                               C20.w * xe_color_exp_bias.x, SPARROW_REFLECT);
+    spec += ambient * C11.x * SparrowEnvSpecular(n_world, v, rough, SPARROW_F0) *
+            SPARROW_SKY_REFLECT * (1.0 - refl.a);
+    spec += refl.rgb;
     r0.xyz += spec;
     if (SparrowDebug() == 2) r0.xyz = spec;
   }
@@ -239,6 +248,7 @@ float4 main(PSInput8 input) : SV_Target0 {
 #endif
 #if SPARROW
   if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 8) o.xyz = refl.rgb * C20.w;
   if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;

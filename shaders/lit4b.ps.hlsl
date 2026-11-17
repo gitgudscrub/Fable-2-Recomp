@@ -25,6 +25,9 @@
 #ifndef LIT4B_SPEC_MAP
 #define LIT4B_SPEC_MAP 0.16
 #endif
+#ifndef LIT4B_REFLECT
+#define LIT4B_REFLECT 1.0  // screen-space reflection strength (x Fresnel, roughness)
+#endif
 #ifndef LIT4B_SPEC_SCALE
 #define LIT4B_SPEC_SCALE 0.25
 #endif
@@ -253,6 +256,7 @@ float4 main(PSInputPort input) : SV_Target0 {
   { float4 v = (r8.yzww * r5.xzyy + r6.yzww); r6.xyz = v.xyz; }  // 129
   { float4 v = (r2.xzyy * r10.xyzz + r6.xyzz); r2.xyz = v.xyz; }  // 130
 #if SPARROW
+  float4 refl = 0.0;
   if (SparrowActive()) {
     float3 sl[SPARROW_LIGHTS_DECL], sc[SPARROW_LIGHTS_DECL];
     float3 pos = input.v2.xyz;
@@ -266,6 +270,13 @@ float4 main(PSInputPort input) : SV_Target0 {
     else
       add = SparrowLitSpecularRough(r9.zyx, r11.xyz, sl, sc, 4u, r8.yzw * LIT4B_SPEC_MAP,
                                     SparrowGlossRoughness(r0.w), ambient * C27.w) * LIT4B_SPEC_SCALE;
+    // Screen-space reflection of the room where the ray finds it (the
+    // game's cube reflection below stays where it does not).
+    float rough = SparrowGlossRoughness(r0.w);
+    float f0 = max(dot(r8.yzw * LIT4B_SPEC_MAP, float3(0.2126, 0.7152, 0.0722)), SPARROW_F0);
+    refl = SparrowReflectLight(pos, input.position.xy, r9.zyx, r11.xyz, rough, f0,
+                               C20.w * C26.xyz * C49.xyz * xe_color_exp_bias.x, LIT4B_REFLECT);
+    add += refl.rgb;
     r2.xyz = SparrowDebug() == 2 ? add : r2.xyz + add;
   }
 #endif
@@ -291,6 +302,9 @@ float4 main(PSInputPort input) : SV_Target0 {
   }
   if (XeBool(134)) {
     { float4 v = (r6.xyzz * r6.xyzz); r6.xyz = v.xyz; }  // 145
+#if SPARROW
+    r6.xyz *= 1.0 - refl.a;  // Sparrow: the screen-space reflection replaces the cube's
+#endif
     { float4 v = (r8.yzww * r6.xyzz + r2.xyzz); r2.xyz = v.xyz; }  // 146
   }
   { float s = -C67.x - (-r0.z); r6.x = s; ps = s; }  // 147
@@ -318,6 +332,7 @@ float4 main(PSInputPort input) : SV_Target0 {
   AlphaTest(o.w);
 #if SPARROW
   if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 8) o.xyz = refl.rgb * C20.w * C26.xyz * C49.xyz;
   if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;

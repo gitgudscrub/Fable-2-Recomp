@@ -15,6 +15,9 @@
 #include "sparrow_common.hlsli"
 #endif
 #define SPARROW_LIGHTS_DECL 7
+#ifndef LIT_TEMPLE_REFLECT
+#define LIT_TEMPLE_REFLECT 1.0  // screen-space reflection strength (x Fresnel, roughness)
+#endif
 
 #define C0 K[0]
 #define C8 K[1]
@@ -246,12 +249,24 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   { float4 v = (r8.yzww * r6.xzyy + r7.xyzz); r6.xyz = v.xyz; }  // 132
   { float4 v = (r5.xzyy * r10.xyzz + r6.xyzz); r5.xyz = v.xyz; }  // 133
 #if SPARROW
+  float4 refl = 0.0;
   if (SparrowActive()) {
     float3 sl[SPARROW_LIGHTS_DECL], sc[SPARROW_LIGHTS_DECL];
     float3 pos = input.v2.xyz;
     SPARROW_GAME_LIGHTS_0_3(pos, light_mask, sl, sc)
     sl[4] = 0.0; sl[5] = 0.0; sl[6] = 0.0; sc[4] = 0.0; sc[5] = 0.0; sc[6] = 0.0;
     float3 add = SparrowLitSpecular(r9.zyx, r12.xyz, sl, sc, 4u, r8.yzw, sp_albedo, ambient * C27.w);
+    // Screen-space reflection (polished stone) where the ray finds the
+    // scene; the game's cube reflection below stays where it does not.
+    // Roughness as SparrowLitSpecular's, from the specular map.
+    if (!(xe_flags & 0x80000000u)) {
+      float spec_lum = dot(r8.yzw, float3(0.2126, 0.7152, 0.0722));
+      float rough = lerp(0.75, 0.35, saturate(spec_lum * 4.0));
+      refl = SparrowReflectLight(pos, input.position.xy, r9.zyx, r12.xyz, rough,
+                                 max(spec_lum, SPARROW_F0),
+                                 C20.w * C26.xyz * C49.xyz * xe_color_exp_bias.x, LIT_TEMPLE_REFLECT);
+      add += refl.rgb;
+    }
     r5.xyz = SparrowDebug() == 2 ? add : r5.xyz + add;
   }
 #endif
@@ -277,6 +292,9 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
     { float4 v = (r6.xyzz * r6.xyzz); r6.xyz = v.xyz; }  // 148
   }
   if (XeBool(134)) {
+#if SPARROW
+    r6.xyz *= 1.0 - refl.a;  // Sparrow: the screen-space reflection replaces the cube's
+#endif
     { float4 v = (r8.yzww * r6.xyzz + r5.xyzz); r5.xyz = v.xyz; }  // 149
   }
   { float4 v = (r2.xyzz + -C19.xyzz); r1.xyz = v.xyz; }  // 150
@@ -358,6 +376,7 @@ float4 main(PSInputPort input, out uint coverage : SV_Coverage) : SV_Target0 {
   coverage = AlphaToMask(o.w, input.position.xy);
 #if SPARROW
   if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
+  if (SparrowDebug() == 8) o.xyz = refl.rgb * C20.w * C26.xyz * C49.xyz;
   if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;

@@ -82,7 +82,7 @@ public partial class MainWindow : Window
             RadioButton? tab = page?.ToLowerInvariant() switch
             {
                 "settings" => TabSettings, "controls" => TabControls,
-                "updates" => TabUpdates, "help" => TabHelp, _ => null
+                "updates" => TabUpdates, "coop" => TabCoop, "help" => TabHelp, _ => null
             };
             if (tab is not null) OpenPage(tab);
             // --preview=check-files runs Help > Check game files straight away (for screenshots).
@@ -343,6 +343,7 @@ public partial class MainWindow : Window
             if (_home.Settings.Edition == "sparrow") { _home.Settings.Edition = edition.Id; _dirty = true; }
             UltraCheck.IsChecked = _recomp.Ultra;
             RemadeModelsCheck.IsChecked = _home.Settings.RemadeModels;
+            LoadCoop();
             (edition == Edition.ProjectSparrow ? EditionSparrow
                 : edition == Edition.Enhanced ? EditionEnhanced : EditionOriginal).IsChecked = true;
             (_home.Settings.Channel == "beta" ? ChannelBeta : ChannelStable).IsChecked = true;
@@ -584,6 +585,7 @@ public partial class MainWindow : Window
             // Performance logs: the game writes logs/perf_*.log itself ([perf] performance_log);
             // this adds slow shader and pipeline builds to the game log.
             if (_recomp.PerformanceLog) startInfo.ArgumentList.Add("--d3d12_log_pipeline_timing=true");
+            foreach (string arg in CoopArguments()) startInfo.ArgumentList.Add(arg);
             Process.Start(startInfo);
             _gameLaunched = true;
             Close();
@@ -805,6 +807,7 @@ public partial class MainWindow : Window
         PanelSettings.Visibility = tab == TabSettings ? Visibility.Visible : Visibility.Collapsed;
         PanelControls.Visibility = tab == TabControls ? Visibility.Visible : Visibility.Collapsed;
         PanelUpdates.Visibility = tab == TabUpdates ? Visibility.Visible : Visibility.Collapsed;
+        PanelCoop.Visibility = tab == TabCoop ? Visibility.Visible : Visibility.Collapsed;
         PanelHelp.Visibility = tab == TabHelp ? Visibility.Visible : Visibility.Collapsed;
         PageScroll.ScrollToTop();
         if (tab == TabSettings)

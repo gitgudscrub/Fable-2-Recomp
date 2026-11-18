@@ -58,6 +58,7 @@ void record_a_press(std::int64_t ms);
 #endif  // FABLE2_REMOTE_CONTROL
 #include "xex_verify.h"
 #include "game_branding.h"
+#include "mp_session_notice.h"  // co-op invite code -> window title (src/net)
 #include "shader_prebuild.h"
 
 namespace {
@@ -180,6 +181,12 @@ class Fable2App : public rex::ReXApp {
 
   void OnPostSetup() override {
     fable2::branding::Apply(window());
+    // Co-op: show the invite code in the title so the host can read it out.
+    fable2::net::set_session_listener([this](const std::string& code) {
+      app_context().CallInUIThread([this, code] {
+        if (window()) window()->SetTitle("Fable 2 Recompiled - co-op invite code " + code);
+      });
+    });
     fable2::menu::SetQuitHandler([this] {
       app_context().CallInUIThread([this] {
         if (window()) window()->RequestClose();

@@ -25,6 +25,12 @@ public sealed class LauncherSettings
     public bool UltraDefaulted { get; set; }
     /// <summary>Window theme: "night", "dusk" (default) or "day".</summary>
     public string Theme { get; set; } = "dusk";
+    /// <summary>Co-op (experimental): "off", "host" or "join".</summary>
+    public string CoopMode { get; set; } = "off";
+    /// <summary>Co-op relay server, host:port (the host shares it with their friends).</summary>
+    public string CoopServer { get; set; } = "";
+    /// <summary>Invite code to join with.</summary>
+    public string CoopCode { get; set; } = "";
     public bool Migrated { get; set; }
 }
 

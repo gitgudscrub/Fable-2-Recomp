@@ -40,6 +40,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 #include <rex/cvar.h>
+#include "mp_session_notice.h"
 #include <rex/logging.h>
 
 #include <array>
@@ -415,6 +416,7 @@ class Net {
         REXLOG_INFO("[mpnet] in session {} ({}/{} players){}", code_, players, max,
                     hosting_ ? " - give this invite code to your friends" : "");
         write_session_file();
+        notify_session(code_);  // window title shows the invite code
       }
       return true;
     }

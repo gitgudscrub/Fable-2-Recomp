@@ -976,6 +976,7 @@
           <RadioButton x:Name="TabSettings" Style="{StaticResource Bookmark}" Content="Settings" Checked="TabChecked" />
           <RadioButton x:Name="TabControls" Style="{StaticResource Bookmark}" Content="Controls" Checked="TabChecked" />
           <RadioButton x:Name="TabUpdates" Style="{StaticResource Bookmark}" Content="Updates" Checked="TabChecked" />
+          <RadioButton x:Name="TabCoop" Style="{StaticResource Bookmark}" Content="Co-op" Checked="TabChecked" />
           <RadioButton x:Name="TabHelp" Style="{StaticResource Bookmark}" Content="Help" Checked="TabChecked" />
         </StackPanel>
 
@@ -1338,6 +1339,55 @@
                   </Border>
                   <TextBlock Style="{StaticResource PageHint}" Margin="0,10,0,0"
                              Text="Updates are signed by Project Sparrow and checked before they install. They never touch your saves, settings or game files." />
+                </StackPanel>
+
+                <!-- Co-op -->
+                <StackPanel x:Name="PanelCoop" Visibility="Collapsed">
+                  <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Co-op" Style="{StaticResource PageTitle}" />
+                    <Button Style="{StaticResource CloseLink}" Content="Close" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Click="ClosePageClicked" />
+                  </Grid>
+                  <TextBlock Style="{StaticResource PageHint}" FontSize="14.5" Margin="0,0,0,8" TextWrapping="Wrap"
+                             Text="Experimental. Up to 4 players: each of you plays your own game and sees the others walking around in your world. Fighting together, shared quests and loot come later." />
+                  <Border Style="{StaticResource Row}">
+                    <DockPanel>
+                      <Border DockPanel.Dock="Right" BorderBrush="{DynamicResource CtlLine}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+                        <StackPanel Orientation="Horizontal">
+                          <RadioButton x:Name="CoopOff" Style="{StaticResource ChannelChoice}" Content="Off" GroupName="Coop" Checked="CoopModeChecked" />
+                          <RadioButton x:Name="CoopHost" Style="{StaticResource ChannelChoice}" Content="Host" GroupName="Coop" Checked="CoopModeChecked" />
+                          <RadioButton x:Name="CoopJoin" Style="{StaticResource ChannelChoice}" Content="Join" GroupName="Coop" Checked="CoopModeChecked" />
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Text="Play together" Style="{StaticResource PageText}" />
+                    </DockPanel>
+                  </Border>
+                  <StackPanel x:Name="CoopDetails">
+                    <Border Style="{StaticResource Row}">
+                      <DockPanel>
+                        <TextBox x:Name="CoopServerBox" DockPanel.Dock="Right" Width="230" Margin="10,0,0,0"
+                                 VerticalAlignment="Center" FontSize="14" Style="{StaticResource PageTextBox}"
+                                 TextChanged="CoopTextChanged" />
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Text="Server" Style="{StaticResource PageText}" />
+                          <TextBlock Text="The co-op server's address, like example.net:27970. The host gives it to you."
+                                     Style="{StaticResource PageHint}" TextWrapping="Wrap" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
+                    <Border x:Name="CoopCodeRow" Style="{StaticResource Row}">
+                      <DockPanel>
+                        <TextBox x:Name="CoopCodeBox" DockPanel.Dock="Right" Width="110" Margin="10,0,0,0" MaxLength="8"
+                                 CharacterCasing="Upper" VerticalAlignment="Center" FontSize="14"
+                                 Style="{StaticResource PageTextBox}" TextChanged="CoopTextChanged" />
+                        <StackPanel VerticalAlignment="Center">
+                          <TextBlock Text="Invite code" Style="{StaticResource PageText}" />
+                          <TextBlock Text="The 6 letters shown in the host's game window title" Style="{StaticResource PageHint}" />
+                        </StackPanel>
+                      </DockPanel>
+                    </Border>
+                    <TextBlock x:Name="CoopNote" Style="{StaticResource PageHint}" Margin="0,10,0,0" TextWrapping="Wrap" />
+                  </StackPanel>
                 </StackPanel>
 
                 <!-- Help -->

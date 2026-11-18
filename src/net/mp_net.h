@@ -5,9 +5,14 @@
 // socket and the net thread never touches guest memory: they meet in two
 // mutex-guarded snapshots (Local = what we send, PeerState = what arrived).
 //
-// For now peers are listed directly (`--mp_peers=host:port,...`); the home
-// server relay (f37) will hand them out later. Loopback test: list our own
-// port and the puppet copies our own hero through the whole send/receive path.
+// Two ways to find the other players:
+//  * relay (normal): `--mp_relay=host:port` plus `--mp_host=true` (start a
+//    session; the relay hands back an invite code) or `--mp_join=CODE`. Every
+//    packet goes through the relay (tools/mp_relay/relay.py), which checks it
+//    and passes it to the others in the session; players never see each
+//    other's IP addresses. Only packets from the relay's address are accepted.
+//  * direct (testing): `--mp_peers=host:port,...`. Loopback test: list our own
+//    port and the puppet copies our own hero through the whole send/receive path.
 //
 // Wire format (little-endian, version kProto):
 //   Header 16 B: magic "F2MP", proto u8, type u8, flags u16, sender u32, seq u32
@@ -17,6 +22,13 @@
 //               parts u8, count x 12 half floats (one 3x4 bone matrix each)
 //               (a body can have several skeletons: the adult hero has 90 + 87
 //               bones; parts are sorted by bone count, largest first)
+// Relay messages (game <-> relay; the relay's header sender is 0):
+//   CREATE  (16): wanted code char[8] (zeros = new; a host that lost the relay
+//                 asks for its old code back)
+//   JOIN    (17): code char[8]
+//   WELCOME (18): code char[8], players u8, max u8, is_host u16
+//   REFUSED (19): reason u8 (1 bad code, 2 full, 3 slow down, 4 not in a
+//                 session, 5 server full), pad u8 x3
 // A peer slot is only created by a HELLO; other messages from unknown senders
 // are dropped.
 // Every field is range-checked before it is stored; anything malformed is
@@ -33,7 +45,9 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -49,6 +63,13 @@ REXCVAR_DEFINE_STRING(mp_peers, "", "Multiplayer",
                       "Peers to send to, comma separated host:port (until the relay exists). "
                       "Our own port = loopback test.");
 REXCVAR_DEFINE_INT32(mp_send_hz, 30, "Multiplayer", "How often our hero is sent (per second).");
+REXCVAR_DEFINE_STRING(mp_relay, "", "Multiplayer",
+                      "Co-op relay server host:port. When set, mp_peers is ignored and every packet "
+                      "goes through the relay.");
+REXCVAR_DEFINE_BOOL(mp_host, false, "Multiplayer",
+                    "With mp_relay: start a new session; the invite code is logged and written "
+                    "to mp_session.txt next to the exe.");
+REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of the session to join.");
 
 namespace fable2::net {
 
@@ -61,7 +82,9 @@ constexpr uint32_t kBonesPerPacket = 48;  // 48 * 24 B = 1152 B: stays under one
 constexpr float kMaxCoord = 100000.0f;
 constexpr auto kPeerTimeout = std::chrono::seconds(5);
 
-enum class Msg : uint8_t { Hello = 1, State = 2, Pose = 3 };
+enum class Msg : uint8_t { Hello = 1, State = 2, Pose = 3, Create = 16, Join = 17, Welcome = 18, Refused = 19 };
+enum class Refuse : uint8_t { BadCode = 1, Full = 2, SlowDown = 3, NotJoined = 4, ServerFull = 5 };
+constexpr size_t kCodeBytes = 8;
 
 using Clock = std::chrono::steady_clock;
 
@@ -245,18 +268,28 @@ class Net {
       constexpr DWORD kSioUdpConnReset = 0x9800000C;  // SIO_UDP_CONNRESET
       WSAIoctl(sock_, kSioUdpConnReset, &off, sizeof(off), nullptr, 0, &ret, nullptr, nullptr);
     }
+    relay_mode_ = !REXCVAR_GET(mp_relay).empty();
+    // With a relay any free local port will do (two games on one PC just work).
+    const uint16_t port = relay_mode_ ? 0 : uint16_t(REXCVAR_GET(mp_port));
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr.sin_port = htons(uint16_t(REXCVAR_GET(mp_port)));
+    addr.sin_port = htons(port);
     if (::bind(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-      REXLOG_ERROR("[mpnet] cannot bind UDP port {} ({})", REXCVAR_GET(mp_port), WSAGetLastError());
+      REXLOG_ERROR("[mpnet] cannot bind UDP port {} ({})", port, WSAGetLastError());
       closesocket(sock_);
       return;
     }
-    parse_peers();
-    REXLOG_INFO("[mpnet] listening on UDP {}; id {:08X}; {} peer address(es)", REXCVAR_GET(mp_port),
-                self_id_, targets_.size());
+    if (relay_mode_) {
+      if (!setup_relay()) {
+        closesocket(sock_);
+        return;
+      }
+    } else {
+      parse_peers();
+      REXLOG_INFO("[mpnet] listening on UDP {}; id {:08X}; {} peer address(es)", port, self_id_,
+                  targets_.size());
+    }
 
     std::vector<uint8_t> buf(2048);
     auto next_send = Clock::now(), next_hello = Clock::now(), next_log = Clock::now() + std::chrono::seconds(10);
@@ -279,6 +312,13 @@ class Net {
         }
       }
       const auto now = Clock::now();
+      if (relay_mode_ && !joined_) {
+        if (!gave_up_ && now >= next_join_) {
+          next_join_ = now + std::chrono::seconds(2);
+          send_join();
+        }
+        continue;  // nothing goes out until the relay has let us in
+      }
       if (now >= next_hello) {
         next_hello = now + std::chrono::seconds(1);
         send_hello();
@@ -296,10 +336,136 @@ class Net {
           std::lock_guard<std::mutex> l(peers_m_);
           for (auto& p : peers_) active += p.active;
         }
-        REXLOG_INFO("[mpnet] sent {} received {} dropped {} poses {}; {} peer(s) active",
+        REXLOG_INFO("[mpnet] sent {} received {} dropped {} poses {}; {} peer(s) active{}{}",
                     stats_.sent.load(), stats_.received.load(), stats_.dropped.load(),
-                    stats_.poses.load(), active);
+                    stats_.poses.load(), active, code_.empty() ? "" : "; session ", code_);
       }
+    }
+  }
+
+  static bool resolve(const std::string& item, sockaddr_in& out) {
+    const size_t c = item.rfind(':');
+    if (c == std::string::npos) return false;
+    const std::string host = item.substr(0, c);
+    const int port = std::atoi(item.c_str() + c + 1);
+    if (port <= 0 || port > 65535) return false;
+    addrinfo hints{}, *res = nullptr;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_DGRAM;
+    if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) return false;
+    out = *reinterpret_cast<sockaddr_in*>(res->ai_addr);
+    out.sin_port = htons(uint16_t(port));
+    freeaddrinfo(res);
+    return true;
+  }
+
+  // Relay mode: the relay is our only target, and the only address we accept.
+  bool setup_relay() {
+    if (!resolve(REXCVAR_GET(mp_relay), relay_)) {
+      REXLOG_ERROR("[mpnet] cannot resolve relay '{}' (expected host:port)", REXCVAR_GET(mp_relay));
+      return false;
+    }
+    std::string code = REXCVAR_GET(mp_join);
+    for (char& ch : code) ch = char(std::toupper(uint8_t(ch)));
+    if (code.size() > kCodeBytes) code.resize(kCodeBytes);
+    hosting_ = REXCVAR_GET(mp_host);
+    if (!hosting_ && code.empty()) {
+      REXLOG_ERROR("[mpnet] mp_relay is set but neither mp_host nor mp_join is; not connecting");
+      return false;
+    }
+    if (hosting_) code.clear();
+    join_code_ = code;
+    targets_.assign(1, relay_);
+    REXLOG_INFO("[mpnet] id {:08X}; {} through the relay", self_id_,
+                hosting_ ? std::string("starting a session") : "joining session " + join_code_);
+    return true;
+  }
+
+  void send_join() {
+    Writer w;
+    header(w, hosting_ ? Msg::Create : Msg::Join);
+    // a host asks for its old code back if the relay forgot us (e.g. restarted)
+    const std::string& c = hosting_ ? code_ : join_code_;
+    for (size_t i = 0; i < kCodeBytes; ++i) w.u8(i < c.size() ? uint8_t(c[i]) : 0);
+    send_all(w);
+  }
+
+  static bool same_addr(const sockaddr_in& a, const sockaddr_in& b) {
+    return a.sin_addr.s_addr == b.sin_addr.s_addr && a.sin_port == b.sin_port;
+  }
+
+  // WELCOME / REFUSED from the relay. Returns false = dropped.
+  bool handle_relay(Msg type, Reader& r, size_t n) {
+    if (type == Msg::Welcome) {
+      char code[kCodeBytes + 1] = {};
+      for (size_t i = 0; i < kCodeBytes; ++i) code[i] = char(r.u8());
+      const uint8_t players = r.u8(), max = r.u8();
+      r.u16();
+      if (!r.ok || r.i != n) return false;
+      std::string c;
+      for (size_t i = 0; i < kCodeBytes && code[i]; ++i) {
+        if (!std::isalnum(uint8_t(code[i]))) return false;
+        c += code[i];
+      }
+      if (c.empty()) return false;
+      const bool first = !joined_ || c != code_;
+      joined_ = true;
+      code_ = c;
+      if (first) {
+        REXLOG_INFO("[mpnet] in session {} ({}/{} players){}", code_, players, max,
+                    hosting_ ? " - give this invite code to your friends" : "");
+        write_session_file();
+      }
+      return true;
+    }
+    if (type == Msg::Refused) {
+      const uint8_t reason = r.u8();
+      r.u8();
+      r.u16();
+      if (!r.ok || r.i != n) return false;
+      switch (Refuse(reason)) {
+        case Refuse::NotJoined:
+          if (joined_) {
+            REXLOG_WARN("[mpnet] the relay lost our session; rejoining");
+            joined_ = false;
+            next_join_ = Clock::now();
+            // the host may not have re-made the session yet: keep trying for a minute
+            rejoin_until_ = Clock::now() + std::chrono::seconds(60);
+          }
+          break;
+        case Refuse::SlowDown:
+          next_join_ = Clock::now() + std::chrono::seconds(5);
+          break;
+        case Refuse::BadCode:
+        case Refuse::Full:
+        case Refuse::ServerFull:
+          if (Refuse(reason) == Refuse::BadCode && Clock::now() < rejoin_until_) break;
+          if (!joined_ && !gave_up_) {
+            gave_up_ = true;
+            REXLOG_WARN("[mpnet] relay refused: {}",
+                        reason == 1 ? "no session with that code"
+                                    : reason == 2 ? "session is full" : "relay is full");
+          }
+          break;
+        default:
+          return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // mp_session.txt next to the exe, so a launcher (later) can show the code.
+  void write_session_file() {
+    wchar_t path[MAX_PATH];
+    const DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (!len || len >= MAX_PATH) return;
+    std::wstring p(path, len);
+    const size_t slash = p.find_last_of(L"\\/");
+    p = (slash == std::wstring::npos ? L"" : p.substr(0, slash + 1)) + L"mp_session.txt";
+    if (FILE* f = _wfopen(p.c_str(), L"w")) {
+      std::fprintf(f, "%s\n", code_.c_str());
+      std::fclose(f);
     }
   }
 
@@ -311,21 +477,11 @@ class Net {
       if (j == std::string::npos) j = list.size();
       std::string item = list.substr(i, j - i);
       i = j + 1;
-      const size_t c = item.rfind(':');
-      if (c == std::string::npos) continue;
-      const std::string host = item.substr(0, c);
-      const int port = std::atoi(item.c_str() + c + 1);
-      if (port <= 0 || port > 65535) continue;
-      addrinfo hints{}, *res = nullptr;
-      hints.ai_family = AF_INET;
-      hints.ai_socktype = SOCK_DGRAM;
-      if (getaddrinfo(host.c_str(), nullptr, &hints, &res) != 0 || !res) {
-        REXLOG_WARN("[mpnet] cannot resolve peer '{}'", host);
+      sockaddr_in a{};
+      if (!resolve(item, a)) {
+        REXLOG_WARN("[mpnet] cannot resolve peer '{}'", item);
         continue;
       }
-      sockaddr_in a = *reinterpret_cast<sockaddr_in*>(res->ai_addr);
-      a.sin_port = htons(uint16_t(port));
-      freeaddrinfo(res);
       targets_.push_back(a);
     }
   }
@@ -445,7 +601,14 @@ class Net {
     r.u16();  // flags
     const uint32_t sender = r.u32();
     r.u32();  // seq (not used yet)
-    if (!r.ok || sender == 0) return false;
+    if (!r.ok) return false;
+    if (relay_mode_) {
+      if (!same_addr(from, relay_)) return false;  // only the relay may talk to us
+      if (Msg(type) == Msg::Welcome || Msg(type) == Msg::Refused)
+        return sender == 0 && handle_relay(Msg(type), r, n);
+      if (!joined_ || sender == self_id_) return false;
+    }
+    if (sender == 0) return false;
 
     std::lock_guard<std::mutex> l(peers_m_);
     PeerState* p = slot_for(sender, from, Msg(type) == Msg::Hello);
@@ -533,6 +696,16 @@ class Net {
   uint32_t self_id_ = 0;
   uint32_t seq_ = 0;
   bool started_ = false;
+  // relay mode (net thread only)
+  bool relay_mode_ = false;
+  bool hosting_ = false;
+  bool joined_ = false;
+  bool gave_up_ = false;
+  sockaddr_in relay_{};
+  std::string join_code_;  // the code we were told to join
+  std::string code_;       // the session we are in
+  Clock::time_point next_join_{};
+  Clock::time_point rejoin_until_{};
   SOCKET sock_ = INVALID_SOCKET;
   std::thread thread_;
 };

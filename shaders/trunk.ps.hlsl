@@ -75,6 +75,19 @@
 #define TF12(uv) Fetch(12, 3, uv, false)
 #define TF11(uv) Fetch(11, 4, uv, false)
 
+#ifndef TRUNK_RELIEF_DEPTH
+#define TRUNK_RELIEF_DEPTH 0.04  // bark relief depth, world units
+#endif
+#if SPARROW
+float3 ReliefRGB(float2 b) { return TF0(b * C8.xy + C8.zw).xyz; }
+SPARROW_RELIEF_FUNCS(Trunk, ReliefRGB)
+float4 TF0R(float2 uv) { SparrowReliefGrads(C8.xy); float4 t = TF0(uv); xe_grad_override = false; return t; }
+float4 TF2R(float2 uv) { SparrowReliefGrads(C10.xy); float4 t = TF2(uv); xe_grad_override = false; return t; }
+#else
+#define TF0R(uv) TF0(uv)
+#define TF2R(uv) TF2(uv)
+#endif
+
 float Hash3(float3 p) {
   p = frac(p * 0.1031);
   p += dot(p, p.yzx + 33.33);
@@ -98,6 +111,10 @@ float4 main(PSInput9 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float ps = 0.0;
   r9.xy = GuestPixelPosition(input.position, input.front_face);
   float3 world_pos = r2.xyz;
+#if SPARROW
+  // Sparrow: bark relief (sparrow_common.hlsli SPARROW_RELIEF_FUNCS).
+  SPARROW_RELIEF_APPLY(Trunk, input.v0.xy, C8.xy, input.v2.xyz, C19.xyz, TRUNK_RELIEF_DEPTH)
+#endif
 
   r10.yz = r0.yx * C10.yx + C10.wz;                                      // 10
   r0.xy = r0.yx * C8.yx + C8.wz;                                         // 11
@@ -107,8 +124,8 @@ float4 main(PSInput9 input, out uint coverage : SV_Coverage) : SV_Target0 {
   // Sparrow: the sun shadow map (sparrow_common.hlsli).
   r10.x = SparrowSunOrVolume(r10.x, input.v2.xyz);
 #endif
-  { float4 t = TF0(r0.yx); r0 = t.wxyz; }                                // 14
-  r9.xy = TF2(r10.zy).xy;                                                // 15
+  { float4 t = TF0R(r0.yx); r0 = t.wxyz; }                                // 14
+  r9.xy = TF2R(r10.zy).xy;                                                // 15
   r6.xyz = r6.zyx * C49.zyx;                                             // 16
   r11.xyz = -C22.xyz + C254.x;                                           // 17
   { float v = dot(r1.xyz, r1.xyz); r12.x = log2(abs(r8.x)); r1.w = v; }  // 18

@@ -859,6 +859,145 @@ float3 SparrowWetDebug(SparrowWet w) {
   return lerp(float3(0.0, w.film, w.film), float3(0.0, 0.2, 1.0), w.puddle);
 }
 
+// --- Surface relief (parallax occlusion) --------------------------------------
+// The game's ground has no height maps, so the height is the colour's
+// brightness (worn stone tops are light, the dirt between them dark): the
+// view ray is marched through that height field below the surface and the
+// textures are read where it lands, so the stones stand up and hide the
+// gaps behind them. A short march toward the sun then shadows the gaps.
+// sparrow_debug 11 turns it off (A/B), 12 shows the height.
+#ifndef SPARROW_RELIEF_DEPTH
+#define SPARROW_RELIEF_DEPTH 0.03  // world units from the tops to the bottom of the gaps
+#endif
+#ifndef SPARROW_RELIEF_FAR
+#define SPARROW_RELIEF_FAR 18.0   // fades out by this distance (also saves the cost)
+#endif
+
+struct SparrowReliefFrame {
+  float2 dir;        // uv change from the top to the full depth along the view ray
+  float2 sun_dir;    // uv change rising the full depth toward the sun (0: no sun)
+  float2 dx, dy;     // the uv's screen derivatives, for sampling the offset uv
+  float fade;        // 0 off .. 1 full
+};
+
+// pos world position, uv the textures' uv, v toward the camera (unit),
+// dist the camera distance.
+SparrowReliefFrame SparrowReliefSetup(float3 pos, float2 uv, float3 v, float dist, float depth) {
+  SparrowReliefFrame r = (SparrowReliefFrame)0;
+  float3 dp1 = ddx(pos), dp2 = ddy(pos);
+  float2 duv1 = ddx(uv), duv2 = ddy(uv);
+  r.dx = ddx_coarse(uv);
+  r.dy = ddy_coarse(uv);
+  if (SparrowDebug() == 11) return r;
+  float3 n = normalize(cross(dp2, dp1));
+  if (dot(n, v) < 0.0) n = -n;
+  // The uv's gradients over the surface (world units -> uv).
+  float3 p2 = cross(dp2, n), p1 = cross(n, dp1);
+  float det = dot(dp1, p2);
+  if (abs(det) < 1e-12) return r;
+  float3 gu = (p2 * duv1.x + p1 * duv2.x) / det;
+  float3 gv = (p2 * duv1.y + p1 * duv2.y) / det;
+  r.fade = 1.0 - smoothstep(SPARROW_RELIEF_FAR * 0.6, SPARROW_RELIEF_FAR, dist);
+  float vn = max(dot(n, v), 0.25);  // grazing rays would smear the texture
+  r.dir = -float2(dot(gu, v), dot(gv, v)) / vn * depth * r.fade;
+  SparrowFrameData f = SparrowFrame();
+  if (f.valid) {
+    float ln = dot(n, f.l);
+    if (ln > 0.05) r.sun_dir = float2(dot(gu, f.l), dot(gv, f.l)) / ln * depth * r.fade;
+  }
+  return r;
+}
+
+// After the relief moved the base uv, each texture read from it samples with
+// the base uv's own derivatives times that texture's uv scale (its uv is
+// base * scale + offset), not the moved uv's (which jump per pixel).
+static bool sp_relief_on = false;
+static float2 sp_relief_dx = 0.0, sp_relief_dy = 0.0;
+void SparrowReliefGrads(float2 scale) {
+  xe_grad_override = sp_relief_on;
+  xe_grad_dx = sp_relief_dx * scale;
+  xe_grad_dy = sp_relief_dy * scale;
+}
+
+// Starts the relief for a surface: base_uv the uv the shader's textures
+// derive from, depth in world units. Returns the frame (fade 0: off).
+SparrowReliefFrame SparrowReliefBegin(float3 pos, float3 cam, float2 base_uv, float depth) {
+  float3 to_cam = cam - pos;
+  float d = length(to_cam);
+  return SparrowReliefSetup(pos, base_uv, to_cam / max(d, 1e-4), d, depth);
+}
+
+#ifndef SPARROW_RELIEF_CONTRAST
+#define SPARROW_RELIEF_CONTRAST 2.5
+#endif
+// Defines P##Relief(base_uv, svpos, frame, scale, shadow_on, out h, out
+// shadow) for a shader whose colour at a base uv is RGB(base_uv) (a
+// function it defines; scale = that texture's uv scale). The height is the
+// colour's brightness against the area's average (five mips up), so it
+// does not depend on how bright the texture is, read three mips blurrier
+// (rounded stones rather than the speckle of their grain; sharper reads
+// turn the grain into spikes). The view ray is marched down through it
+// (tops at 1) in 16 jittered steps; with shadow_on a march toward the sun
+// gives how much higher ground shades the point (its reach doubled, so the
+// gaps darken under a high sun too). Returns the base uv where it lands.
+#define SPARROW_RELIEF_FUNCS(P, RGB)                                                    \
+  static float P##_base = 0.5;                                                          \
+  float P##Lum(float2 b) { return dot(RGB(b), float3(0.299, 0.587, 0.114)); }           \
+  float P##Height(float2 b) {                                                           \
+    return saturate(0.55 + (P##Lum(b) / max(P##_base, 0.02) - 1.0) *                    \
+                               SPARROW_RELIEF_CONTRAST * 0.5);                          \
+  }                                                                                     \
+  float2 P##Relief(float2 uv, float2 svpos, SparrowReliefFrame r, float2 scale,         \
+                   bool shadow_on, out float h_hit, out float shadow) {                 \
+    shadow = 1.0;                                                                       \
+    xe_grad_override = true;                                                            \
+    xe_grad_dx = r.dx * scale * 32.0;                                                   \
+    xe_grad_dy = r.dy * scale * 32.0;                                                   \
+    P##_base = P##Lum(uv);                                                              \
+    xe_grad_dx = r.dx * scale * 8.0;                                                    \
+    xe_grad_dy = r.dy * scale * 8.0;                                                    \
+    float t_prev = 0.0, gap_prev = 1.0 - P##Height(uv), t = 1.0;                        \
+    float jitter = frac(52.9829189 * frac(dot(svpos, float2(0.06711056, 0.00583715)))); \
+    [loop] for (int i = 1; i <= 16; ++i) {                                              \
+      float ti = saturate((float(i) - jitter) / 16.0);                                  \
+      float gap = (1.0 - P##Height(uv + r.dir * ti)) - ti;                              \
+      if (gap <= 0.0) {                                                                 \
+        t = lerp(t_prev, ti, gap_prev / max(gap_prev - gap, 1e-5));                     \
+        break;                                                                          \
+      }                                                                                 \
+      t_prev = ti;                                                                      \
+      gap_prev = gap;                                                                   \
+    }                                                                                   \
+    float2 hit = uv + r.dir * t;                                                        \
+    h_hit = 1.0 - t;                                                                    \
+    if (shadow_on && any(r.sun_dir != 0.0)) {                                           \
+      float occ = 0.0;                                                                  \
+      [unroll] for (int j = 1; j <= 6; ++j) {                                           \
+        float s = (float(j) - jitter) / 6.0;                                            \
+        occ = max(occ, (P##Height(hit + r.sun_dir * (2.0 * s)) - (h_hit + s)) * 4.0);   \
+      }                                                                                 \
+      shadow = 1.0 - saturate(occ) * r.fade;                                            \
+    }                                                                                   \
+    xe_grad_override = false;                                                           \
+    return hit;                                                                         \
+  }
+
+// The standard use, for a shader that reads its textures from v0.xy with
+// uv = base * scale + offset: in main, after r0 = input.v0,
+//   SPARROW_RELIEF_APPLY(P, input.v0.xy, colour scale, world, camera, depth)
+// moves r0.xy and turns the fetch wrappers' gradients on (not on characters).
+#define SPARROW_RELIEF_APPLY(P, BASE, SCALE, POS, CAM, DEPTH)                         \
+  float relief_h = 1.0, relief_shadow = 1.0;                                          \
+  if (SparrowActive() && !(xe_flags & 0x80000000u)) {                                 \
+    SparrowReliefFrame rf_ = SparrowReliefBegin(POS, CAM, BASE, DEPTH);               \
+    [branch] if (rf_.fade > 0.0) {                                                    \
+      r0.xy = P##Relief(BASE, input.position.xy, rf_, SCALE, false, relief_h, relief_shadow); \
+      sp_relief_on = true;                                                            \
+      sp_relief_dx = rf_.dx;                                                          \
+      sp_relief_dy = rf_.dy;                                                          \
+    }                                                                                 \
+  }
+
 // sparrow_debug 5: the lamp shadows alone.
 float3 SparrowLampDebug(float4 vis) {
   return min(min(vis.x, vis.y), min(vis.z, vis.w)).xxx * 0.5;

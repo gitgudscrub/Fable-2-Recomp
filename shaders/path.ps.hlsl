@@ -87,18 +87,45 @@
 
 float4 Ge4(float a, float4 b) { return float4(a >= b.x, a >= b.y, a >= b.z, a >= b.w); }
 
+#if SPARROW
+float3 PathRGB(float2 b) { return TF0(b).xyz; }
+SPARROW_RELIEF_FUNCS(Path, PathRGB)
+float4 TF0R(float2 uv) { SparrowReliefGrads(1.0); float4 t = TF0(uv); xe_grad_override = false; return t; }
+float4 TF2R(float2 uv) { SparrowReliefGrads(1.0); float4 t = TF2(uv); xe_grad_override = false; return t; }
+#else
+#define TF0R(uv) TF0(uv)
+#define TF2R(uv) TF2(uv)
+#endif
+
 float4 main(PSInput8 input) : SV_Target0 {
   float4 r0 = input.v0, r1 = input.v1, r2 = input.v2, r3 = input.v3;
   float4 r4 = input.v4, r5 = input.v5, r6 = input.v6, r7 = input.v7;
   float4 r8 = 0.0, r9 = 0.0, r10 = 0.0, r11 = 0.0, r12 = 0.0;
   r8.xy = GuestPixelPosition(input.position, input.front_face);
   float3 world = input.v2.xyz;
+#if SPARROW
+  // Sparrow: surface relief, the colour and normal map read where the view
+  // ray meets the height field.
+  float relief_h = 1.0, relief_shadow = 1.0;
+  if (SparrowActive()) {
+    SparrowReliefFrame rf = SparrowReliefBegin(world, C19.xyz, input.v0.xy, SPARROW_RELIEF_DEPTH);
+    [branch] if (rf.fade > 0.0) {
+      r0.xy = PathRelief(input.v0.xy, input.position.xy, rf, 1.0, true, relief_h, relief_shadow);
+      sp_relief_on = true;
+      sp_relief_dx = rf.dx;
+      sp_relief_dy = rf.dy;
+    }
+  }
+#endif
 
   r7.xy = abs(r8.xy) * C0.zw + C0.xy;                                    // 11
   r8.z = TF8(r7.xy).x;                                                   // 12
-  r3.zw = TF2(r0.xy).xy;                                                 // 13
+  r3.zw = TF2R(r0.xy).xy;                                                // 13
   { float4 t = TF3(r3.xy); r7.x = t.y; r7.y = t.z; r7.z = t.x; }         // 14
-  r0.xyz = TF0(r0.xy).xyz;                                               // 15
+  r0.xyz = TF0R(r0.xy).xyz;                                              // 15
+#if SPARROW
+  r8.z *= relief_shadow;  // Sparrow: the stones shade the gaps from the sun
+#endif
   r0.w = dot(r6.zxy, r6.zxy);                                            // 16
   r9.xyz = -r2.zyx + C19.zyx; r0.w = rsqrt(abs(r0.w));                   // 17
   r0.xyz = r0.xyz * r0.xyz; r3.x = log2(abs(r7.z));                      // 18
@@ -255,6 +282,7 @@ float4 main(PSInput8 input) : SV_Target0 {
   if (SparrowDebug() == 5) o.xyz = SparrowLampDebug(lamp_vis);
   if (SparrowDebug() == 8) o.xyz = refl.rgb * C20.w;
   if (SparrowDebug() == 10) o.xyz = SparrowWetDebug(wet);
+  if (SparrowDebug() == 12) o.xyz = float3(relief_h, relief_shadow, relief_h);
   if (SparrowDebug() == 7) o.xyz = SparrowDepthCheck(input.v2.xyz, input.position.xy);
 #endif
   return o * xe_color_exp_bias.x;

@@ -86,6 +86,11 @@ float GammaToLinear(float v) {
 // texture binding number (sampler, unsigned and signed views are the
 // descriptor indices 1 + 3 * binding ...). Rewrites use Fetch/FetchLevel;
 // FetchCore is the shared body (`level` < 0 samples with derivatives).
+// xe_grad_override: the derivatives to sample with instead of the uv's own
+// (Sparrow relief offsets the uv per pixel, which would break the mip
+// choice at the offset's steps). Off, it folds away.
+static bool xe_grad_override = false;
+static float2 xe_grad_dx = 0.0, xe_grad_dy = 0.0;
 float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale, float level, bool use_offset, int2 texel_offset) {
   uint base = tf * 6;
   float2 size;
@@ -102,6 +107,7 @@ float4 FetchCore(uint tf, uint binding, float2 uv, bool is_1d, float grad_scale,
   if (is_1d) uv.y = 0.0;
   float lod_scale = exp2(float(int(FetchDword(base + 4) << 10) >> 22) * 0.03125) * grad_scale;
   float2 dx = ddx_coarse(uv) * lod_scale, dy = ddy_coarse(uv) * lod_scale;
+  if (xe_grad_override) { dx = xe_grad_dx * lod_scale; dy = xe_grad_dy * lod_scale; }
   if (is_1d) { dx.y = 0.0; dy.y = 0.0; }
   uint signs_word = xe_texture_swizzled_signs[tf >> 4][(tf >> 2) & 3];
   uint signs = (signs_word >> ((tf & 3) * 8)) & 0xFF;

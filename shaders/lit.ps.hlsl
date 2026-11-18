@@ -129,7 +129,23 @@
 #define TF13(uv) Fetch(13, 4, uv, false)
 #define TF14(stf) FetchCube(14, 5, stf)
 #define TF4(x) Fetch(4, 6, float2(x, 0.0), true)
-#define TF5(x) Fetch(5, 7, float2(x, 0.0), true)
+#define TF5(x) Fetch(5, 7, float2(x, 0.0), true)
+
+#ifndef LIT_RELIEF_DEPTH
+#define LIT_RELIEF_DEPTH 0.03  // surface relief depth, world units
+#endif
+#if SPARROW
+float3 ReliefRGB(float2 b) { return TF0(b * C8.xy + C8.zw).xyz; }
+SPARROW_RELIEF_FUNCS(Lit, ReliefRGB)
+float4 TF0R(float2 uv) { SparrowReliefGrads(C8.xy); float4 t = TF0(uv); xe_grad_override = false; return t; }
+float4 TF1R(float2 uv) { SparrowReliefGrads(C9.xy); float4 t = TF1(uv); xe_grad_override = false; return t; }
+float4 TF2R(float2 uv) { SparrowReliefGrads(C10.xy); float4 t = TF2(uv); xe_grad_override = false; return t; }
+#else
+#define TF0R(uv) TF0(uv)
+#define TF1R(uv) TF1(uv)
+#define TF2R(uv) TF2(uv)
+#endif
+
 
 // How much an albedo (guest gamma space) looks like skin: red over green
 // over blue with moderate saturation, not too dark. Soft so that make-up,
@@ -187,13 +203,18 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
   float4 r4 = input.v4, r5 = input.v5, r6 = input.v6;
   float4 r7 = 0.0, r8 = 0.0, r9 = 0.0, r10 = 0.0, r11 = 0.0, r12 = 0.0, r13 = 0.0, r14 = 0.0;
   r7.xy = GuestPixelPosition(input.position, input.front_face);
+#if SPARROW
+  // Sparrow: surface relief (the textures read where the view ray meets the
+  // colour's height field; not on characters).
+  SPARROW_RELIEF_APPLY(Lit, input.v0.xy, C8.xy, input.v2.xyz, C19.xyz, LIT_RELIEF_DEPTH)
+#endif
 
   r0.zw = r0.yx * C9.yx + C9.wz;                                         // 10
   r8.xy = r0.yx * C8.yx + C8.wz;                                         // 11
   r8.zw = r0.yx * C10.yx + C10.wz;                                       // 12
-  r12.xy = TF2(r8.wz).xy;                                                // 13
+  r12.xy = TF2R(r8.wz).xy;                                                // 13
   float2 albedo_uv = r8.yx;  // the uv before the fetch overwrites r8 (Modern: stretch)
-  { float4 t = TF0(r8.yx); r8 = t.wxyz; }                                // 14
+  { float4 t = TF0R(r8.yx); r8 = t.wxyz; }                                // 14
   float3 sp_albedo = r8.yzw * r8.yzw;  // Sparrow: colour map, linear (character material)
   float3 albedo = r8.yzw;  // kept for SkinWeight: r8.yzw is reused at 18-22
   // Stretch: screen pixels per albedo texel, from the area of the uv
@@ -221,7 +242,7 @@ float4 main(PSInput7 input, out uint coverage : SV_Coverage) : SV_Target0 {
     float not_skin = (xe_flags & 0x80000000u) ? 1.0 - SkinWeight(albedo) : 1.0;
     relief = float2(he - hw, hn - hs) * (0.5 * ALBEDO_BUMP * not_skin * (1.0 - wear_mask));
   }
-  r10.xyz = TF1(r0.wz).xyz;                                              // 15
+  r10.xyz = TF1R(r0.wz).xyz;                                              // 15
   r1.w = dot(r1.xyz, r1.xyz);                                            // 16
   r9.xyz = C19.zyx - r2.zyx;                                             // 17
   { float3 v = r8.wzy * r8.wzy; r8.y = r10.x * r10.x; r11.xyz = v; }     // 18

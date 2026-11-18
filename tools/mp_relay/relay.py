@@ -32,16 +32,18 @@ import time
 from dataclasses import dataclass, field
 
 MAGIC = 0x504D3246  # "F2MP" little-endian
-PROTO = 1
+PROTO = 2              # newest game protocol (used in the relay's own replies)
+PROTOS = (1, 2)        # accepted; a session only takes players with its host's version
 HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE = 1, 2, 3
+HELLO, STATE, POSE, BYE, POSEQ = 1, 2, 3, 4, 5
+GAME_TYPES = {1: (HELLO, STATE, POSE), 2: (HELLO, STATE, POSE, BYE, POSEQ)}
 # relay messages
 CREATE, JOIN, WELCOME, REFUSED = 16, 17, 18, 19
 
-REFUSE_BAD_CODE, REFUSE_FULL, REFUSE_SLOW_DOWN, REFUSE_NOT_JOINED, REFUSE_SERVER_FULL = 1, 2, 3, 4, 5
+REFUSE_BAD_CODE, REFUSE_FULL, REFUSE_SLOW_DOWN, REFUSE_NOT_JOINED, REFUSE_SERVER_FULL, REFUSE_VERSION = 1, 2, 3, 4, 5, 6
 
 MAX_PLAYERS = 4
 MAX_SESSIONS = 64
@@ -96,6 +98,7 @@ class Session:
     code: str
     host_pid: int
     created: float
+    proto: int = PROTO
     players: dict = field(default_factory=dict)  # addr -> Player
     emptied: float | None = None
 
@@ -128,6 +131,17 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
         if not (0 < parts <= MAX_PARTS and part < parts):
             return False
         return n == 28 + count * 24
+    if mtype == POSEQ:
+        if n < 32:
+            return False
+        _frame, bones, first, count, part, parts, layout = struct.unpack_from("<IHHHBBB", data, 16)
+        if not (0 < bones <= MAX_BONES and 0 < count <= BONES_PER_PACKET and first + count <= bones):
+            return False
+        if not (0 < parts <= MAX_PARTS and part < parts and layout in (1, 2)):
+            return False
+        return n == 32 + count * 14
+    if mtype == BYE:
+        return n == 16
     return False
 
 
@@ -142,9 +156,9 @@ class Relay(asyncio.DatagramProtocol):
         self.stats = {"in": 0, "out": 0, "dropped": 0}
 
     # --- sending -------------------------------------------------------------
-    def _relay_header(self, mtype: int) -> bytes:
+    def _relay_header(self, mtype: int, proto: int = PROTO) -> bytes:
         self.seq = (self.seq + 1) & 0xFFFFFFFF
-        return HEADER.pack(MAGIC, PROTO, mtype, 0, 0, self.seq)
+        return HEADER.pack(MAGIC, proto, mtype, 0, 0, self.seq)
 
     def _send(self, data: bytes, addr):
         self.transport.sendto(data, addr)
@@ -154,10 +168,10 @@ class Relay(asyncio.DatagramProtocol):
         s = p.session
         body = struct.pack("<8sBBH", s.code.encode().ljust(8, b"\0"), len(s.players), MAX_PLAYERS,
                            1 if p.pid == s.host_pid else 0)
-        self._send(self._relay_header(WELCOME) + body, p.addr)
+        self._send(self._relay_header(WELCOME, s.proto) + body, p.addr)
 
-    def _refuse(self, addr, reason: int):
-        self._send(self._relay_header(REFUSED) + struct.pack("<BBH", reason, 0, 0), addr)
+    def _refuse(self, addr, reason: int, proto: int = PROTO):
+        self._send(self._relay_header(REFUSED, proto) + struct.pack("<BBH", reason, 0, 0), addr)
 
     # --- sessions ------------------------------------------------------------
     def _new_code(self) -> str | None:
@@ -189,32 +203,32 @@ class Relay(asyncio.DatagramProtocol):
             b = self.join_limits[addr[0]] = Bucket(JOIN_PER_SEC, JOIN_BURST)
         return b.take(1, now)
 
-    def _on_create(self, addr, pid: int, body: bytes, now: float):
+    def _on_create(self, addr, pid: int, body: bytes, now: float, proto: int = PROTO):
         if len(body) != 8:
             return self._drop()
         p = self.players.get(addr)
         if p and p.pid == pid:
             return self._welcome(p)  # repeat of a CREATE we already answered
         if not self._join_allowed(addr, now):
-            return self._refuse(addr, REFUSE_SLOW_DOWN)
+            return self._refuse(addr, REFUSE_SLOW_DOWN, proto)
         if p:
             self._remove_player(p, now, "re-created")
         want = body.rstrip(b"\0").decode("ascii", "replace")
         s = self.sessions.get(want) if want else None
         if s and s.host_pid == pid and not s.players:
-            pass  # host coming back to its held code
+            s.proto = proto  # host coming back to its held code
         else:
             if len(self.sessions) >= MAX_SESSIONS:
-                return self._refuse(addr, REFUSE_SERVER_FULL)
+                return self._refuse(addr, REFUSE_SERVER_FULL, proto)
             code = want if (want and want not in self.sessions and len(want) == CODE_LEN
                             and all(c in CODE_ALPHABET for c in want)) else self._new_code()
             if code is None:
-                return self._refuse(addr, REFUSE_SERVER_FULL)
-            s = self.sessions[code] = Session(code=code, host_pid=pid, created=now)
+                return self._refuse(addr, REFUSE_SERVER_FULL, proto)
+            s = self.sessions[code] = Session(code=code, host_pid=pid, created=now, proto=proto)
             log.info("session %s created by %08X", code, pid)
         self._welcome(self._add_player(addr, pid, s, now))
 
-    def _on_join(self, addr, pid: int, body: bytes, now: float):
+    def _on_join(self, addr, pid: int, body: bytes, now: float, proto: int = PROTO):
         if len(body) != 8:
             return self._drop()
         p = self.players.get(addr)
@@ -222,14 +236,16 @@ class Relay(asyncio.DatagramProtocol):
         if p and p.pid == pid and p.session.code == code:
             return self._welcome(p)
         if not self._join_allowed(addr, now):
-            return self._refuse(addr, REFUSE_SLOW_DOWN)
+            return self._refuse(addr, REFUSE_SLOW_DOWN, proto)
         s = self.sessions.get(code)
         if s is None or (not s.players and s.emptied is not None):
-            return self._refuse(addr, REFUSE_BAD_CODE)
+            return self._refuse(addr, REFUSE_BAD_CODE, proto)
+        if s.proto != proto:
+            return self._refuse(addr, REFUSE_VERSION, proto)
         if any(q.pid == pid for q in s.players.values()):
-            return self._refuse(addr, REFUSE_BAD_CODE)  # id clash: client picks a new one
+            return self._refuse(addr, REFUSE_BAD_CODE, proto)  # id clash: client picks a new one
         if len(s.players) >= MAX_PLAYERS:
-            return self._refuse(addr, REFUSE_FULL)
+            return self._refuse(addr, REFUSE_FULL, proto)
         if p:
             self._remove_player(p, now, "joined another session")
         self._welcome(self._add_player(addr, pid, s, now))
@@ -247,21 +263,21 @@ class Relay(asyncio.DatagramProtocol):
         if len(data) < 16 or len(data) > 1500:
             return self._drop()
         magic, proto, mtype, _flags, sender, _seq = HEADER.unpack_from(data)
-        if magic != MAGIC or proto != PROTO or sender == 0:
+        if magic != MAGIC or proto not in PROTOS or sender == 0:
             return self._drop()
         if mtype == CREATE:
-            return self._on_create(addr, sender, data[16:], now)
+            return self._on_create(addr, sender, data[16:], now, proto)
         if mtype == JOIN:
-            return self._on_join(addr, sender, data[16:], now)
-        if mtype not in (HELLO, STATE, POSE):
+            return self._on_join(addr, sender, data[16:], now, proto)
+        if mtype not in GAME_TYPES[proto]:
             return self._drop()
         p = self.players.get(addr)
-        if p is None or p.pid != sender:
+        if p is None or p.pid != sender or p.session.proto != proto:
             self._drop()
             # tell the game it is not in a session any more (e.g. relay restarted)
-            if now - self.refuse_notice.get(addr, 0.0) >= REFUSE_NOTICE_GAP:
+            if mtype != BYE and now - self.refuse_notice.get(addr, 0.0) >= REFUSE_NOTICE_GAP:
                 self.refuse_notice[addr] = now
-                self._refuse(addr, REFUSE_NOT_JOINED)
+                self._refuse(addr, REFUSE_NOT_JOINED, proto)
             return
         if not (p.packets.take(1, now) and p.bytes.take(len(data), now)):
             p.dropped += 1
@@ -273,6 +289,8 @@ class Relay(asyncio.DatagramProtocol):
         for q in p.session.players.values():
             if q is not p:
                 self._send(data, q.addr)
+        if mtype == BYE:
+            self._remove_player(p, now, "left")
 
     # --- housekeeping --------------------------------------------------------
     def sweep(self):

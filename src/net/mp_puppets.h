@@ -19,10 +19,13 @@
 //   --mp_peers=127.0.0.1:27960 --mp_puppet_offset=1.5
 // Our own packets come back and a puppet copies our hero 1.5 m to its right.
 //
-// Limits (first cut): a puppet whose peer leaves stays where it stood; a peer
-// whose body changes (child -> adult) keeps the old body; puppet bodies are
-// checked (transform vtable + owner) before every use but a freed body's
-// memory could in theory be reused by another entity.
+// Bodies that are no longer needed (the player left, a new player took the
+// slot, or the player's body changed, e.g. child -> adult) are moved far out of
+// the world and removed by a fixed script (mp_puppet_cleanup.lua). Poses arrive
+// ~20 times a second; the packer blends from the pose on screen to the newest
+// one over the measured arrival gap, so puppets move smoothly at any frame rate.
+// Limits: puppet bodies are checked (transform vtable + owner) before every use
+// but a freed body's memory could in theory be reused by another entity.
 #pragma once
 
 #include "mp_net.h"
@@ -51,6 +54,7 @@ namespace fable2::net::puppets {
 namespace ta = fable2::textappend;
 
 constexpr float kMarkX = -7777.0f;           // SetPosition x that marks a new puppet
+constexpr float kGraveX = -9000.0f;          // bodies to remove are parked here (cleanup: x < -8000)
 constexpr uint32_t kTransformVtbl = 0x820071C0;
 constexpr int kHero = -1;                    // skeleton owner id for our hero
 constexpr auto kSpawnRetry = std::chrono::seconds(5);
@@ -69,9 +73,11 @@ struct Puppet {
   bool spawning = false;
   bool have_pos = false;
   float pos[3] = {};       // smoothed position
-  std::array<std::vector<float>, kMaxParts> pose;  // host floats per part
+  std::array<std::vector<float>, kMaxParts> pose;  // newest pose per part (host floats)
+  std::array<std::vector<float>, kMaxParts> prev;  // pose blended from
+  std::array<Clock::time_point, kMaxParts> blend_start{}, arrived{};
+  std::array<float, kMaxParts> blend_len{};        // seconds (smoothed arrival gap)
   std::array<uint32_t, kMaxParts> pose_ver{};
-  bool warned_body = false;
 };
 
 struct State {
@@ -86,6 +92,8 @@ struct State {
   bool logged_hero = false;
   uint32_t pose_writes = 0, pose_skips = 0;   // puppet palettes written / size mismatch
   Clock::time_point next_log{};
+  bool cleanup_due = false;                   // a body was parked: run the cleanup script
+  Clock::time_point next_cleanup{};
 };
 inline State& S() {
   static State s;
@@ -138,6 +146,14 @@ inline void set_position(PPCContext& ctx, uint8_t* base, uint32_t tc, float x, f
   ctx.v1 = save_v1;
 }
 
+// How far a part has blended from prev to pose (0..1).
+inline float blend_at(const Puppet& p, int part, Clock::time_point now) {
+  const float len = p.blend_len[part];
+  if (len <= 0.0f) return 1.0f;
+  const float t = std::chrono::duration<float>(now - p.blend_start[part]).count() / len;
+  return std::clamp(t, 0.0f, 1.0f);
+}
+
 // Packer hook (render side): record the skeleton; send our hero's pose; draw
 // puppets with their peer's pose.
 inline void on_pack(uint8_t* base, uint32_t skel, uint32_t vec) {
@@ -166,12 +182,20 @@ inline void on_pack(uint8_t* base, uint32_t skel, uint32_t vec) {
   }
   const auto p = s.puppet_skel.find(skel);
   if (p == s.puppet_skel.end()) return;
-  const auto& src = s.pup[p->second.first].pose[p->second.second];
+  const Puppet& pp = s.pup[p->second.first];
+  const int part = p->second.second;
+  const auto& src = pp.pose[part];
   if (src.size() != size_t(n) * 12 || !ta::wr2(base, b, n * 48)) {
     ++s.pose_skips;
     return;
   }
-  for (uint32_t k = 0; k < n * 12; ++k) store_f32(base, b + k * 4, src[k]);
+  const auto& from = pp.prev[part];
+  const float a = blend_at(pp, part, Clock::now());
+  if (from.size() == src.size() && a < 1.0f) {
+    for (uint32_t k = 0; k < n * 12; ++k) store_f32(base, b + k * 4, from[k] + (src[k] - from[k]) * a);
+  } else {
+    for (uint32_t k = 0; k < n * 12; ++k) store_f32(base, b + k * 4, src[k]);
+  }
   ++s.pose_writes;
 }
 
@@ -232,6 +256,25 @@ inline void match_skeletons(uint8_t* base, const float hero_pos[3],
       s.puppet_skel[by[i + 1][k].second] = {i, int(k)};
 }
 
+// Parks a body that is no longer needed out of the world (the cleanup script
+// removes it) and resets the slot. Game thread.
+inline void retire(PPCContext& ctx, uint8_t* base, int slot, uint32_t tc, const char* why) {
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.m);
+  Puppet& p = s.pup[slot];
+  if (tc) {
+    set_position(ctx, base, tc, kGraveX - 10.0f * slot, 0.0f, 0.0f);
+    s.cleanup_due = true;
+    REXLOG_INFO("[mppup] slot {}: removing puppet body 0x{:08X} ({})", slot, p.thing, why);
+  } else {
+    REXLOG_INFO("[mppup] slot {}: cancelling the body being made ({})", slot, why);
+  }
+  s.pending.erase(std::remove(s.pending.begin(), s.pending.end(), slot), s.pending.end());
+  const uint32_t peer = p.peer_id;
+  p = Puppet{};
+  p.peer_id = peer;
+}
+
 // Game thread, from the frame-loop idle point (runs many times per frame).
 inline void tick(PPCContext& ctx, uint8_t* base) {
   if (!REXCVAR_GET(mp_enable)) return;
@@ -286,11 +329,21 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
       p.thing = 0;
       p.have_pos = false;
     }
-    if (!active || v.bone_count == 0) continue;
-    if (p.peer_id != v.id) {  // new player in this slot
+    if (!active) {  // the player left (BYE or timeout)
+      if (tc[i] || p.spawning) retire(ctx, base, i, tc[i], "the player left");
+      tc[i] = 0;
+      continue;
+    }
+    if (v.bone_count == 0) continue;
+    if (p.peer_id != v.id) {  // a new player in this slot
+      if (tc[i] || p.spawning) retire(ctx, base, i, tc[i], "a new player took the slot");
+      tc[i] = 0;
       p.peer_id = v.id;
-      p.pose_ver.fill(0);
-      p.warned_body = false;
+    }
+    if (tc[i] && p.body_bones != v.bone_count) {  // e.g. child -> adult: new body
+      REXLOG_INFO("[mppup] slot {}: peer now has {} bones, body has {}", i, v.bone_count, p.body_bones);
+      retire(ctx, base, i, tc[i], "the player's body changed");
+      tc[i] = 0;
     }
     if (!tc[i]) {
       if (!p.spawning || now - p.spawn_req > kSpawnRetry) {
@@ -307,11 +360,6 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
         fable2::f5lua::request_run(script);
       }
       continue;
-    }
-    if (p.body_bones != v.bone_count && !p.warned_body) {
-      p.warned_body = true;
-      REXLOG_WARN("[mppup] slot {}: peer now has {} bones, body has {} (pose not shown)", i,
-                  v.bone_count, p.body_bones);
     }
     // transform: smoothed toward the peer's latest state
     if (v.have_state) {
@@ -341,13 +389,37 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
       uint32_t ver = 0;
       if (net.peer_pose(i, part, p.pose_ver[part], pose, &ver)) {
         std::lock_guard<std::mutex> l(s.m);
-        p.pose[part].swap(pose);
+        // Blend from what is on screen now to the new pose, over the gap
+        // between poses (smoothed; first pose or a long gap: no blend).
+        auto& cur = p.pose[part];
+        auto& prev = p.prev[part];
+        const float a = blend_at(p, part, now);
+        if (cur.size() == pose.size() && prev.size() == pose.size() && a < 1.0f) {
+          for (size_t k = 0; k < cur.size(); ++k) prev[k] += (cur[k] - prev[k]) * a;
+        } else {
+          prev = cur;
+        }
+        const float gap = std::chrono::duration<float>(now - p.arrived[part]).count();
+        p.arrived[part] = now;
+        if (prev.size() != pose.size() || gap > 0.25f) {
+          p.blend_len[part] = 0.0f;
+        } else {
+          const float len = p.blend_len[part] > 0 ? p.blend_len[part] * 0.8f + gap * 0.2f : gap;
+          p.blend_len[part] = std::clamp(len, 0.01f, 0.15f);
+        }
+        p.blend_start[part] = now;
+        cur.swap(pose);
         p.pose_ver[part] = ver;
       }
     }
   }
 
   std::lock_guard<std::mutex> l(s.m);
+  if (s.cleanup_due && now >= s.next_cleanup) {
+    s.cleanup_due = false;
+    s.next_cleanup = now + std::chrono::seconds(1);
+    fable2::f5lua::request_run("scripts/recomp/mp_puppet_cleanup.lua");
+  }
   match_skeletons(base, hp, tc, now);
   if (now >= s.next_log) {
     s.next_log = now + std::chrono::seconds(10);
@@ -371,8 +443,11 @@ inline bool on_mark(PPCContext& ctx, uint8_t* base) {
   State& s = S();
   std::lock_guard<std::mutex> l(s.m);
   if (s.pending.empty()) {
-    REXLOG_WARN("[mppup] marked entity 0x{:08X} but no puppet was waiting", thing);
-    return true;
+    // Its player left while it was being made: park it for the cleanup script.
+    REXLOG_INFO("[mppup] body 0x{:08X} arrived after its player left; removing it", thing);
+    ctx.v1.f32[3] = kGraveX - 50.0f;
+    s.cleanup_due = true;
+    return false;  // the original SetPosition moves it there
   }
   const int slot = s.pending.front();
   s.pending.pop_front();

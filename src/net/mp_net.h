@@ -22,13 +22,22 @@
 //               parts u8, count x 12 half floats (one 3x4 bone matrix each)
 //               (a body can have several skeletons: the adult hero has 90 + 87
 //               bones; parts are sorted by bone count, largest first)
+//   BYE    (4): empty; sent when the game closes, so peers drop us at once
+//   POSEQ  (5): like POSE but 14 B per bone: pose_frame u32, bone_count u16,
+//               first u16, count u16, part u8, parts u8, layout u8, pad u8 x3,
+//               count x (rotation quaternion x,y,z,w + translation x,y,z) as
+//               half floats. Used when every bone of the part is a rigid
+//               transform; layout 1 = rows of 4 (r00 r01 r02 tx ...), 2 = rows
+//               of 3 with the translation last. Otherwise POSE is sent.
+// Poses go out at mp_pose_hz (default 20); the receiver blends between them.
 // Relay messages (game <-> relay; the relay's header sender is 0):
 //   CREATE  (16): wanted code char[8] (zeros = new; a host that lost the relay
 //                 asks for its old code back)
 //   JOIN    (17): code char[8]
 //   WELCOME (18): code char[8], players u8, max u8, is_host u16
 //   REFUSED (19): reason u8 (1 bad code, 2 full, 3 slow down, 4 not in a
-//                 session, 5 server full), pad u8 x3
+//                 session, 5 server full, 6 the session runs another game
+//                 version), pad u8 x3
 // A peer slot is only created by a HELLO; other messages from unknown senders
 // are dropped.
 // Every field is range-checked before it is stored; anything malformed is
@@ -40,6 +49,7 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 #include <rex/cvar.h>
+#include "mp_pose_codec.h"
 #include "mp_session_notice.h"
 #include <rex/logging.h>
 
@@ -49,6 +59,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <mutex>
@@ -63,7 +74,9 @@ REXCVAR_DEFINE_INT32(mp_port, 27960, "Multiplayer", "UDP port this game listens 
 REXCVAR_DEFINE_STRING(mp_peers, "", "Multiplayer",
                       "Peers to send to, comma separated host:port (until the relay exists). "
                       "Our own port = loopback test.");
-REXCVAR_DEFINE_INT32(mp_send_hz, 30, "Multiplayer", "How often our hero is sent (per second).");
+REXCVAR_DEFINE_INT32(mp_send_hz, 30, "Multiplayer", "How often our hero's position is sent (per second).");
+REXCVAR_DEFINE_INT32(mp_pose_hz, 20, "Multiplayer",
+                     "How often our hero's pose is sent (per second); peers blend between poses.");
 REXCVAR_DEFINE_STRING(mp_relay, "", "Multiplayer",
                       "Co-op relay server host:port. When set, mp_peers is ignored and every packet "
                       "goes through the relay.");
@@ -75,7 +88,7 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 1;
+constexpr uint8_t kProto = 2;  // 2: BYE, POSEQ
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
@@ -83,45 +96,14 @@ constexpr uint32_t kBonesPerPacket = 48;  // 48 * 24 B = 1152 B: stays under one
 constexpr float kMaxCoord = 100000.0f;
 constexpr auto kPeerTimeout = std::chrono::seconds(5);
 
-enum class Msg : uint8_t { Hello = 1, State = 2, Pose = 3, Create = 16, Join = 17, Welcome = 18, Refused = 19 };
-enum class Refuse : uint8_t { BadCode = 1, Full = 2, SlowDown = 3, NotJoined = 4, ServerFull = 5 };
+enum class Msg : uint8_t {
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5,
+  Create = 16, Join = 17, Welcome = 18, Refused = 19
+};
+enum class Refuse : uint8_t { BadCode = 1, Full = 2, SlowDown = 3, NotJoined = 4, ServerFull = 5, Version = 6 };
 constexpr size_t kCodeBytes = 8;
 
 using Clock = std::chrono::steady_clock;
-
-// --- half floats ----------------------------------------------------------
-inline uint16_t to_half(float f) {
-  uint32_t x;
-  std::memcpy(&x, &f, 4);
-  const uint32_t sign = (x >> 16) & 0x8000;
-  int32_t e = int32_t((x >> 23) & 0xFF) - 127 + 15;
-  uint32_t m = x & 0x7FFFFF;
-  if (e <= 0) return uint16_t(sign);                  // tiny -> signed zero
-  if (e >= 31) return uint16_t(sign | 0x7BFF);        // clamp to max finite
-  m += 0x1000;                                        // round to nearest
-  if (m & 0x800000) { m = 0; if (++e >= 31) return uint16_t(sign | 0x7BFF); }
-  return uint16_t(sign | (uint32_t(e) << 10) | (m >> 13));
-}
-inline float from_half(uint16_t h) {
-  const uint32_t sign = uint32_t(h & 0x8000) << 16;
-  const uint32_t e = (h >> 10) & 0x1F, m = h & 0x3FF;
-  uint32_t x;
-  if (e == 0) {
-    if (m == 0) x = sign;
-    else {  // subnormal
-      float f = std::ldexp(float(m), -24);
-      std::memcpy(&x, &f, 4);
-      x |= sign;
-    }
-  } else if (e == 31) {
-    x = sign | 0x7F800000 | (m << 13);  // inf / nan (rejected by the checks)
-  } else {
-    x = sign | ((e - 15 + 127) << 23) | (m << 13);
-  }
-  float f;
-  std::memcpy(&f, &x, 4);
-  return f;
-}
 
 // --- byte writer / reader (little-endian) ---------------------------------
 struct Writer {
@@ -245,6 +227,17 @@ class Net {
     self_id_ = (uint32_t(rd()) << 1) | 1;  // never 0
     thread_ = std::thread([this] { run(); });
     thread_.detach();
+    // Tell the others we left when the game closes (otherwise they wait for the timeout).
+    std::atexit([] { Net::Get().say_bye(); });
+  }
+
+  // Sends BYE to everyone we talk to (any thread; once).
+  void say_bye() {
+    if (!ready_.load() || bye_sent_.exchange(true)) return;
+    if (relay_mode_ && !joined_) return;
+    Writer w;
+    header(w, Msg::Bye);
+    send_all(w);
   }
 
  private:
@@ -292,6 +285,7 @@ class Net {
                   targets_.size());
     }
 
+    ready_ = true;
     std::vector<uint8_t> buf(2048);
     auto next_send = Clock::now(), next_hello = Clock::now(), next_log = Clock::now() + std::chrono::seconds(10);
     for (;;) {
@@ -328,7 +322,10 @@ class Net {
       const int hz = std::max(1, std::min(REXCVAR_GET(mp_send_hz), 120));
       if (now >= next_send) {
         next_send = now + std::chrono::microseconds(1000000 / hz);
-        send_hero();
+        const int pose_hz = std::max(1, std::min(REXCVAR_GET(mp_pose_hz), 60));
+        const bool pose_due = now >= next_pose_;
+        if (pose_due) next_pose_ = now + std::chrono::microseconds(1000000 / pose_hz);
+        send_hero(pose_due);
       }
       if (now >= next_log) {
         next_log = now + std::chrono::seconds(10);
@@ -441,12 +438,15 @@ class Net {
         case Refuse::BadCode:
         case Refuse::Full:
         case Refuse::ServerFull:
+        case Refuse::Version:
           if (Refuse(reason) == Refuse::BadCode && Clock::now() < rejoin_until_) break;
           if (!joined_ && !gave_up_) {
             gave_up_ = true;
             REXLOG_WARN("[mpnet] relay refused: {}",
-                        reason == 1 ? "no session with that code"
-                                    : reason == 2 ? "session is full" : "relay is full");
+                        reason == 1   ? "no session with that code"
+                        : reason == 2 ? "session is full"
+                        : reason == 6 ? "the session's host runs a different game version"
+                                      : "relay is full");
           }
           break;
         default:
@@ -513,7 +513,7 @@ class Net {
     send_all(w);
   }
 
-  void send_hero() {
+  void send_hero(bool with_pose) {
     float pos[3], qz, qw;
     uint32_t frame, parts;
     {
@@ -537,12 +537,13 @@ class Net {
     w.u32(frame);
     send_all(w);
 
-    if (frame == last_pose_sent_) return;
+    if (!with_pose || frame == last_pose_sent_) return;
     last_pose_sent_ = frame;
     for (uint32_t part = 0; part < parts; ++part) {
       const std::vector<float>& pose = pose_tx_[part];
       const uint32_t bones = uint32_t(pose.size() / 12);
       if (!bones || bones > kMaxBones) continue;
+      if (send_pose_q(pose, bones, frame, part, parts)) continue;
       for (uint32_t first = 0; first < bones; first += kBonesPerPacket) {
         const uint32_t count = std::min(kBonesPerPacket, bones - first);
         Writer p;
@@ -557,6 +558,75 @@ class Net {
         for (uint32_t k = first * 12; k < (first + count) * 12; ++k) p.u16(to_half(pose[k]));
         send_all(p);
       }
+    }
+  }
+
+  // --- compact poses (POSEQ) ------------------------------------------------
+  // Sends one part as POSEQ if every bone is rigid in one layout. Returns false
+  // (send POSE instead) otherwise.
+  bool send_pose_q(const std::vector<float>& pose, uint32_t bones, uint32_t frame, uint32_t part,
+                   uint32_t parts) {
+    int layout = 0;
+    for (int l = 1; l <= 2 && !layout; ++l) {
+      bool ok = true;
+      for (uint32_t b = 0; b < bones && ok; ++b) ok = is_rotation(&pose[b * 12], l);
+      if (ok) layout = l;
+    }
+    if (layout != last_layout_) {
+      last_layout_ = layout;
+      REXLOG_INFO("[mpnet] pose format: {}", layout ? (layout == 1 ? "compact (rows of 4)" : "compact (rows of 3)")
+                                                    : "full matrices");
+    }
+    if (!layout) return false;
+    for (uint32_t first = 0; first < bones; first += kBonesPerPacket) {
+      const uint32_t count = std::min(kBonesPerPacket, bones - first);
+      Writer p;
+      p.b.reserve(32 + count * 14);
+      header(p, Msg::PoseQ);
+      p.u32(frame);
+      p.u16(uint16_t(bones));
+      p.u16(uint16_t(first));
+      p.u16(uint16_t(count));
+      p.u8(uint8_t(part));
+      p.u8(uint8_t(parts));
+      p.u8(uint8_t(layout));
+      p.u8(0);
+      p.u16(0);
+      for (uint32_t b = first; b < first + count; ++b) {
+        const float* m = &pose[b * 12];
+        float q[4];
+        to_quat(m, layout, q);
+        for (float v : q) p.u16(to_half(v));
+        for (int k = 0; k < 3; ++k) p.u16(to_half(m[kPos[layout][k]]));
+      }
+      send_all(p);
+    }
+    return true;
+  }
+
+  // Stores decoded bones of one pose packet; publishes the pose when complete.
+  void assemble(PeerState* p, uint32_t frame, uint16_t bones, uint16_t first, uint16_t count,
+                uint8_t part, uint8_t parts, const float* vals) {
+    PeerPart& pp = p->parts[part];
+    if (pp.asm_frame != frame || pp.asm_pose.size() != size_t(bones) * 12) {
+      if (pp.asm_frame && int32_t(frame - pp.asm_frame) < 0) return;  // older frame
+      pp.asm_frame = frame;
+      pp.asm_pose.assign(size_t(bones) * 12, 0.0f);
+      pp.asm_have.assign(bones, 0);
+      pp.asm_count = 0;
+    }
+    std::memcpy(&pp.asm_pose[size_t(first) * 12], vals, size_t(count) * 12 * sizeof(float));
+    for (uint32_t b = first; b < uint32_t(first) + count; ++b) {
+      if (!pp.asm_have[b]) { pp.asm_have[b] = 1; ++pp.asm_count; }
+    }
+    p->part_count = parts;
+    if (pp.asm_count == bones) {  // complete: publish
+      pp.pose.swap(pp.asm_pose);
+      pp.frame = frame;
+      ++pp.version;
+      pp.asm_pose.clear();
+      pp.asm_count = 0;
+      stats_.poses.fetch_add(1, std::memory_order_relaxed);
     }
   }
 
@@ -653,28 +723,41 @@ class Net {
           vals[k] = from_half(r.u16());
           if (!finite_in(vals[k], 1000.0f)) return false;
         }
-        PeerPart& pp = p->parts[part];
-        if (pp.asm_frame != frame || pp.asm_pose.size() != size_t(bones) * 12) {
-          if (pp.asm_frame && int32_t(frame - pp.asm_frame) < 0) break;  // older frame
-          pp.asm_frame = frame;
-          pp.asm_pose.assign(size_t(bones) * 12, 0.0f);
-          pp.asm_have.assign(bones, 0);
-          pp.asm_count = 0;
-        }
-        std::memcpy(&pp.asm_pose[size_t(first) * 12], vals, size_t(count) * 12 * sizeof(float));
-        for (uint32_t b = first; b < uint32_t(first) + count; ++b) {
-          if (!pp.asm_have[b]) { pp.asm_have[b] = 1; ++pp.asm_count; }
-        }
-        p->part_count = parts;
-        if (pp.asm_count == bones) {  // complete: publish
-          pp.pose.swap(pp.asm_pose);
-          pp.frame = frame;
-          ++pp.version;
-          pp.asm_pose.clear();
-          pp.asm_count = 0;
-          stats_.poses.fetch_add(1, std::memory_order_relaxed);
-        }
+        assemble(p, frame, bones, first, count, part, parts, vals);
         break;
+      }
+      case Msg::PoseQ: {
+        const uint32_t frame = r.u32();
+        const uint16_t bones = r.u16(), first = r.u16(), count = r.u16();
+        const uint8_t part = r.u8(), parts = r.u8(), layout = r.u8();
+        r.u8();
+        r.u16();
+        if (!r.ok || bones == 0 || bones > kMaxBones || count == 0 || count > kBonesPerPacket ||
+            uint32_t(first) + count > bones || parts == 0 || parts > kMaxParts || part >= parts ||
+            layout < 1 || layout > 2 || n != r.i + size_t(count) * 14)
+          return false;
+        float vals[kBonesPerPacket * 12];
+        for (uint32_t b = 0; b < count; ++b) {
+          float q[4], t[3];
+          for (float& v : q) v = from_half(r.u16());
+          for (float& v : t) v = from_half(r.u16());
+          for (float v : q)
+            if (!finite_in(v, 1.5f)) return false;
+          for (float v : t)
+            if (!finite_in(v, 1000.0f)) return false;
+          const float len = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+          if (len < 0.5f || len > 1.5f) return false;
+          for (float& v : q) v /= len;
+          from_quat(q, t, layout, &vals[b * 12]);
+        }
+        assemble(p, frame, bones, first, count, part, parts, vals);
+        break;
+      }
+      case Msg::Bye: {
+        if (r.i != n) return false;
+        REXLOG_INFO("[mpnet] peer {:08X} left", p->id);
+        p->active = false;
+        return true;
       }
       default:
         return false;
@@ -690,6 +773,8 @@ class Net {
   std::vector<sockaddr_in> targets_;
   std::array<std::vector<float>, kMaxParts> pose_tx_;
   uint32_t last_pose_sent_ = 0;
+  Clock::time_point next_pose_{};
+  int last_layout_ = -1;
   uint32_t self_id_ = 0;
   uint32_t seq_ = 0;
   bool started_ = false;
@@ -704,6 +789,7 @@ class Net {
   Clock::time_point next_join_{};
   Clock::time_point rejoin_until_{};
   SOCKET sock_ = INVALID_SOCKET;
+  std::atomic<bool> ready_{false}, bye_sent_{false};
   std::thread thread_;
 };
 

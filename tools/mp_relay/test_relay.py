@@ -7,8 +7,8 @@ import unittest
 import relay as R
 
 
-def hdr(mtype, sender, seq=1):
-    return R.HEADER.pack(R.MAGIC, R.PROTO, mtype, 0, sender, seq)
+def hdr(mtype, sender, seq=1, proto=R.PROTO):
+    return R.HEADER.pack(R.MAGIC, proto, mtype, 0, sender, seq)
 
 
 def hello(sender, bones=143):
@@ -24,12 +24,17 @@ def pose(sender, count=48, first=0, bones=143, part=0, parts=1):
             + b"\0" * (count * 24))
 
 
-def create(sender, want=""):
-    return hdr(R.CREATE, sender) + want.encode().ljust(8, b"\0")
+def poseq(sender, count=48, first=0, bones=143, part=0, parts=1, layout=1):
+    return (hdr(R.POSEQ, sender) + struct.pack("<IHHHBBBBH", 9, bones, first, count, part, parts, layout, 0, 0)
+            + b"\0" * (count * 14))
 
 
-def join(sender, code):
-    return hdr(R.JOIN, sender) + code.encode().ljust(8, b"\0")
+def create(sender, want="", proto=R.PROTO):
+    return hdr(R.CREATE, sender, proto=proto) + want.encode().ljust(8, b"\0")
+
+
+def join(sender, code, proto=R.PROTO):
+    return hdr(R.JOIN, sender, proto=proto) + code.encode().ljust(8, b"\0")
 
 
 class Client:
@@ -189,6 +194,44 @@ class RelayTest(unittest.IsolatedAsyncioTestCase):
         got = parse(a.recv_all())
         self.assertEqual(got[0][2][16:24].rstrip(b"\0").decode(), code)
         self.assertEqual(len(self.relay.sessions), 1)
+
+
+class RelayV2Test(RelayTest):
+    async def test_poseq_and_bye(self):
+        a, b = self.client(), self.client()
+        code = await self.host_session(a, 11)
+        b.send(join(13, code))
+        await self.pump()
+        b.recv_all()
+        a.send(poseq(11))
+        a.send(poseq(11, layout=3))  # bad layout
+        a.send(poseq(11)[:-2])       # bad length
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.POSEQ])
+        a.send(hdr(R.BYE, 11))
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.BYE])
+        self.assertNotIn(a.s.getsockname(), self.relay.players)  # BYE leaves at once
+        self.assertEqual(len(next(iter(self.relay.sessions.values())).players), 1)
+
+    async def test_version_mismatch_refused(self):
+        a, b = self.client(), self.client()
+        a.send(create(11, proto=1))
+        await self.pump()
+        code = parse(a.recv_all())[0][2][16:24].rstrip(b"\0").decode()
+        b.send(join(13, code, proto=2))
+        await self.pump()
+        got = parse(b.recv_all())
+        self.assertEqual((got[0][0], got[0][2][16]), (R.REFUSED, R.REFUSE_VERSION))
+        # an old (proto 1) game cannot send new message types
+        b2 = self.client()
+        b2.send(join(14, code, proto=1))
+        await self.pump()
+        self.assertEqual(parse(b2.recv_all())[0][0], R.WELCOME)
+        a.send(hdr(R.BYE, 11, proto=1))
+        a.send(hdr(R.STATE, 11, proto=1) + struct.pack("<IfffffI", 5, 1.0, 2.0, 3.0, 0.0, 1.0, 7))
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b2.recv_all())], [R.STATE])
 
 
 if __name__ == "__main__":

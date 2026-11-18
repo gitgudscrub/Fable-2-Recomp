@@ -1350,6 +1350,58 @@
                   </Grid>
                   <TextBlock Style="{StaticResource PageHint}" FontSize="14.5" Margin="0,0,0,8" TextWrapping="Wrap"
                              Text="Experimental. Up to 4 players: each of you plays your own game and sees the others walking around in your world. Fighting together, shared quests and loot come later." />
+
+                  <!-- Friends (needs the friends service; hidden without one) -->
+                  <StackPanel x:Name="FriendsSection">
+                    <TextBlock Text="FRIENDS" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource GoldDeep}" Margin="0,10,0,2" />
+                    <StackPanel x:Name="SignedOutPanel">
+                      <TextBlock Style="{StaticResource PageHint}" Margin="0,2,0,8"
+                                 Text="Make an account to add friends, see when they're playing and invite them with one click." />
+                      <Border Style="{StaticResource Row}">
+                        <DockPanel>
+                          <TextBox x:Name="AccountNameBox" DockPanel.Dock="Right" Width="230" MaxLength="20" FontSize="14"
+                                   VerticalAlignment="Center" Style="{StaticResource PageTextBox}" />
+                          <TextBlock Text="Username" Style="{StaticResource PageText}" />
+                        </DockPanel>
+                      </Border>
+                      <Border Style="{StaticResource Row}">
+                        <DockPanel>
+                          <PasswordBox x:Name="AccountPasswordBox" DockPanel.Dock="Right" Width="230" MaxLength="128" FontSize="14"
+                                       VerticalAlignment="Center" Padding="4,3" Foreground="{DynamicResource Ink}"
+                                       Background="{DynamicResource WellPage}" BorderBrush="{DynamicResource CtlLine}"
+                                       CaretBrush="{DynamicResource Ink}" KeyDown="AccountPasswordKeyDown" />
+                          <TextBlock Text="Password" Style="{StaticResource PageText}" />
+                        </DockPanel>
+                      </Border>
+                      <WrapPanel Margin="0,10,0,0">
+                        <Button x:Name="SignInButton" Style="{StaticResource PageButtonGreen}" Content="Sign in" Click="SignInClicked" />
+                        <Button x:Name="CreateAccountButton" Style="{StaticResource PageButton}" Content="Create account" Click="CreateAccountClicked" />
+                      </WrapPanel>
+                    </StackPanel>
+                    <StackPanel x:Name="SignedInPanel" Visibility="Collapsed">
+                      <Border Style="{StaticResource Row}">
+                        <DockPanel>
+                          <Button DockPanel.Dock="Right" Style="{StaticResource PageButton}" Content="Sign out" Margin="0"
+                                  VerticalAlignment="Center" Click="SignOutClicked" />
+                          <TextBlock x:Name="SignedInText" Style="{StaticResource PageText}" />
+                        </DockPanel>
+                      </Border>
+                      <StackPanel x:Name="InviteList" />
+                      <StackPanel x:Name="RequestList" />
+                      <StackPanel x:Name="FriendList" />
+                      <Border Style="{StaticResource Row}">
+                        <DockPanel>
+                          <Button DockPanel.Dock="Right" Style="{StaticResource PageButton}" Content="Add" Margin="8,0,0,0"
+                                  VerticalAlignment="Center" Click="AddFriendClicked" />
+                          <TextBox x:Name="AddFriendBox" DockPanel.Dock="Right" Width="180" MaxLength="20" FontSize="14"
+                                   VerticalAlignment="Center" Style="{StaticResource PageTextBox}" KeyDown="AddFriendKeyDown" />
+                          <TextBlock Text="Add a friend by username" Style="{StaticResource PageText}" />
+                        </DockPanel>
+                      </Border>
+                    </StackPanel>
+                    <TextBlock x:Name="FriendsNote" Style="{StaticResource PageHint}" Margin="0,8,0,0" Visibility="Collapsed" />
+                    <TextBlock Text="PLAY TOGETHER" FontSize="12.5" FontWeight="Bold" Foreground="{DynamicResource GoldDeep}" Margin="0,22,0,2" />
+                  </StackPanel>
                   <Border Style="{StaticResource Row}">
                     <DockPanel>
                       <Border DockPanel.Dock="Right" BorderBrush="{DynamicResource CtlLine}" BorderThickness="1" CornerRadius="6" ClipToBounds="True">
@@ -1370,7 +1422,7 @@
                                  TextChanged="CoopTextChanged" />
                         <StackPanel VerticalAlignment="Center">
                           <TextBlock Text="Server" Style="{StaticResource PageText}" />
-                          <TextBlock Text="The co-op server's address, like example.net:27970. The host gives it to you."
+                          <TextBlock x:Name="CoopServerHint" Text="The co-op server's address, like example.net:27970. The host gives it to you."
                                      Style="{StaticResource PageHint}" TextWrapping="Wrap" />
                         </StackPanel>
                       </DockPanel>

@@ -40,7 +40,7 @@ fable_2.exe --mp_enable=true --mp_relay=<server>:27970 --mp_host=true
 ```
 
 The invite code shows up in the log (`[mpnet] in session ABC123`) and in
-`mp_session.txt` next to the exe.
+`mp_session.txt` in the folder the game runs in (the launcher's data folder).
 
 Friends:
 

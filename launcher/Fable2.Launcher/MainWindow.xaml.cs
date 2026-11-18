@@ -68,6 +68,7 @@ public partial class MainWindow : Window
         if (Environment.GetCommandLineArgs().Contains("--preview=update-ready")) _updater.PreviewPending("9.9.9");
         LoadSettings();
         _loading = false;
+        InitFriends();
         UpdateVersionText();
         RefreshGameState();
         if (note is not null) ShowToast(note);
@@ -585,10 +586,12 @@ public partial class MainWindow : Window
             // Performance logs: the game writes logs/perf_*.log itself ([perf] performance_log);
             // this adds slow shader and pipeline builds to the game log.
             if (_recomp.PerformanceLog) startInfo.ArgumentList.Add("--d3d12_log_pipeline_timing=true");
-            foreach (string arg in CoopArguments()) startInfo.ArgumentList.Add(arg);
-            Process.Start(startInfo);
+            List<string> coop = CoopArguments();
+            foreach (string arg in coop) startInfo.ArgumentList.Add(arg);
+            try { File.Delete(SessionFile); } catch (IOException) { }
+            Process? game = Process.Start(startInfo);
             _gameLaunched = true;
-            Close();
+            if (coop.Count == 0 || !StayInTrayFor(game)) Close();
         }
         catch (Exception exception)
         {

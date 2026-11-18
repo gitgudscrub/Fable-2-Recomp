@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon) while a co-op game runs. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>Fable2Launcher</AssemblyName>
@@ -14,6 +16,9 @@
     <StartupObject>Fable2Launcher.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <!-- WPF names win: Windows Forms is only used by full name (Forms.NotifyIcon). -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
     <Compile Include="..\..\constants\GameVersions.cs" Link="Constants\GameVersions.cs" />
     <!-- Disc reference lists for "Check game files" (made with x360extract, manifest option). -->
     <EmbeddedResource Include="..\..\constants\disc-manifests\*.txt" LogicalName="DiscManifests/%(Filename)%(Extension)" />
@@ -29,5 +34,6 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Velopack" Version="1.2.161" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 </Project>

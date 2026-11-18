@@ -68,8 +68,8 @@ REXCVAR_DEFINE_STRING(mp_relay, "", "Multiplayer",
                       "Co-op relay server host:port. When set, mp_peers is ignored and every packet "
                       "goes through the relay.");
 REXCVAR_DEFINE_BOOL(mp_host, false, "Multiplayer",
-                    "With mp_relay: start a new session; the invite code is logged and written "
-                    "to mp_session.txt next to the exe.");
+                    "With mp_relay: start a new session; the invite code is logged, shown in "
+                    "the window title and written to mp_session.txt in the working folder.");
 REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of the session to join.");
 
 namespace fable2::net {
@@ -457,15 +457,10 @@ class Net {
     return false;
   }
 
-  // mp_session.txt next to the exe, so a launcher (later) can show the code.
+  // mp_session.txt in the working folder: the launcher starts the game in its
+  // data folder and reads the code from there to invite friends.
   void write_session_file() {
-    wchar_t path[MAX_PATH];
-    const DWORD len = GetModuleFileNameW(nullptr, path, MAX_PATH);
-    if (!len || len >= MAX_PATH) return;
-    std::wstring p(path, len);
-    const size_t slash = p.find_last_of(L"\\/");
-    p = (slash == std::wstring::npos ? L"" : p.substr(0, slash + 1)) + L"mp_session.txt";
-    if (FILE* f = _wfopen(p.c_str(), L"w")) {
+    if (FILE* f = _wfopen(L"mp_session.txt", L"w")) {
       std::fprintf(f, "%s\n", code_.c_str());
       std::fclose(f);
     }

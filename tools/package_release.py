@@ -73,7 +73,25 @@ def release_files(root, build, launcher):
         raise SystemExit("package_release: no Lua scripts in data/scripts/recomp")
     for script in scripts:
         files[f"data/scripts/recomp/{script.name}"] = script
+    # Co-op friends service address (launcher Co-op page). Kept out of the repo, in
+    # the release PC's %USERPROFILE%\.project-sparrow\coop.json: {"friends": "https://..."}.
+    # Without it, the release ships with friends turned off.
+    coop = coop_config()
+    if coop is not None:
+        files["coop.json"] = coop
     return files
+
+
+def coop_config():
+    path = Path.home() / ".project-sparrow" / "coop.json"
+    if not path.is_file():
+        print("package_release: no ~/.project-sparrow/coop.json, so co-op friends are off in this release")
+        return None
+    data = json.loads(path.read_text(encoding="utf8"))
+    url = data.get("friends", "")
+    if not isinstance(url, str) or not url.startswith("https://"):
+        raise SystemExit("package_release: coop.json 'friends' must be an https:// address")
+    return json.dumps({"friends": url}, indent=2) + "\n"
 
 
 def write_zip(path, folder, files):

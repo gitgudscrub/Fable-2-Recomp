@@ -48,38 +48,49 @@ public partial class MainWindow
 
     private void RefreshCoop()
     {
+        if (CoopDetails is null) return;
         string mode = _home.Settings.CoopMode;
         CoopDetails.Visibility = mode is "host" or "join" ? Visibility.Visible : Visibility.Collapsed;
         CoopCodeRow.Visibility = mode == "join" ? Visibility.Visible : Visibility.Collapsed;
+        CoopServerHint.Text = FriendsApi.Relay is not null
+            ? "Leave empty to use the Project Sparrow co-op server."
+            : "The co-op server's address, like example.net:27970. The host gives it to you.";
         CoopNote.Text = CoopProblem() ?? (mode == "host"
-            ? "Press Play. Your invite code shows in the game window's title: give it and the server address to your friends."
+            ? FriendsApi.SignedIn
+                ? "Press Play, then invite friends from this page (the launcher waits in the tray while you play). The invite code also shows in the game window's title."
+                : "Press Play. Your invite code shows in the game window's title: give it to your friends."
             : "Press Play to join. Any save works.");
     }
+
+    private string CoopMode => _inviteJoin is not null ? "join" : _home.Settings.CoopMode;
+    private string CoopServer => _inviteJoin is { } invite ? invite.Server ?? ""
+        : _home.Settings.CoopServer.Length > 0 ? _home.Settings.CoopServer : FriendsApi.Relay ?? "";
+    private string CoopCode => _inviteJoin?.Code ?? _home.Settings.CoopCode;
 
     /// <summary>What still needs filling in before Play can start co-op, or null.</summary>
     private string? CoopProblem()
     {
-        string mode = _home.Settings.CoopMode;
+        string mode = CoopMode;
         if (mode is not ("host" or "join")) return null;
-        string server = _home.Settings.CoopServer;
+        string server = CoopServer;
         if (server.Length == 0) return "Enter the server address first.";
         if (!CoopServerPattern.IsMatch(server)) return "The server address should look like example.net:27970.";
-        if (mode == "join" && !CoopCodePattern.IsMatch(_home.Settings.CoopCode))
+        if (mode == "join" && !CoopCodePattern.IsMatch(CoopCode))
             return "Enter the invite code from the host (the letters in their game's window title).";
         return null;
     }
 
-    /// <summary>Game arguments for the chosen co-op mode (none when off or not filled in).</summary>
-    private IEnumerable<string> CoopArguments()
+    private bool CoopOn => CoopMode is "host" or "join";
+
+    /// <summary>Game arguments for the chosen co-op mode (none when off).</summary>
+    private List<string> CoopArguments()
     {
-        string mode = _home.Settings.CoopMode;
-        if (mode is not ("host" or "join")) yield break;
+        if (!CoopOn) return [];
         string? problem = CoopProblem();
         if (problem is not null)
             throw new InvalidOperationException("Co-op: " + problem + " Or set Co-op to Off to play alone.");
-        yield return "--mp_enable=true";
-        yield return "--mp_relay=" + _home.Settings.CoopServer;
-        if (mode == "host") yield return "--mp_host=true";
-        else yield return "--mp_join=" + _home.Settings.CoopCode;
+        var args = new List<string> { "--mp_enable=true", "--mp_relay=" + CoopServer };
+        args.Add(CoopMode == "host" ? "--mp_host=true" : "--mp_join=" + CoopCode);
+        return args;
     }
 }

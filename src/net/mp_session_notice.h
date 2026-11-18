@@ -41,4 +41,23 @@ inline void notify_session(const std::string& code) {
   if (fn) fn(code);
 }
 
+// Leaving: the SDK ends the process with _Exit when the window closes, which
+// skips atexit, so the app calls this from OnClosing to send BYE first.
+inline std::function<void()>& leave_hook() {
+  static std::function<void()> fn;
+  return fn;
+}
+inline void set_leave_hook(std::function<void()> fn) {
+  std::lock_guard<std::mutex> l(session_notice().m);
+  leave_hook() = std::move(fn);
+}
+inline void notify_leaving() {
+  std::function<void()> fn;
+  {
+    std::lock_guard<std::mutex> l(session_notice().m);
+    fn = leave_hook();
+  }
+  if (fn) fn();
+}
+
 }  // namespace fable2::net

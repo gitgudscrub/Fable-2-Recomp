@@ -179,6 +179,13 @@ class Fable2App : public rex::ReXApp {
     };
   }
 
+  // Co-op: say BYE before the SDK hard-exits the process (its _Exit skips
+  // atexit). Close button / Alt+F4 come here; the menu's Quit calls it itself.
+  bool OnWindowCloseRequested() override {
+    fable2::net::notify_leaving();
+    return true;
+  }
+
   void OnPostSetup() override {
     fable2::branding::Apply(window());
     // Co-op: show the invite code in the title so the host can read it out.
@@ -188,6 +195,7 @@ class Fable2App : public rex::ReXApp {
       });
     });
     fable2::menu::SetQuitHandler([this] {
+      fable2::net::notify_leaving();  // RequestClose skips OnWindowCloseRequested
       app_context().CallInUIThread([this] {
         if (window()) window()->RequestClose();
       });

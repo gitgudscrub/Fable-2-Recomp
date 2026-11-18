@@ -227,7 +227,10 @@ class Net {
     self_id_ = (uint32_t(rd()) << 1) | 1;  // never 0
     thread_ = std::thread([this] { run(); });
     thread_.detach();
-    // Tell the others we left when the game closes (otherwise they wait for the timeout).
+    // Tell the others we left when the game closes (otherwise they wait for the
+    // timeout): from the window's OnClosing (the SDK then _Exits, skipping
+    // atexit), and atexit for any normal exit path.
+    set_leave_hook([] { Net::Get().say_bye(); });
     std::atexit([] { Net::Get().say_bye(); });
   }
 
@@ -307,6 +310,9 @@ class Net {
         }
       }
       const auto now = Clock::now();
+      // After BYE the game is closing: send nothing more (a late packet would
+      // be refused as not-joined and the rejoin would leave a ghost player).
+      if (bye_sent_.load()) continue;
       if (relay_mode_ && !joined_) {
         if (!gave_up_ && now >= next_join_) {
           next_join_ = now + std::chrono::seconds(2);

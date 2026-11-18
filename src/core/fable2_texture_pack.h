@@ -68,6 +68,13 @@ inline void SeedCvars(const std::filesystem::path& user_root) {
   seed("post_aa", cfg.anti_aliasing ? "true" : "false");
   seed("post_bloom", cfg.bloom ? "true" : "false");
   seed("sparrow_renderer", cfg.sparrow_renderer ? "true" : "false");
+  // Project Sparrow's sharper picture: SMAA instead of FXAA, contrast-adaptive
+  // sharpening instead of the plain 3x3, and textures a half mip sharper.
+  if (cfg.sparrow_renderer) {
+    seed("post_smaa", "true");
+    seed("post_grade_sharpen", "-0.5");
+    if (cfg.texture_pack) seed("texture_lod_bias", "-0.5");
+  }
   // Ultra (Sparrow Edition): heavier versions of the settings above.
   if (cfg.ultra) {
     seed("post_light_shafts", "true");

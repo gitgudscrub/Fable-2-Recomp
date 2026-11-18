@@ -589,6 +589,7 @@ public partial class MainWindow : Window
             List<string> coop = CoopArguments();
             foreach (string arg in coop) startInfo.ArgumentList.Add(arg);
             try { File.Delete(SessionFile); } catch (IOException) { }
+            try { File.Delete(CoopStatusFile); } catch (IOException) { }
             Process? game = Process.Start(startInfo);
             _gameLaunched = true;
             if (coop.Count == 0 || !StayInTrayFor(game)) Close();

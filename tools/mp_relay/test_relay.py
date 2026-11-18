@@ -233,6 +233,17 @@ class RelayV2Test(RelayTest):
         await self.pump()
         self.assertEqual([t for t, *_ in parse(b2.recv_all())], [R.STATE])
 
+    async def test_newer_game_told_unsupported(self):
+        a = self.client()
+        a.send(create(11, proto=R.PROTO + 1))
+        a.send(create(11, proto=R.PROTO + 1))  # second one inside the notice gap: silent
+        await self.pump()
+        got = a.recv_all()
+        self.assertEqual(len(got), 1)
+        _m, proto, t, _f, _s, _q = R.HEADER.unpack_from(got[0])
+        self.assertEqual((proto, t, got[0][16]), (R.PROTO + 1, R.REFUSED, R.REFUSE_UNSUPPORTED))
+        self.assertEqual(len(self.relay.sessions), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

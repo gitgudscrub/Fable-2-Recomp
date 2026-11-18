@@ -65,6 +65,9 @@ Choose **Stable** or **Beta** under **Updates**. Portable copies don't update.
 
 - **Help → Check game files** compares your game files with the original disc.
 - **Help → Report a problem** collects your logs and settings for a bug report.
+- Co-op problems show a notice at the top of the screen with a code like
+  **CO-104**. Please include the code when you report it. All the codes:
+  https://github.com/gitgudscrub/Fable-2-Recomp/blob/master/docs/COOP_ERRORS.md
 - Ask on the Discord: https://discord.gg/8TQUZpPNeR
 
 ## Credits

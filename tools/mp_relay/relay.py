@@ -44,6 +44,7 @@ GAME_TYPES = {1: (HELLO, STATE, POSE), 2: (HELLO, STATE, POSE, BYE, POSEQ)}
 CREATE, JOIN, WELCOME, REFUSED = 16, 17, 18, 19
 
 REFUSE_BAD_CODE, REFUSE_FULL, REFUSE_SLOW_DOWN, REFUSE_NOT_JOINED, REFUSE_SERVER_FULL, REFUSE_VERSION = 1, 2, 3, 4, 5, 6
+REFUSE_UNSUPPORTED = 7  # the game is newer than this relay (the game shows CO-105)
 
 MAX_PLAYERS = 4
 MAX_SESSIONS = 64
@@ -263,7 +264,15 @@ class Relay(asyncio.DatagramProtocol):
         if len(data) < 16 or len(data) > 1500:
             return self._drop()
         magic, proto, mtype, _flags, sender, _seq = HEADER.unpack_from(data)
-        if magic != MAGIC or proto not in PROTOS or sender == 0:
+        if magic != MAGIC or sender == 0:
+            return self._drop()
+        if proto not in PROTOS:
+            # A newer game asking to get in: tell it (in its own protocol version,
+            # which it can parse) rather than letting it wait for an answer.
+            quiet = now - self.refuse_notice.get(addr, 0.0) < REFUSE_NOTICE_GAP
+            if mtype in (CREATE, JOIN) and len(data) == 24 and not quiet:
+                self.refuse_notice[addr] = now
+                self._refuse(addr, REFUSE_UNSUPPORTED, proto)
             return self._drop()
         if mtype == CREATE:
             return self._on_create(addr, sender, data[16:], now, proto)

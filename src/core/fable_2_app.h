@@ -59,6 +59,8 @@ void record_a_press(std::int64_t ms);
 #include "xex_verify.h"
 #include "game_branding.h"
 #include "mp_session_notice.h"  // co-op invite code -> window title (src/net)
+#include <rex/ui/overlay/notice.h>  // co-op problems on screen
+#include <memory>
 #include "shader_prebuild.h"
 
 namespace {
@@ -192,6 +194,32 @@ class Fable2App : public rex::ReXApp {
     fable2::net::set_session_listener([this](const std::string& code) {
       app_context().CallInUIThread([this, code] {
         if (window()) window()->SetTitle("Fable 2 Recompiled - co-op invite code " + code);
+      });
+    });
+    // Co-op problems: an on-screen notice with the code to quote (docs/COOP_ERRORS.md),
+    // and the code in the title too, so it shows in screenshots. Text comes only
+    // from the fixed table in mp_errors.h. "Co-op connected" once a problem clears.
+    // (the listener is copied per call, so the flag is shared, not captured by value)
+    fable2::net::set_error_listener([this, had = std::make_shared<bool>(false)](fable2::net::CoopError e) {
+      bool& had_problem = *had;
+      std::string title = "Fable 2 Recompiled";
+      if (e != fable2::net::CoopError::None) {
+        const auto* info = fable2::net::coop_error_info(e);
+        const std::string code = fable2::net::coop_error_code(e);
+        title += " - co-op problem " + code;
+        if (info) title += std::string(" (") + info->title + ")";
+        rex::ui::ShowNotice(rex::ui::NoticeKind::kWarning,
+                            std::string("Co-op: ") + (info ? info->title : "problem"),
+                            info ? info->message : "", "Error " + code, 20.0f);
+        had_problem = true;
+      } else {
+        if (std::string code = fable2::net::current_session_code(); !code.empty())
+          title += " - co-op invite code " + code;
+        if (had_problem) rex::ui::ShowNotice(rex::ui::NoticeKind::kInfo, "Co-op connected", "", "", 4.0f);
+        had_problem = false;
+      }
+      app_context().CallInUIThread([this, title] {
+        if (window()) window()->SetTitle(title);
       });
     });
     fable2::menu::SetQuitHandler([this] {

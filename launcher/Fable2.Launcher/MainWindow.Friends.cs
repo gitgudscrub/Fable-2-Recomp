@@ -31,6 +31,12 @@ public partial class MainWindow
     private (string Code, string? Server)? _inviteJoin;
 
     private string SessionFile => Path.Combine(_home.DataFolder, "mp_session.txt");
+    /// <summary>The game writes co-op problems here ("ok", or "error CO-1xx" + title + message).</summary>
+    private string CoopStatusFile => Path.Combine(_home.DataFolder, "mp_status.txt");
+    private readonly DispatcherTimer _coopStatusTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private string? _lastCoopStatus;
+    private static readonly System.Text.RegularExpressions.Regex CoopErrorPattern =
+        new(@"^error (CO-\d{3})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
     private bool GameRunning => _gameProcess is { HasExited: false };
 
     private void InitFriends()
@@ -334,8 +340,13 @@ public partial class MainWindow
         _gameProcess = game;
         _gameStarted = DateTime.UtcNow.AddSeconds(-2);
         game.EnableRaisingEvents = true;
+        _lastCoopStatus = null;
+        _coopStatusTimer.Tick -= CheckCoopStatus;
+        _coopStatusTimer.Tick += CheckCoopStatus;
+        _coopStatusTimer.Start();
         game.Exited += (_, _) => Dispatcher.BeginInvoke(() =>
         {
+            _coopStatusTimer.Stop();
             if (ReferenceEquals(game, _gameProcess) && IsLoaded) { _closeFromTray = true; Close(); }
         });
         if (_tray is null)
@@ -356,6 +367,37 @@ public partial class MainWindow
         Hide();
         _ = RefreshFriends();
         return true;
+    }
+
+    /// <summary>Shows a co-op problem the game reported (with its code, so players can quote it).</summary>
+    private void CheckCoopStatus(object? sender, EventArgs e)
+    {
+        if (!GameRunning) { _coopStatusTimer.Stop(); return; }
+        string[] lines;
+        try
+        {
+            var info = new FileInfo(CoopStatusFile);
+            if (!info.Exists || info.Length > 4096 || info.LastWriteTimeUtc < _gameStarted) return;
+            lines = File.ReadAllLines(CoopStatusFile);
+        }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+        string status = string.Join('\n', lines);
+        if (lines.Length == 0 || status == _lastCoopStatus) return;
+        _lastCoopStatus = status;
+        var match = CoopErrorPattern.Match(lines[0].Trim());
+        if (!match.Success)
+        {
+            if (lines[0].Trim() == "ok") FriendsMessage(null);
+            return;
+        }
+        static string Clip(string text) => text.Length > 300 ? text[..300] : text;
+        string code = match.Groups[1].Value;
+        string title = lines.Length > 1 ? Clip(lines[1].Trim()) : "Co-op problem";
+        string message = lines.Length > 2 ? Clip(lines[2].Trim()) : "";
+        FriendsMessage($"Co-op problem: {title}. {message} (Error {code})");
+        if (_tray is { Visible: true })
+            _tray.ShowBalloonTip(15000, $"Co-op problem: {title}", $"{message}\nError {code}", Forms.ToolTipIcon.Warning);
     }
 
     private void ShowFromTray()

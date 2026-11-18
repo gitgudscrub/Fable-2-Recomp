@@ -23,6 +23,9 @@ clang++ -std=c++23 -I"%SDK%\include" -I"%SDK%\thirdparty\fmt\include" -I"%SDK%\t
 rem Multiplayer pose formats (half floats, quaternion + translation).
 clang++ -std=c++23 -I"%ROOT%\src\net" "%~dp0native\test_mp_pose_codec.cpp" -o "%OUT%\pose-codec.exe" || exit /b 1
 "%OUT%\pose-codec.exe" || exit /b 1
+rem Co-op error codes: table is sane and docs/COOP_ERRORS.md lists every code.
+clang++ -std=c++23 -I"%ROOT%\src\net" "%~dp0native\test_mp_errors.cpp" -o "%OUT%\coop-errors.exe" || exit /b 1
+"%OUT%\coop-errors.exe" "%ROOT%\docs\COOP_ERRORS.md" || exit /b 1
 for %%P in (goty-compatible goty-us-eu goty-german) do (
   clang++ -std=c++23 -DFABLE2_BUILD_PROFILE=\"%%P\" "%~dp0native\test_xex_verify.cpp" -o "%OUT%\xex-%%P.exe" || exit /b 1
   "%OUT%\xex-%%P.exe" || exit /b 1

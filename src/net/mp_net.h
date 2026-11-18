@@ -100,7 +100,11 @@ enum class Msg : uint8_t {
   Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
-enum class Refuse : uint8_t { BadCode = 1, Full = 2, SlowDown = 3, NotJoined = 4, ServerFull = 5, Version = 6 };
+enum class Refuse : uint8_t {
+  BadCode = 1, Full = 2, SlowDown = 3, NotJoined = 4, ServerFull = 5, Version = 6,
+  Unsupported = 7  // the relay does not speak our protocol version
+};
+constexpr auto kNoAnswerAfter = std::chrono::seconds(15);
 constexpr size_t kCodeBytes = 8;
 
 using Clock = std::chrono::steady_clock;
@@ -250,11 +254,13 @@ class Net {
     WSADATA d;
     if (WSAStartup(MAKEWORD(2, 2), &d) != 0) {
       REXLOG_ERROR("[mpnet] WSAStartup failed ({})", WSAGetLastError());
+      fail(CoopError::NetworkError);
       return;
     }
     sock_ = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock_ == INVALID_SOCKET) {
       REXLOG_ERROR("[mpnet] socket failed ({})", WSAGetLastError());
+      fail(CoopError::NetworkError);
       return;
     }
     // A UDP socket on Windows reports ICMP "port unreachable" from an earlier
@@ -274,6 +280,7 @@ class Net {
     addr.sin_port = htons(port);
     if (::bind(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
       REXLOG_ERROR("[mpnet] cannot bind UDP port {} ({})", port, WSAGetLastError());
+      fail(CoopError::NetworkError);
       closesocket(sock_);
       return;
     }
@@ -314,6 +321,10 @@ class Net {
       // be refused as not-joined and the rejoin would leave a ghost player).
       if (bye_sent_.load()) continue;
       if (relay_mode_ && !joined_) {
+        // Nothing back from the relay at all: tell the player (we keep trying,
+        // and the notice clears once we get in).
+        if (!gave_up_ && now - join_since_ > kNoAnswerAfter && last_reply_ < join_since_)
+          fail(CoopError::NoAnswer);
         if (!gave_up_ && now >= next_join_) {
           next_join_ = now + std::chrono::seconds(2);
           send_join();
@@ -367,6 +378,7 @@ class Net {
   bool setup_relay() {
     if (!resolve(REXCVAR_GET(mp_relay), relay_)) {
       REXLOG_ERROR("[mpnet] cannot resolve relay '{}' (expected host:port)", REXCVAR_GET(mp_relay));
+      fail(CoopError::BadAddress);
       return false;
     }
     std::string code = REXCVAR_GET(mp_join);
@@ -375,11 +387,13 @@ class Net {
     hosting_ = REXCVAR_GET(mp_host);
     if (!hosting_ && code.empty()) {
       REXLOG_ERROR("[mpnet] mp_relay is set but neither mp_host nor mp_join is; not connecting");
+      fail(CoopError::NoMode);
       return false;
     }
     if (hosting_) code.clear();
     join_code_ = code;
     targets_.assign(1, relay_);
+    join_since_ = Clock::now();
     REXLOG_INFO("[mpnet] id {:08X}; {} through the relay", self_id_,
                 hosting_ ? std::string("starting a session") : "joining session " + join_code_);
     return true;
@@ -414,6 +428,8 @@ class Net {
       if (c.empty()) return false;
       const bool first = !joined_ || c != code_;
       joined_ = true;
+      was_joined_ = true;
+      clear_problem();
       code_ = c;
       if (first) {
         REXLOG_INFO("[mpnet] in session {} ({}/{} players){}", code_, players, max,
@@ -436,6 +452,7 @@ class Net {
             next_join_ = Clock::now();
             // the host may not have re-made the session yet: keep trying for a minute
             rejoin_until_ = Clock::now() + std::chrono::seconds(60);
+            join_since_ = Clock::now();
           }
           break;
         case Refuse::SlowDown:
@@ -445,18 +462,30 @@ class Net {
         case Refuse::Full:
         case Refuse::ServerFull:
         case Refuse::Version:
+        case Refuse::Unsupported:
           if (Refuse(reason) == Refuse::BadCode && Clock::now() < rejoin_until_) break;
           if (!joined_ && !gave_up_) {
             gave_up_ = true;
-            REXLOG_WARN("[mpnet] relay refused: {}",
-                        reason == 1   ? "no session with that code"
-                        : reason == 2 ? "session is full"
-                        : reason == 6 ? "the session's host runs a different game version"
-                                      : "relay is full");
+            switch (Refuse(reason)) {
+              case Refuse::BadCode:
+                // our session vanished (relay restart) and the host never re-made it
+                fail(was_joined_ ? CoopError::SessionLost : CoopError::BadCode);
+                break;
+              case Refuse::Full: fail(CoopError::SessionFull); break;
+              case Refuse::ServerFull: fail(CoopError::ServerFull); break;
+              case Refuse::Version: fail(CoopError::HostVersion); break;
+              default: fail(CoopError::ServerVersion); break;
+            }
           }
           break;
         default:
-          return false;
+          // a newer relay's reason: still a refusal, so stop and say so
+          if (!joined_ && !gave_up_) {
+            gave_up_ = true;
+            REXLOG_WARN("[mpnet] relay refused with unknown reason {}", reason);
+            fail(CoopError::UnknownRefusal);
+          }
+          break;
       }
       return true;
     }
@@ -468,6 +497,33 @@ class Net {
   void write_session_file() {
     if (FILE* f = _wfopen(L"mp_session.txt", L"w")) {
       std::fprintf(f, "%s\n", code_.c_str());
+      std::fclose(f);
+    }
+  }
+
+  // Co-op problems: shown on screen and in the title (via mp_session_notice.h),
+  // logged with their code, and written to mp_status.txt for the launcher.
+  void fail(CoopError e) {
+    if (!notify_error(e)) return;  // already showing it
+    const CoopErrorInfo* info = coop_error_info(e);
+    const std::string code = coop_error_code(e);
+    REXLOG_WARN("[mpnet] co-op problem {}: {} - {}", code, info ? info->title : "?",
+                info ? info->message : "");
+    write_status_file(code, info);
+  }
+  void clear_problem() {
+    if (!notify_error(CoopError::None)) return;
+    REXLOG_INFO("[mpnet] co-op problem cleared");
+    write_status_file("", nullptr);
+  }
+  // mp_status.txt next to mp_session.txt: "ok", or "error CO-1xx" + title + message.
+  static void write_status_file(const std::string& code, const CoopErrorInfo* info) {
+    if (FILE* f = _wfopen(L"mp_status.txt", L"w")) {
+      if (code.empty())
+        std::fprintf(f, "ok\n");
+      else
+        std::fprintf(f, "error %s\n%s\n%s\n", code.c_str(), info ? info->title : "",
+                     info ? info->message : "");
       std::fclose(f);
     }
   }
@@ -677,8 +733,11 @@ class Net {
     if (!r.ok) return false;
     if (relay_mode_) {
       if (!same_addr(from, relay_)) return false;  // only the relay may talk to us
-      if (Msg(type) == Msg::Welcome || Msg(type) == Msg::Refused)
-        return sender == 0 && handle_relay(Msg(type), r, n);
+      if (Msg(type) == Msg::Welcome || Msg(type) == Msg::Refused) {
+        if (sender != 0 || !handle_relay(Msg(type), r, n)) return false;
+        last_reply_ = Clock::now();
+        return true;
+      }
       if (!joined_ || sender == self_id_) return false;
     }
     if (sender == 0) return false;
@@ -789,11 +848,14 @@ class Net {
   bool hosting_ = false;
   bool joined_ = false;
   bool gave_up_ = false;
+  bool was_joined_ = false;   // we were in a session at some point
   sockaddr_in relay_{};
   std::string join_code_;  // the code we were told to join
   std::string code_;       // the session we are in
   Clock::time_point next_join_{};
   Clock::time_point rejoin_until_{};
+  Clock::time_point join_since_{};  // when we (re)started asking to get in
+  Clock::time_point last_reply_{};  // last WELCOME/REFUSED from the relay
   SOCKET sock_ = INVALID_SOCKET;
   std::atomic<bool> ready_{false}, bye_sent_{false};
   std::thread thread_;

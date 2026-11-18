@@ -270,6 +270,16 @@ struct Values {
   // shaders/replace (startup only; replacements are applied at translation).
   bool shader_rewrites = true;
   float character_draw_distance = 1.0f;
+  // [graphics] dense_draw_distance / dense_regions: draw_distance used instead
+  // for world objects while one of the listed regions loads (regions where
+  // the extra distance is costly). 0 = off (default).
+  // Applied per object as it is created (hotfunc sub_825470E0).
+  float dense_draw_distance = 0.0f;
+  // [graphics] smart_draw_distance: draw_distance applies in full only to
+  // large objects (base distance 90+); small props get less of it (1x at a
+  // base distance of 30 or less), which keeps busy towns fast.
+  bool smart_draw_distance = true;
+  std::string dense_regions = "BWSMarket,BWSCemetary,Ravenscar,Wraithmarsh,Brightwood,FairfaxCastleGardens";
 };
 
 // Load the config from `path`.

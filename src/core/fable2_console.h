@@ -1224,6 +1224,63 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
               "tune <name> <factor>", true);
     return true;
   }
+  if (name == "dumpimage") {
+    // dumpimage: write guest 0x82000000..0x84000000 (code + data as loaded)
+    // to image_dump.bin next to the console files, for tools/image_refs.py.
+    rex::memory::Memory* memory = fable2::fitwindow::detail::g_memory.load();
+    if (!memory) return out("dumpimage", "no guest memory yet", true), true;
+    const fs::path p = dir() / "image_dump.bin";
+    std::ofstream f(p, std::ios::binary);
+    size_t written = 0;
+    for (uint32_t a = 0x82000000; a < 0x84000000; a += 0x10000) {
+      auto* heap = memory->LookupHeap(a);
+      std::vector<char> chunk(0x10000, 0);
+      if (heap && heap->QueryRangeAccess(a, a + 0xFFFF) != rex::memory::PageAccess::kNoAccess)
+        std::memcpy(chunk.data(), memory->TranslateVirtual<const char*>(a), chunk.size());
+      f.write(chunk.data(), chunk.size());
+      written += chunk.size();
+    }
+    out("dumpimage", "wrote " + std::to_string(written) + " bytes to " + p.string());
+    return true;
+  }
+  if (name == "drawdist") {
+    // drawdist [objects [characters]]: print or write the guest draw-distance
+    // multipliers (the globals fable2_patches.cpp sets at load) while the game
+    // runs. Testing aid: objects created before the change may keep the old value.
+    namespace fwd = fable2::fitwindow::detail;
+    rex::memory::Memory* memory = fwd::g_memory.load();
+    if (!memory) return out("drawdist", "no guest memory yet", true), true;
+    constexpr uint32_t kBase = 0x83319368;  // static, animated, villager, creature
+    auto* p = memory->TranslateVirtual<uint32_t*>(kBase);
+    auto show = [&]() {
+      out("drawdist", "static " + fstr(fwd::FromGuestFloat(p[0])) + ", animated " +
+                          fstr(fwd::FromGuestFloat(p[1])) + ", villager " +
+                          fstr(fwd::FromGuestFloat(p[2])) + ", creature " +
+                          fstr(fwd::FromGuestFloat(p[3])));
+    };
+    if (W.size() < 2) return show(), true;
+    double objects = 0, characters = 0;
+    if (!parse_f(W[1], objects) || (W.size() > 2 && !parse_f(W[2], characters)))
+      return out("drawdist", "usage: drawdist [objects [characters]]", true), true;
+    auto* heap = memory->LookupHeap(kBase);
+    if (heap && heap->QueryRangeAccess(kBase, kBase + 15) != rex::memory::PageAccess::kReadWrite) {
+      const uint32_t page = kBase & ~(heap->page_size() - 1);
+      heap->Protect(page, heap->page_size(),
+                    rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite);
+    }
+    auto put = [&](int i, double v) {
+      std::atomic_ref<uint32_t>(p[i]).store(fwd::ToGuestFloat(float(std::clamp(v, 0.5, 10.0))),
+                                            std::memory_order_relaxed);
+    };
+    put(0, objects);
+    put(1, objects);
+    if (W.size() > 2) {
+      put(2, characters);
+      put(3, characters);
+    }
+    show();
+    return true;
+  }
   if (name == "cvar") {
     // cvar <name> [value...]: print or set an SDK/game cvar (same as typing it in ~,
     // but usable from exec files, aliases and chains).

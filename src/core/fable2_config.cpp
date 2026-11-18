@@ -386,12 +386,26 @@ texture_filtering = 16
 
 # Draw Distance: multiplies how far away the game keeps drawing world objects
 # (rocks, ruins, fences, props) and animated objects. 1.0 = original; 3.0
-# fills in distant detail for about 3% of frame rate, 6.0 adds little more for
-# about 11%. Read at startup (not switched by the toggle key). Default: 3.0
+# fills in distant detail. Read at startup (not switched by the toggle key).
+# Default: 3.0
 draw_distance = 3.0
 
 # Character Draw Distance: the same for villagers and creatures. Default: 1.0
 character_draw_distance = 1.0
+
+# Smart Draw Distance: apply draw_distance in full only to large objects
+# (buildings, trees, landmarks); small props and clutter get less of it, so
+# busy towns keep the far view at a much lower cost (Bowerstone Market at
+# 3.0: about 59 FPS on, 45 off). Read at startup. Default: true
+smart_draw_distance = true
+
+# Dense Draw Distance: optional draw_distance used instead in the regions
+# listed in dense_regions. 0 = use draw_distance everywhere. Read at startup.
+# Default: 0
+dense_draw_distance = 0
+
+# Dense Regions: comma-separated region names that use dense_draw_distance.
+dense_regions = "BWSMarket,BWSCemetary,Ravenscar,Wraithmarsh,Brightwood,FairfaxCastleGardens"
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -633,6 +647,13 @@ bool Load(const std::filesystem::path& path) {
     values.character_draw_distance = static_cast<float>(
         Read<double>(graphics_table, "graphics", "character_draw_distance", "number",
                      values.character_draw_distance));
+    values.dense_draw_distance = static_cast<float>(
+        Read<double>(graphics_table, "graphics", "dense_draw_distance", "number",
+                     values.dense_draw_distance));
+    values.smart_draw_distance = Read<bool>(graphics_table, "graphics", "smart_draw_distance",
+                                            "boolean", values.smart_draw_distance);
+    values.dense_regions = Read<std::string>(graphics_table, "graphics", "dense_regions", "string",
+                                            values.dense_regions);
   }
 
   g_values = values;

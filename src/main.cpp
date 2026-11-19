@@ -35,6 +35,7 @@ void fable2_game_thread_lua_tick(PPCContext& ctx, uint8_t* base) {
   fable2::f5lua::run_pending(ctx, base);
   fable2::net::skeldiag::tick(ctx, base);
   fable2::net::puppets::tick(ctx, base);
+  fable2::net::combat::tick(ctx, base);
 }
 
 // Host keyboard -> guest gamepad map (see src/input/keyboard_gamepad.h).

@@ -214,6 +214,38 @@ class RelayV2Test(RelayTest):
         self.assertNotIn(a.s.getsockname(), self.relay.players)  # BYE leaves at once
         self.assertEqual(len(next(iter(self.relay.sessions.values())).players), 1)
 
+    async def test_hit_only_to_target(self):
+        a, b, c = self.client(), self.client(), self.client()
+        code = await self.host_session(a, 11)
+        for cl, pid in ((b, 13), (c, 15)):
+            cl.send(join(pid, code))
+        await self.pump()
+        b.recv_all(), c.recv_all()
+
+        def hit(target, dmg):
+            return hdr(R.HIT, 11) + struct.pack("<IfI", target, dmg, 0)
+        a.send(hit(13, 7.5))
+        a.send(hit(13, 0.0))            # no damage
+        a.send(hit(13, 501.0))          # too much
+        a.send(hit(13, float("nan")))
+        a.send(hit(0, 5.0))             # no target
+        a.send(hit(13, 7.5)[:-4])       # bad length
+        await self.pump()
+        got = parse(b.recv_all())
+        self.assertEqual([t for t, *_ in got], [R.HIT])
+        self.assertEqual(c.recv_all(), [])  # not for the third player
+        # an older (proto 2) session cannot carry HIT
+        d, e = self.client(), self.client()
+        d.send(create(21, proto=2))
+        await self.pump()
+        code2 = parse(d.recv_all())[0][2][16:24].rstrip(b"\0").decode()
+        e.send(join(23, code2, proto=2))
+        await self.pump()
+        e.recv_all()
+        d.send(hdr(R.HIT, 21, proto=2) + struct.pack("<IfI", 23, 5.0, 0))
+        await self.pump()
+        self.assertEqual(e.recv_all(), [])
+
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()
         a.send(create(11, proto=1))

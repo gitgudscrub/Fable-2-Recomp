@@ -29,6 +29,10 @@
 //               half floats. Used when every bone of the part is a rigid
 //               transform; layout 1 = rows of 4 (r00 r01 r02 tx ...), 2 = rows
 //               of 3 with the translation last. Otherwise POSE is sent.
+// HIT (6):          target u32 (player id), damage f32 (above 0, at most 500), reserved u32.
+//                    Sent by the game whose enemy hit that player's puppet body;
+//                    only the target applies it (to its own hero). At most
+//                    kMaxHitsPerSec are applied per sender.
 // Poses go out at mp_pose_hz (default 20); the receiver blends between them.
 // Relay messages (game <-> relay; the relay's header sender is 0):
 //   CREATE  (16): wanted code char[8] (zeros = new; a host that lost the relay
@@ -88,16 +92,19 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 2;  // 2: BYE, POSEQ
+constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
 constexpr uint32_t kBonesPerPacket = 48;  // 48 * 24 B = 1152 B: stays under one MTU
 constexpr float kMaxCoord = 100000.0f;
 constexpr auto kPeerTimeout = std::chrono::seconds(5);
+constexpr float kMaxHitDamage = 500.0f;
+constexpr int kMaxHitsPerSec = 20;   // per sender; more are dropped
+constexpr size_t kMaxQueuedHits = 64;
 
 enum class Msg : uint8_t {
-  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5,
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
 enum class Refuse : uint8_t {
@@ -172,6 +179,8 @@ struct PeerState {
   float pos[3] = {};
   float qz = 0, qw = 1;
   std::array<PeerPart, kMaxParts> parts;
+  Clock::time_point hit_window{};  // HIT rate limit
+  int hits_in_window = 0;
 };
 
 struct Stats {
@@ -186,6 +195,26 @@ class Net {
   }
 
   Local& local() { return local_; }
+
+  // Combat (game thread). Our enemy hit peer `target`'s puppet body: send it.
+  void queue_hit(uint32_t target, float damage) {
+    if (!(damage > 0.0f)) return;
+    std::lock_guard<std::mutex> l(hits_m_);
+    if (hits_out_.size() < kMaxQueuedHits) hits_out_.push_back({target, std::min(damage, kMaxHitDamage)});
+  }
+  bool has_hits() {
+    std::lock_guard<std::mutex> l(hits_m_);
+    return hits_in_count_ > 0;
+  }
+  // Damage other games dealt to our hero since the last call (summed).
+  float take_hits(int& count) {
+    std::lock_guard<std::mutex> l(hits_m_);
+    const float d = hits_in_;
+    count = hits_in_count_;
+    hits_in_ = 0.0f;
+    hits_in_count_ = 0;
+    return d;
+  }
   Stats& stats() { return stats_; }
   uint32_t self_id() const { return self_id_; }
 
@@ -344,6 +373,7 @@ class Net {
         if (pose_due) next_pose_ = now + std::chrono::microseconds(1000000 / pose_hz);
         send_hero(pose_due);
       }
+      send_hits();
       if (now >= next_log) {
         next_log = now + std::chrono::seconds(10);
         int active = 0;
@@ -525,6 +555,22 @@ class Net {
         std::fprintf(f, "error %s\n%s\n%s\n", code.c_str(), info ? info->title : "",
                      info ? info->message : "");
       std::fclose(f);
+    }
+  }
+
+  void send_hits() {
+    std::vector<std::pair<uint32_t, float>> out;
+    {
+      std::lock_guard<std::mutex> l(hits_m_);
+      out.swap(hits_out_);
+    }
+    for (const auto& [target, dmg] : out) {
+      Writer w;
+      header(w, Msg::Hit);
+      w.u32(target);
+      w.f32(dmg);
+      w.u32(0);
+      send_all(w);
     }
   }
 
@@ -818,6 +864,23 @@ class Net {
         assemble(p, frame, bones, first, count, part, parts, vals);
         break;
       }
+      case Msg::Hit: {
+        const uint32_t target = r.u32();
+        const float dmg = r.f32();
+        r.u32();
+        if (!r.ok || r.i != n || !std::isfinite(dmg) || dmg <= 0.0f || dmg > kMaxHitDamage) return false;
+        if (target != self_id_) break;  // for another player (direct mode sends to every peer)
+        const auto now = Clock::now();
+        if (now - p->hit_window > std::chrono::seconds(1)) {
+          p->hit_window = now;
+          p->hits_in_window = 0;
+        }
+        if (++p->hits_in_window > kMaxHitsPerSec) return false;
+        std::lock_guard<std::mutex> hl(hits_m_);
+        hits_in_ += dmg;
+        ++hits_in_count_;
+        break;
+      }
       case Msg::Bye: {
         if (r.i != n) return false;
         REXLOG_INFO("[mpnet] peer {:08X} left", p->id);
@@ -833,6 +896,10 @@ class Net {
 
   Local local_;
   Stats stats_;
+  std::mutex hits_m_;
+  std::vector<std::pair<uint32_t, float>> hits_out_;
+  float hits_in_ = 0.0f;
+  int hits_in_count_ = 0;
   std::mutex peers_m_;
   std::array<PeerState, kMaxPeers> peers_{};
   std::vector<sockaddr_in> targets_;

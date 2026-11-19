@@ -32,14 +32,19 @@ import time
 from dataclasses import dataclass, field
 
 MAGIC = 0x504D3246  # "F2MP" little-endian
-PROTO = 2              # newest game protocol (used in the relay's own replies)
-PROTOS = (1, 2)        # accepted; a session only takes players with its host's version
+PROTO = 3              # newest game protocol (used in the relay's own replies)
+PROTOS = (1, 2, 3)     # accepted; a session only takes players with its host's version
 HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ = 1, 2, 3, 4, 5
-GAME_TYPES = {1: (HELLO, STATE, POSE), 2: (HELLO, STATE, POSE, BYE, POSEQ)}
+HELLO, STATE, POSE, BYE, POSEQ, HIT = 1, 2, 3, 4, 5, 6
+GAME_TYPES = {
+    1: (HELLO, STATE, POSE),
+    2: (HELLO, STATE, POSE, BYE, POSEQ),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT),
+}
+MAX_HIT_DAMAGE = 500.0
 # relay messages
 CREATE, JOIN, WELCOME, REFUSED = 16, 17, 18, 19
 
@@ -143,6 +148,11 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
         return n == 32 + count * 14
     if mtype == BYE:
         return n == 16
+    if mtype == HIT:
+        if n != 28:
+            return False
+        target, dmg, _ = struct.unpack_from("<IfI", data, 16)
+        return target != 0 and math.isfinite(dmg) and 0.0 < dmg <= MAX_HIT_DAMAGE
     return False
 
 
@@ -295,6 +305,12 @@ class Relay(asyncio.DatagramProtocol):
             p.dropped += 1
             return self._drop()
         p.last_heard = now
+        if mtype == HIT:  # only the player who was hit needs it
+            target = struct.unpack_from("<I", data, 16)[0]
+            for q in p.session.players.values():
+                if q is not p and q.pid == target:
+                    self._send(data, q.addr)
+            return
         for q in p.session.players.values():
             if q is not p:
                 self._send(data, q.addr)

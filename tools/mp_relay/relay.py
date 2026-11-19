@@ -38,12 +38,14 @@ HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE = 1, 2, 3, 4, 5, 6, 7, 8
+HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT = 1, 2, 3, 4, 5, 6, 7, 8, 9
 GAME_TYPES = {
     1: (HELLO, STATE, POSE),
     2: (HELLO, STATE, POSE, BYE, POSEQ),
-    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT),
 }
+HOST_ONLY = (ENEMIES, EPOSE)  # only the session host runs enemies
+TO_HOST = (EHIT,)              # hits on the host's enemies: for the host only
 MAX_HIT_DAMAGE = 500.0
 MAX_ENEMIES = 24
 ENEMY = struct.Struct("<HBBIffffff")  # id, flags, pad, record, x y z, qz qw, health
@@ -159,6 +161,11 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
         if not (0 < parts <= MAX_PARTS and part < parts and layout in (0, 1, 2)):
             return False
         return n == 34 + count * (14 if layout else 24)
+    if mtype == EHIT:
+        if n != 24:
+            return False
+        eid, _r, dmg = struct.unpack_from("<HHf", data, 16)
+        return eid != 0 and math.isfinite(dmg) and 0.0 < dmg <= MAX_HIT_DAMAGE
     if mtype == BYE:
         return n == 16
     if mtype == HIT:
@@ -336,6 +343,14 @@ class Relay(asyncio.DatagramProtocol):
             p.dropped += 1
             return self._drop()
         p.last_heard = now
+        if mtype in HOST_ONLY and p.pid != p.session.host_pid:
+            p.dropped += 1
+            return self._drop()
+        if mtype in TO_HOST:
+            for q in p.session.players.values():
+                if q is not p and q.pid == p.session.host_pid:
+                    self._send(data, q.addr)
+            return
         if mtype == HIT:  # only the player who was hit needs it
             target = struct.unpack_from("<I", data, 16)[0]
             for q in p.session.players.values():

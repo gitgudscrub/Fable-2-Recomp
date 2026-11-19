@@ -289,6 +289,31 @@ class RelayV2Test(RelayTest):
         await self.pump()
         self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.EPOSE, R.EPOSE])
 
+    async def test_enemy_hits_to_host_only(self):
+        a, b, c = self.client(), self.client(), self.client()
+        code = await self.host_session(a, 11)
+        for cl, pid in ((b, 13), (c, 15)):
+            cl.send(join(pid, code))
+        await self.pump()
+        a.recv_all(), b.recv_all(), c.recv_all()
+
+        def ehit(sender, eid, dmg):
+            return hdr(R.EHIT, sender) + struct.pack("<HHf", eid, 0, dmg)
+        b.send(ehit(13, 4, 12.5))
+        b.send(ehit(13, 0, 12.5))          # no enemy
+        b.send(ehit(13, 4, 0.0))           # no damage
+        b.send(ehit(13, 4, 501.0))         # too much
+        b.send(ehit(13, 4, float("inf")))
+        b.send(ehit(13, 4, 1.0)[:-1])      # bad length
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(a.recv_all())], [R.EHIT])
+        self.assertEqual(c.recv_all(), [])  # not for the other joiner
+        # only the host may send enemies and enemy poses
+        b.send(hdr(R.ENEMIES, 13) + struct.pack("<BBH", 0, 0, 0))
+        b.send(epose(13))
+        await self.pump()
+        self.assertEqual(a.recv_all() + c.recv_all(), [])
+
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()
         a.send(create(11, proto=1))

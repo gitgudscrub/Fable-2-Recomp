@@ -30,6 +30,7 @@ DECLARE_REX_FUNC(sub_8268BD90);  // modify health (r3 health comp, f1 amount, r5
 namespace fable2::net::enemies {  // mp_enemies.h
 inline bool is_copy(uint32_t thing);
 inline bool applying_own();
+inline uint16_t copy_id(uint32_t thing);
 }
 
 namespace fable2::net::combat {
@@ -129,14 +130,17 @@ extern "C" void sub_8268BD90(PPCContext& ctx, uint8_t* base) {
   const uint32_t attacker = ctx.r5.u32;
   // Copies of the host's enemies (mp_enemies.h): what they do does no damage
   // (the host's enemy does the real hit), and nothing changes their health
-  // here but their death (step 3 will send hits on them to the host).
+  // here but their death: damage to a copy goes to the host's enemy (EHIT).
   if (attacker && fable2::net::enemies::is_copy(attacker)) {
     if (diag) REXLOG_INFO("[mpcombat] hit by enemy copy 0x{:08X} dropped ({:.2f})", attacker, amount);
     return;
   }
-  if (ok && fable2::net::enemies::is_copy(owner) && !fable2::net::enemies::applying_own()) {
-    if (diag) REXLOG_INFO("[mpcombat] hit on enemy copy 0x{:08X} dropped ({:.2f})", owner, amount);
-    return;
+  if (ok && !fable2::net::enemies::applying_own()) {
+    if (const uint16_t id = fable2::net::enemies::copy_id(owner)) {
+      if (amount < 0.0f) fable2::net::Net::Get().queue_enemy_hit(id, -amount);
+      if (diag) REXLOG_INFO("[mpcombat] hit on enemy copy {} (0x{:08X}) for {:.2f}: sent to the host", id, owner, amount);
+      return;
+    }
   }
   uint32_t peer = 0;
   if (ok && puppet_slot_of(owner, &peer) >= 0) {

@@ -7,8 +7,10 @@
 // creatures of their own are removed, and copies of the host's are made and
 // moved to the host's positions. A copy dies when the host's enemy dies and is
 // removed when the host stops listing it. Damage dealt by a copy is dropped
-// (the host's enemy deals the real damage, see mp_combat.h); damage to a copy
-// is dropped for now (step 3 sends it to the host).
+// (the host's enemy deals the real damage, see mp_combat.h). Damage to a copy
+// is not applied to it: it is sent (EHIT, step 3) to the host, which applies it
+// to its enemy with the player's co-op body as the attacker; the copy dies when
+// the host's enemy does.
 //
 // Poses (step 2b): the host also sends (EPOSE) the bone palettes of its nearest
 // enemies, caught in the palette packer like our hero's. The other games draw
@@ -58,6 +60,8 @@ REXCVAR_DEFINE_INT32(mp_enemy_diag, 0, "Multiplayer",
                      "1 = log enemy sync (copies made and removed, own enemies removed).");
 REXCVAR_DEFINE_DOUBLE(mp_enemy_range, 50.0, "Multiplayer",
                       "Host: send hostile creatures within this many metres of any player.");
+REXCVAR_DEFINE_DOUBLE(mp_enemy_test_hit, 0.0, "Multiplayer",
+                      "Test (not the host): deal this much damage to the first enemy copy, as our hero, once.");
 REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
                      "Host: send the animation of this many of the nearest enemies (0-8).");
 
@@ -225,7 +229,7 @@ struct State {
   uint32_t pose_writes = 0, pose_skips = 0, poses_in = 0;
 
   std::mutex m;  // guards copy_things (read from the health hook)
-  std::unordered_set<uint32_t> copy_things;
+  std::unordered_map<uint32_t, uint16_t> copy_things;  // copy thing -> host's enemy id
   bool applying = false;  // our own health change on a copy (its death)
   // host
   std::unordered_map<uint32_t, Track> tracks;  // thing -> track
@@ -256,6 +260,13 @@ inline bool is_copy(uint32_t thing) {
   return s.copy_things.count(thing) != 0;
 }
 inline bool applying_own() { return S().applying; }
+// The host's enemy id a copy stands for (0 = not a copy).
+inline uint16_t copy_id(uint32_t thing) {
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.m);
+  const auto it = s.copy_things.find(thing);
+  return it == s.copy_things.end() ? 0 : it->second;
+}
 
 inline void forget_copy(State& s, uint32_t thing) {
   std::lock_guard<std::mutex> l(s.m);
@@ -300,7 +311,7 @@ inline void on_script_phase(PPCContext& ctx, uint8_t* base) {
     it->second.thing = t;
     {
       std::lock_guard<std::mutex> l(s.m);
-      s.copy_things.insert(t);
+      s.copy_things[t] = c.id;
     }
     if (diag) REXLOG_INFO("[mpenemy] copy {} (record {:08X}) made: 0x{:08X}", c.id, c.record, t);
   }
@@ -612,20 +623,57 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
 // --- the other players -----------------------------------------------------------
 
 // The host's enemy died: kill the copy too, so it plays its own death.
-inline void kill_copy(PPCContext& ctx, uint8_t* base, uint32_t thing) {
-  const uint32_t hc = component(base, thing, kHealthType);
-  if (!hc || !(load_f32(base, hc + 20) > 0.0f)) return;
-  const double amount = -double(load_f32(base, hc + 20)) - 1.0;
+// The game's own health change (amount < 0 = damage), past our hook.
+inline void change_health(PPCContext& ctx, uint8_t* base, uint32_t hc, double amount, uint32_t attacker) {
   State& s = S();
   const PPCContext saved = ctx;
   ctx.r1.u64 = (saved.r1.u64 - 1024) & ~uint64_t(15);
   ctx.r3.u64 = hc;
-  ctx.r5.u64 = 0;
+  ctx.r5.u64 = attacker;
   ctx.f1.f64 = amount;
   s.applying = true;
   __imp__sub_8268BD90(ctx, base);
   s.applying = false;
   ctx = saved;
+}
+
+inline void kill_copy(PPCContext& ctx, uint8_t* base, uint32_t thing) {
+  const uint32_t hc = component(base, thing, kHealthType);
+  if (!hc || !(load_f32(base, hc + 20) > 0.0f)) return;
+  change_health(ctx, base, hc, -double(load_f32(base, hc + 20)) - 1.0, 0);
+}
+
+// Host: the hits the other players dealt to copies of our enemies.
+inline void apply_enemy_hits(PPCContext& ctx, uint8_t* base) {
+  static std::vector<EnemyHit> hits;
+  Net::Get().take_enemy_hits(hits);
+  if (hits.empty()) return;
+  State& s = S();
+  const int diag = REXCVAR_GET(mp_enemy_diag);
+  for (const auto& h : hits) {
+    uint32_t thing = 0;
+    for (const auto& [t, k] : s.tracks)
+      if (k.id == h.id && !k.dead) thing = t;
+    const uint32_t hc = (thing && live(base, thing)) ? component(base, thing, kHealthType) : 0;
+    if (!hc || !(load_f32(base, hc + 20) > 0.0f)) {
+      if (diag) REXLOG_INFO("[mpenemy] hit on enemy {} from {:08X} dropped: not alive here", h.id, h.from);
+      continue;
+    }
+    // the player's co-op body is the attacker: the enemy turns on that player
+    uint32_t body = 0;
+    {
+      auto& ps = puppets::S();
+      std::lock_guard<std::mutex> l(ps.m);
+      for (const auto& p : ps.pup)
+        if (p.peer_id == h.from && p.thing) body = p.thing;
+    }
+    if (body && !live(base, body)) body = 0;
+    const float before = load_f32(base, hc + 20);
+    change_health(ctx, base, hc, -double(h.dmg), body);
+    if (diag)
+      REXLOG_INFO("[mpenemy] enemy {} hit by {:08X} for {:.1f}: health {:.1f} -> {:.1f}", h.id, h.from, h.dmg,
+                  before, load_f32(base, hc + 20));
+  }
 }
 
 inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time_point now, float dt) {
@@ -777,6 +825,24 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       ++it;
     }
   }
+  // test: hit the first copy as our hero (through the game's health change and
+  // our hook, as a real hit would be)
+  if (const double test = REXCVAR_GET(mp_enemy_test_hit); test > 0.0) {
+    REXCVAR_SET(mp_enemy_test_hit, 0.0);
+    for (const auto& [id, c] : s.copies) {
+      const uint32_t hc = (c.thing && live(base, c.thing)) ? component(base, c.thing, kHealthType) : 0;
+      if (!hc) continue;
+      const PPCContext saved = ctx;
+      ctx.r1.u64 = (saved.r1.u64 - 1024) & ~uint64_t(15);
+      ctx.r3.u64 = hc;
+      ctx.r5.u64 = hero;
+      ctx.f1.f64 = -std::min(test, 500.0);
+      sub_8268BD90(ctx, base);
+      ctx = saved;
+      REXLOG_INFO("[mpenemy] test: hit copy {} for {:.1f}", id, test);
+      break;
+    }
+  }
   // skeletons of the copies (each stands where we put it)
   if (now >= s.next_match) {
     s.next_match = now + std::chrono::milliseconds(100);
@@ -800,8 +866,10 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
   last = now;
   const uint32_t hero = player_hero(ctx, base);
   if (!hero || !live(base, hero)) return;
-  if (REXCVAR_GET(mp_host))
+  if (REXCVAR_GET(mp_host)) {
+    apply_enemy_hits(ctx, base);
     host_tick(ctx, base, hero, now);
+  }
   else
     guest_tick(ctx, base, hero, now, dt);
 }

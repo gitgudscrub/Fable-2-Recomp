@@ -99,7 +99,7 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE
+constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE, EHIT
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
@@ -129,6 +129,11 @@ struct EnemyPose {
   uint8_t parts = 0;
   std::array<std::vector<float>, kMaxParts> part;  // bone_count * 12 floats each
 };
+struct EnemyHit {  // a player hit one of the host's enemies (its copy, in their world)
+  uint32_t from = 0;  // player id
+  uint16_t id = 0;    // the host's enemy id
+  float dmg = 0;
+};
 struct EnemyPosePart {  // one complete part as it arrived
   uint16_t id = 0;
   uint8_t part = 0;
@@ -136,7 +141,7 @@ struct EnemyPosePart {  // one complete part as it arrived
 };
 
 enum class Msg : uint8_t {
-  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8,
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8, EHit = 9,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
 enum class Refuse : uint8_t {
@@ -213,6 +218,8 @@ struct PeerState {
   std::array<PeerPart, kMaxParts> parts;
   Clock::time_point hit_window{};  // HIT rate limit
   int hits_in_window = 0;
+  Clock::time_point ehit_window{};  // EHIT rate limit
+  int ehits_in_window = 0;
 };
 
 struct Stats {
@@ -237,6 +244,18 @@ class Net {
   bool has_hits() {
     std::lock_guard<std::mutex> l(hits_m_);
     return hits_in_count_ > 0;
+  }
+  // Combat (game thread, not the host). We hit a copy of the host's enemy `id`.
+  void queue_enemy_hit(uint16_t id, float damage) {
+    if (!id || !(damage > 0.0f)) return;
+    std::lock_guard<std::mutex> l(hits_m_);
+    if (ehits_out_.size() < kMaxQueuedHits) ehits_out_.push_back({0, id, std::min(damage, kMaxHitDamage)});
+  }
+  // Host (game thread): hits the others dealt to our enemies since the last call.
+  void take_enemy_hits(std::vector<EnemyHit>& out) {
+    out.clear();
+    std::lock_guard<std::mutex> l(hits_m_);
+    out.swap(ehits_in_);
   }
   // Host (game thread): the enemies to send (the newest list goes out).
   void set_enemies(std::vector<EnemyState> list) {
@@ -434,6 +453,7 @@ class Net {
         send_hero(pose_due);
       }
       send_hits();
+      send_enemy_hits();
       send_enemies();
       send_enemy_poses();
       if (now >= next_log) {
@@ -633,6 +653,22 @@ class Net {
       w.f32(dmg);
       w.u32(0);
       send_all(w);
+    }
+  }
+
+  void send_enemy_hits() {
+    std::vector<EnemyHit> out;
+    {
+      std::lock_guard<std::mutex> l(hits_m_);
+      out.swap(ehits_out_);
+    }
+    for (const auto& h : out) {
+      Writer w;
+      header(w, Msg::EHit);
+      w.u16(h.id);
+      w.u16(0);
+      w.f32(h.dmg);
+      send_all(w);  // the relay passes it to the host only
     }
   }
 
@@ -1061,6 +1097,22 @@ class Net {
         ++hits_in_count_;
         break;
       }
+      case Msg::EHit: {
+        const uint16_t id = r.u16();
+        r.u16();
+        const float dmg = r.f32();
+        if (!r.ok || r.i != n || id == 0 || !std::isfinite(dmg) || dmg <= 0.0f || dmg > kMaxHitDamage) return false;
+        if (!REXCVAR_GET(mp_host)) break;  // only the host runs the enemies
+        const auto now = Clock::now();
+        if (now - p->ehit_window > std::chrono::seconds(1)) {
+          p->ehit_window = now;
+          p->ehits_in_window = 0;
+        }
+        if (++p->ehits_in_window > kMaxHitsPerSec) return false;
+        std::lock_guard<std::mutex> hl(hits_m_);
+        if (ehits_in_.size() < kMaxQueuedHits) ehits_in_.push_back({p->id, id, dmg});
+        break;
+      }
       case Msg::Enemies: {
         const uint32_t count = r.u8();
         r.u8();
@@ -1154,6 +1206,7 @@ class Net {
   std::map<uint32_t, std::vector<float>> epose_ready_;  // (id << 8 | part) -> pose
   std::mutex hits_m_;
   std::vector<std::pair<uint32_t, float>> hits_out_;
+  std::vector<EnemyHit> ehits_out_, ehits_in_;
   float hits_in_ = 0.0f;
   int hits_in_count_ = 0;
   std::mutex peers_m_;

@@ -399,3 +399,7 @@ scale_radius = 30
 # many again per extra player, rounded up). Quest fights never change.
 # Default: 0.5
 reinforcements_per_player = 0.5
+
+# Boss Health: enemies with at least this much health (before scaling) count
+# as bosses. Bosses get the extra health but don't hit harder. Default: 1000
+boss_health = 1000

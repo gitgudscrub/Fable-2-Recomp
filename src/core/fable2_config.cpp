@@ -431,6 +431,10 @@ scale_radius = 30
 # many again per extra player, rounded up). Quest fights never change.
 # Default: 0.5
 reinforcements_per_player = 0.5
+
+# Boss Health: enemies with at least this much health (before scaling) count
+# as bosses. Bosses get the extra health but don't hit harder. Default: 1000
+boss_health = 1000
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -695,6 +699,8 @@ bool Load(const std::filesystem::path& path) {
     values.mp_reinforcements_per_player =
         Read<double>(mp_table, "multiplayer", "reinforcements_per_player", "number",
                      values.mp_reinforcements_per_player);
+    values.mp_boss_health = Read<double>(mp_table, "multiplayer", "boss_health", "number",
+                                         values.mp_boss_health);
   }
 
   g_values = values;

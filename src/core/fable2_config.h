@@ -288,6 +288,7 @@ struct Values {
   double mp_damage_per_player = 0.1;
   double mp_scale_radius = 30.0;
   double mp_reinforcements_per_player = 0.5;  // cvar mp_scale_reinforce
+  double mp_boss_health = 1000.0;             // cvar mp_scale_boss_health
 };
 
 // Load the config from `path`.

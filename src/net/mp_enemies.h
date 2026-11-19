@@ -54,6 +54,14 @@
 // (within mp_scale_radius) and more damage against the players. The count may
 // rise until the fight starts (the enemy is hurt or hurts a player), then it is
 // kept for that enemy. Its copies follow its health, so their bars show it.
+// Bosses (base max health of at least mp_scale_boss_health) scale health only:
+// they don't hit harder.
+//
+// Kill rewards: the game gives a kill's experience (and kill credit) only to
+// the hero that lands the killing blow. So every player within mp_scale_radius
+// of an enemy when it dies gets the kill in their own game: a copy dies with
+// our hero as the attacker, and on the host a co-op player's killing blow is
+// dealt as the host's hero when the host is close. Loot drops in every world.
 //
 // Reinforcements (host): extra enemies come only from open-world (dynamic)
 // creature generators, never quest ones, through the game's own
@@ -101,6 +109,8 @@ REXCVAR_DEFINE_DOUBLE(mp_scale_damage, 0.1, "Multiplayer",
                       "Host: extra enemy damage per player after the first (0.1 = +10%).");
 REXCVAR_DEFINE_DOUBLE(mp_scale_radius, 30.0, "Multiplayer",
                       "Host: players this many metres from an enemy count for its fight.");
+REXCVAR_DEFINE_DOUBLE(mp_scale_boss_health, 1000.0, "Multiplayer",
+                      "Host: enemies with at least this base max health are bosses: health scaling only.");
 REXCVAR_DEFINE_DOUBLE(mp_scale_reinforce, 0.5, "Multiplayer",
                       "Host: extra reinforcements per player after the first, on open-world generators.");
 REXCVAR_DEFINE_DOUBLE(mp_scale_test_hit, 0.0, "Multiplayer",
@@ -267,6 +277,7 @@ struct Track {  // host: one of our enemies
 struct Scale {  // host: one enemy's encounter scaling
   uint32_t record = 0;
   uint8_t players = 1;  // the count its health was raised for
+  float base_max = 0.0f;  // its max health before scaling
   bool locked = false;  // the fight started: the count is kept
 };
 
@@ -370,6 +381,7 @@ inline double enemy_damage_mult(uint32_t attacker) {
   if (it == s.scaled.end()) return 1.0;
   if (!it->second.locked && it->second.players >= 2) s.fight_started = true;
   it->second.locked = true;
+  if (it->second.base_max >= float(REXCVAR_GET(mp_scale_boss_health))) return 1.0;  // a boss: health only
   return damage_mult(it->second.players);
 }
 inline bool is_our_hero(uint32_t thing) {
@@ -664,7 +676,11 @@ inline void scale_enemy(uint8_t* base, uint32_t t, uint32_t hc, uint16_t id, con
   auto [it, fresh] = s.scaled.try_emplace(t);
   Scale& sc = it->second;
   if (!fresh && sc.record != record) fresh = true;
-  if (fresh) sc = Scale{record, 1, false};
+  if (fresh) {
+    sc = Scale{record, 1, false};
+    const float m = load_f32(base, hc + 28);
+    sc.base_max = std::isfinite(m) ? m : 0.0f;
+  }
   if (sc.locked) return;
   const float health = load_f32(base, hc + 20), max = load_f32(base, hc + 28);
   const bool hurt = std::isfinite(max) && max > 0.0f && health < max - 0.01f;
@@ -850,7 +866,9 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     {
       std::lock_guard<std::mutex> l(s.m);
       for (const auto& [t, sc] : s.scaled)
-        if (s.tracks.count(t)) enemy = t;
+        if (s.tracks.count(t) && live(base, t))
+          if (const uint32_t ehc = component(base, t, kHealthType); ehc && load_f32(base, ehc + 20) > 0.0f)
+            enemy = t;
     }
     const uint32_t hc = component(base, bodies.front(), kHealthType);
     if (enemy && hc) {
@@ -881,6 +899,18 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
 // --- the other players -----------------------------------------------------------
 
 // The host's enemy died: kill the copy too, so it plays its own death.
+// Our hero is within mp_scale_radius of `thing` (it was in the fight).
+inline bool near_hero(uint8_t* base, uint32_t hero, uint32_t thing) {
+  if (!REXCVAR_GET(mp_scale) || !hero || !live(base, hero)) return false;
+  const uint32_t a = transform(base, hero), b = transform(base, thing);
+  if (!a || !b) return false;
+  const float r = float(std::clamp(REXCVAR_GET(mp_scale_radius), 5.0, 100.0));
+  const float dx = load_f32(base, a + 0x70) - load_f32(base, b + 0x70),
+              dy = load_f32(base, a + 0x74) - load_f32(base, b + 0x74),
+              dz = load_f32(base, a + 0x78) - load_f32(base, b + 0x78);
+  return dx * dx + dy * dy + dz * dz <= r * r;
+}
+
 // The game's own health change (amount < 0 = damage), past our hook.
 inline void change_health(PPCContext& ctx, uint8_t* base, uint32_t hc, double amount, uint32_t attacker) {
   State& s = S();
@@ -940,6 +970,9 @@ inline void apply_enemy_hits(PPCContext& ctx, uint8_t* base) {
     }
     if (body && !live(base, body)) body = 0;
     const float before = load_f32(base, hc + 20);
+    // A killing blow while our hero is close: deal it as our hero, so we get
+    // the kill's experience too (the killer is still named in EKILL).
+    if (h.dmg >= before && near_hero(base, s.hero, thing)) body = s.hero;
     change_health(ctx, base, hc, -double(h.dmg), body);
     if (!(load_f32(base, hc + 20) > 0.0f)) s.tracks[thing].killer = h.from;  // their kill
     if (diag)
@@ -1078,12 +1111,15 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       const auto k = s.host_kills.find(e.id);
       if (k != s.host_kills.end() || now - c.dead_seen >= kKillWait) {
         const bool ours = k != s.host_kills.end() && k->second == Net::Get().self_id();
+        const bool close_by = !ours && near_hero(base, hero, c.thing);  // in the fight: the kill's rewards too
         c.killed = true;
-        kill_copy(ctx, base, c.thing, ours ? hero : 0);
+        kill_copy(ctx, base, c.thing, (ours || close_by) ? hero : 0);
         if (diag)
           REXLOG_INFO("[mpenemy] copy {} died with the host's enemy{}", e.id,
                       ours ? " (our kill)"
-                           : (k != s.host_kills.end() ? fmt::format(" (killed by {:08X})", k->second) : std::string()));
+                           : (k != s.host_kills.end() ? fmt::format(" (killed by {:08X}{})", k->second,
+                                                                    close_by ? ", ours too: we were close" : "")
+                                                      : std::string(close_by ? " (ours too: we were close)" : "")));
       }
     }
   }

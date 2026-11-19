@@ -23,6 +23,7 @@
 #include "keyboard_gamepad.h"
 #include "mp_skel_diag.h"  // multiplayer puppet research (src/net)
 #include "mp_puppets.h"  // multiplayer: network layer + puppet heroes (src/net)
+#include "mp_combat.h"  // multiplayer: combat (src/net)
 
 #include <rex/cvar.h>
 

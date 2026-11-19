@@ -406,6 +406,25 @@ dense_draw_distance = 0
 
 # Dense Regions: comma-separated region names that use dense_draw_distance.
 dense_regions = "BWSMarket,BWSCemetary,Ravenscar,Wraithmarsh,Brightwood,FairfaxCastleGardens"
+
+[multiplayer]
+# Encounter Scaling (co-op host only): enemies get tougher for each player in
+# the fight. The player count is taken when the fight starts (players within
+# scale_radius of the enemy) and then kept. Every player still gets full
+# experience and their own loot. Default: true
+scale_enemies = true
+
+# Enemy Health Per Player: extra enemy health for each player after the first
+# (0.6 = x1.6 with 2 players, x2.2 with 3, x2.8 with 4). Default: 0.6
+health_per_player = 0.6
+
+# Enemy Damage Per Player: extra enemy damage for each player after the first
+# (0.1 = +10% per extra player). Default: 0.1
+damage_per_player = 0.1
+
+# Scale Radius: players this many metres from an enemy count for its fight.
+# Default: 30
+scale_radius = 30
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -468,8 +487,8 @@ bool Load(const std::filesystem::path& path) {
 
   // Warn about unknown top-level sections (usually a typo or a file written
   // for a newer build).
-  static constexpr std::array<std::string_view, 5> kKnownSections = {
-      "general", "input", "patches", "perf", "graphics"};
+  static constexpr std::array<std::string_view, 6> kKnownSections = {
+      "general", "input", "patches", "perf", "graphics", "multiplayer"};
   for (const auto& [key, value] : root) {
     const bool known =
         std::ranges::find(kKnownSections, key.str()) != kKnownSections.end();
@@ -654,6 +673,19 @@ bool Load(const std::filesystem::path& path) {
                                             "boolean", values.smart_draw_distance);
     values.dense_regions = Read<std::string>(graphics_table, "graphics", "dense_regions", "string",
                                             values.dense_regions);
+  }
+  const toml::path mp_path{"multiplayer"};
+  const auto mp = root[mp_path];
+  if (mp.is_table()) {
+    const toml::table& mp_table = *mp.as_table();
+    values.mp_scale_enemies = Read<bool>(mp_table, "multiplayer", "scale_enemies", "boolean",
+                                         values.mp_scale_enemies);
+    values.mp_health_per_player = Read<double>(mp_table, "multiplayer", "health_per_player", "number",
+                                             values.mp_health_per_player);
+    values.mp_damage_per_player = Read<double>(mp_table, "multiplayer", "damage_per_player", "number",
+                                             values.mp_damage_per_player);
+    values.mp_scale_radius = Read<double>(mp_table, "multiplayer", "scale_radius", "number",
+                                        values.mp_scale_radius);
   }
 
   g_values = values;

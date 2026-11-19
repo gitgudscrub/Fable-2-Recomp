@@ -280,6 +280,13 @@ struct Values {
   // base distance of 30 or less), which keeps busy towns fast.
   bool smart_draw_distance = true;
   std::string dense_regions = "BWSMarket,BWSCemetary,Ravenscar,Wraithmarsh,Brightwood,FairfaxCastleGardens";
+
+  // [multiplayer] encounter scaling (co-op host): seed the cvars mp_scale,
+  // mp_scale_health, mp_scale_damage and mp_scale_radius (src/net/mp_enemies.h).
+  bool mp_scale_enemies = true;
+  double mp_health_per_player = 0.6;
+  double mp_damage_per_player = 0.1;
+  double mp_scale_radius = 30.0;
 };
 
 // Load the config from `path`.

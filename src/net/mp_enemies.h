@@ -50,6 +50,11 @@
 // rewards). In the other worlds it dies with no attacker. A copy waits up to
 // kKillWait for the killer's name before it dies.
 //
+// Encounter scaling (host): an enemy gets more health for each player near it
+// (within mp_scale_radius) and more damage against the players. The count may
+// rise until the fight starts (the enemy is hurt or hurts a player), then it is
+// kept for that enemy. Its copies follow its health, so their bars show it.
+//
 // No network data ever goes into Lua: the record id from the host is checked
 // against the game's own record table and given to the native create.
 #pragma once
@@ -78,6 +83,16 @@ REXCVAR_DEFINE_DOUBLE(mp_enemy_range, 50.0, "Multiplayer",
                       "Host: send hostile creatures within this many metres of any player.");
 REXCVAR_DEFINE_DOUBLE(mp_enemy_test_hit, 0.0, "Multiplayer",
                       "Test (not the host): deal this much damage to the first enemy copy, as our hero, once.");
+REXCVAR_DEFINE_BOOL(mp_scale, true, "Multiplayer",
+                    "Host: scale enemy health and damage with the players in the fight.");
+REXCVAR_DEFINE_DOUBLE(mp_scale_health, 0.6, "Multiplayer",
+                      "Host: extra enemy health per player after the first (0.6 = x1.6 for 2).");
+REXCVAR_DEFINE_DOUBLE(mp_scale_damage, 0.1, "Multiplayer",
+                      "Host: extra enemy damage per player after the first (0.1 = +10%).");
+REXCVAR_DEFINE_DOUBLE(mp_scale_radius, 30.0, "Multiplayer",
+                      "Host: players this many metres from an enemy count for its fight.");
+REXCVAR_DEFINE_DOUBLE(mp_scale_test_hit, 0.0, "Multiplayer",
+                      "Test (host): the first scaled enemy deals this much damage to the first co-op body, once.");
 REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
                      "Host: send the animation of this many of the nearest enemies (0-8).");
 
@@ -236,6 +251,12 @@ struct Track {  // host: one of our enemies
   Clock::time_point dead_since{};
 };
 
+struct Scale {  // host: one enemy's encounter scaling
+  uint32_t record = 0;
+  uint8_t players = 1;  // the count its health was raised for
+  bool locked = false;  // the fight started: the count is kept
+};
+
 struct Create {
   uint16_t id;
   uint32_t record;
@@ -270,6 +291,8 @@ struct State {
   std::unordered_map<uint32_t, uint32_t> born_after;                  // diag: thing -> seed after
   std::mutex m;  // guards copy_things (read from the health hook)
   std::unordered_map<uint32_t, uint16_t> copy_things;  // copy thing -> host's enemy id
+  std::unordered_map<uint32_t, Scale> scaled;          // host: enemy thing -> its scaling
+  uint32_t hero = 0;                                   // host: our hero (for the health hook)
   bool applying = false;  // our own health change on a copy (its death)
   // host
   std::unordered_map<uint32_t, Track> tracks;  // thing -> track
@@ -312,6 +335,30 @@ inline uint16_t copy_id(uint32_t thing) {
   std::lock_guard<std::mutex> l(s.m);
   const auto it = s.copy_things.find(thing);
   return it == s.copy_things.end() ? 0 : it->second;
+}
+
+inline double health_mult(int players) {
+  return 1.0 + std::clamp(REXCVAR_GET(mp_scale_health), 0.0, 4.0) * (std::clamp(players, 1, 4) - 1);
+}
+inline double damage_mult(int players) {
+  return 1.0 + std::clamp(REXCVAR_GET(mp_scale_damage), 0.0, 2.0) * (std::clamp(players, 1, 4) - 1);
+}
+
+// Health hook (host): `attacker` hurt a player. Returns the damage multiplier
+// for that enemy (1 = not scaled) and starts its fight.
+inline double enemy_damage_mult(uint32_t attacker) {
+  if (!attacker || !REXCVAR_GET(mp_host) || !REXCVAR_GET(mp_scale)) return 1.0;
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.m);
+  const auto it = s.scaled.find(attacker);
+  if (it == s.scaled.end()) return 1.0;
+  it->second.locked = true;
+  return damage_mult(it->second.players);
+}
+inline bool is_our_hero(uint32_t thing) {
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.m);
+  return thing && thing == s.hero;
 }
 
 inline void forget_copy(State& s, uint32_t thing) {
@@ -583,6 +630,44 @@ inline void take_poses(Clock::time_point now) {
 
 // --- host ----------------------------------------------------------------------
 
+// Host: raise an enemy's health for the players near it, until its fight starts.
+inline void scale_enemy(uint8_t* base, uint32_t t, uint32_t hc, uint16_t id, const float pos[3],
+                        const std::vector<std::array<float, 3>>& players) {
+  if (!REXCVAR_GET(mp_scale)) return;
+  State& s = S();
+  const uint32_t record = load_u32(base, t + 28);
+  const float r = float(std::clamp(REXCVAR_GET(mp_scale_radius), 5.0, 100.0));
+  int n = 0;
+  for (const auto& p : players) {
+    const float dx = pos[0] - p[0], dy = pos[1] - p[1], dz = pos[2] - p[2];
+    if (dx * dx + dy * dy + dz * dz <= r * r) ++n;
+  }
+  n = std::clamp(n, 1, 4);
+  std::lock_guard<std::mutex> l(s.m);
+  auto [it, fresh] = s.scaled.try_emplace(t);
+  Scale& sc = it->second;
+  if (!fresh && sc.record != record) fresh = true;
+  if (fresh) sc = Scale{record, 1, false};
+  if (sc.locked) return;
+  const float health = load_f32(base, hc + 20), max = load_f32(base, hc + 28);
+  const bool hurt = std::isfinite(max) && max > 0.0f && health < max - 0.01f;
+  if (hurt && !fresh) {  // its fight started before more players came
+    sc.locked = true;
+    return;
+  }
+  if (n > sc.players && std::isfinite(health) && health > 0.0f && max > 0.0f && std::isfinite(max) &&
+      fable2::textappend::wr2(base, hc + 20, 12)) {
+    const double f = health_mult(n) / health_mult(sc.players);
+    puppets::store_f32(base, hc + 20, float(health * f));
+    puppets::store_f32(base, hc + 28, float(max * f));
+    if (REXCVAR_GET(mp_enemy_diag))
+      REXLOG_INFO("[mpenemy] host: enemy {} scaled for {} players: health {:.0f}/{:.0f} -> {:.0f}/{:.0f}", id,
+                  n, health, max, health * f, max * f);
+    sc.players = uint8_t(n);
+  }
+  if (hurt) sc.locked = true;
+}
+
 inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time_point now) {
   State& s = S();
   if (now < s.next_send) return;
@@ -605,6 +690,13 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
   if (const uint32_t tc = transform(base, hero))
     players.push_back({load_f32(base, tc + 0x70), load_f32(base, tc + 0x74), load_f32(base, tc + 0x78)});
   const float range = float(std::clamp(REXCVAR_GET(mp_enemy_range), 5.0, 200.0));
+  {
+    std::lock_guard<std::mutex> l(s.m);
+    s.hero = hero;
+    for (auto it = s.scaled.begin(); it != s.scaled.end();)  // gone, or the slot reused
+      it = (live(base, it->first) && load_u32(base, it->first + 28) == it->second.record) ? std::next(it)
+                                                                                        : s.scaled.erase(it);
+  }
 
   struct Cand {
     float d2;
@@ -649,6 +741,7 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
       tr = s.tracks.emplace(t, k).first;
     }
     Track& k = tr->second;
+    if (health > 0.0f && !k.dead) scale_enemy(base, t, hc, k.id, pos, players);
     if (!(health > 0.0f) && !k.dead) {
       k.dead = true;
       k.dead_since = now;
@@ -667,7 +760,8 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
       e.qz = 0.0f;
       e.qw = 1.0f;
     }
-    e.health = std::isfinite(health) ? health : 0.0f;
+    const float h = load_f32(base, hc + 20);  // after scaling
+    e.health = std::isfinite(h) ? h : 0.0f;
     cands.push_back({d2, e});
   }
   for (auto it = s.tracks.begin(); it != s.tracks.end();)
@@ -712,6 +806,26 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     it = s.tracks.count(it->first) ? s.born.erase(it) : std::next(it);
   for (auto it = s.born_after.begin(); it != s.born_after.end();)
     it = s.tracks.count(it->first) ? s.born_after.erase(it) : std::next(it);
+  if (const double test = REXCVAR_GET(mp_scale_test_hit); test > 0.0) {
+    REXCVAR_SET(mp_scale_test_hit, 0.0);
+    uint32_t enemy = 0;
+    {
+      std::lock_guard<std::mutex> l(s.m);
+      for (const auto& [t, sc] : s.scaled)
+        if (s.tracks.count(t)) enemy = t;
+    }
+    const uint32_t hc = component(base, bodies.front(), kHealthType);
+    if (enemy && hc) {
+      const PPCContext saved = ctx;
+      ctx.r1.u64 = (saved.r1.u64 - 1024) & ~uint64_t(15);
+      ctx.r3.u64 = hc;
+      ctx.r5.u64 = enemy;
+      ctx.f1.f64 = -std::min(test, 500.0);
+      sub_8268BD90(ctx, base);
+      ctx = saved;
+      REXLOG_INFO("[mpenemy] test: enemy 0x{:08X} hit a co-op body for {:.1f}", enemy, test);
+    }
+  }
   match_skeletons(base, where);
   host_poses(ids);
   if (REXCVAR_GET(mp_enemy_diag) && now >= s.next_diag) {
@@ -754,7 +868,10 @@ inline void sync_health(uint8_t* base, uint32_t thing, float health) {
   const uint32_t hc = component(base, thing, kHealthType);
   if (!hc || !(health > 0.0f)) return;
   const float max = load_f32(base, hc + 28);
-  const float v = (max > 0.0f && std::isfinite(max)) ? std::min(health, max) : health;
+  // the host's enemy may have more (encounter scaling): raise the copy's max
+  if (std::isfinite(max) && max > 0.0f && health > max + 0.01f && fable2::textappend::wr2(base, hc + 28, 4))
+    puppets::store_f32(base, hc + 28, health);
+  const float v = health;
   if (std::fabs(load_f32(base, hc + 20) - v) > 0.01f && fable2::textappend::wr2(base, hc + 20, 4))
     puppets::store_f32(base, hc + 20, v);
 }

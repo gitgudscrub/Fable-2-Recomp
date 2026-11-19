@@ -31,6 +31,8 @@ namespace fable2::net::enemies {  // mp_enemies.h
 inline bool is_copy(uint32_t thing);
 inline bool applying_own();
 inline uint16_t copy_id(uint32_t thing);
+inline double enemy_damage_mult(uint32_t attacker);
+inline bool is_our_hero(uint32_t thing);
 }
 
 namespace fable2::net::combat {
@@ -153,14 +155,26 @@ extern "C" void sub_8268BD90(PPCContext& ctx, uint8_t* base) {
   uint32_t peer = 0;
   if (ok && puppet_slot_of(owner, &peer) >= 0) {
     // A co-op player's body: never change its health here. Damage goes to
-    // that player's game, which applies it to their real hero.
-    if (amount < 0.0f && peer) fable2::net::Net::Get().queue_hit(peer, -amount);
+    // that player's game, which applies it to their real hero (scaled by
+    // the enemy's encounter scaling, mp_enemies.h).
+    if (amount < 0.0f && peer)
+      fable2::net::Net::Get().queue_hit(peer, -amount * float(fable2::net::enemies::enemy_damage_mult(attacker)));
     if (diag)
       REXLOG_INFO("[mpcombat] puppet 0x{:08X} hit for {:.2f} by 0x{:08X}: sent to {:08X}", owner, amount,
                   attacker, peer);
     return;
   }
-  __imp__sub_8268BD90(ctx, base);
+  // Host: an enemy hurting our hero hits harder with more players (encounter scaling).
+  double mult = 1.0;
+  if (ok && amount < 0.0f && attacker && fable2::net::enemies::is_our_hero(owner))
+    mult = fable2::net::enemies::enemy_damage_mult(attacker);
+  if (mult != 1.0) {
+    ctx.f1.f64 = double(amount) * mult;
+    __imp__sub_8268BD90(ctx, base);
+    ctx.f1.f64 = amount;
+  } else {
+    __imp__sub_8268BD90(ctx, base);
+  }
   if (diag && ok) {
     static std::atomic<int> logged{0};
     if (logged.fetch_add(1) < 400) {

@@ -374,3 +374,22 @@ dense_draw_distance = 0
 
 # Dense Regions: comma-separated region names that use dense_draw_distance.
 dense_regions = "BWSMarket,BWSCemetary,Ravenscar,Wraithmarsh,Brightwood,FairfaxCastleGardens"
+
+[multiplayer]
+# Encounter Scaling (co-op host only): enemies get tougher for each player in
+# the fight. The player count is taken when the fight starts (players within
+# scale_radius of the enemy) and then kept. Every player still gets full
+# experience and their own loot. Default: true
+scale_enemies = true
+
+# Enemy Health Per Player: extra enemy health for each player after the first
+# (0.6 = x1.6 with 2 players, x2.2 with 3, x2.8 with 4). Default: 0.6
+health_per_player = 0.6
+
+# Enemy Damage Per Player: extra enemy damage for each player after the first
+# (0.1 = +10% per extra player). Default: 0.1
+damage_per_player = 0.1
+
+# Scale Radius: players this many metres from an enemy count for its fight.
+# Default: 30
+scale_radius = 30

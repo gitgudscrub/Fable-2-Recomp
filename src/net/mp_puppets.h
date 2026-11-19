@@ -50,10 +50,15 @@ DECLARE_REX_FUNC(sub_8222F1B0);  // GetPlayerHero native -> CThing*
 DECLARE_REX_FUNC(sub_825BC498);  // Lua entity:SetPosition binding (r3 handle, v1 pos)
 DECLARE_REX_FUNC(CheckValidPointer_825575C8);  // Lua entity handle -> CThing*
 
+namespace fable2::net::enemies {
+inline void on_script_phase(PPCContext& ctx, uint8_t* base);  // mp_enemies.h
+}
+
 namespace fable2::net::puppets {
 namespace ta = fable2::textappend;
 
 constexpr float kMarkX = -7777.0f;           // SetPosition x that marks a new puppet
+constexpr float kEnemyPhaseX = -7779.0f;     // mp_enemy_phase.lua: do the queued enemy work
 constexpr float kGraveX = -9000.0f;          // bodies to remove are parked here (cleanup: x < -8000)
 constexpr uint32_t kTransformVtbl = 0x820071C0;
 constexpr int kHero = -1;                    // skeleton owner id for our hero
@@ -102,6 +107,10 @@ inline State& S() {
 
 inline bool heap(uint8_t* base, uint32_t a, size_t n) {
   return a >= 0x40000000u && a < 0x80000000u && ta::rdable2(base, a, n);
+}
+inline void store_u32(uint8_t* base, uint32_t a, uint32_t v) {
+  v = __builtin_bswap32(v);
+  std::memcpy(base + a, &v, 4);
 }
 inline void store_f32(uint8_t* base, uint32_t a, float v) {
   uint32_t w;
@@ -435,6 +444,10 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
 
 // SetPosition hook: x == kMarkX hands the entity to the oldest waiting slot.
 inline bool on_mark(PPCContext& ctx, uint8_t* base) {
+  if (ctx.v1.f32[3] == kEnemyPhaseX) {
+    fable2::net::enemies::on_script_phase(ctx, base);
+    return true;
+  }
   if (ctx.v1.f32[3] != kMarkX) return false;
   const uint64_t r3 = ctx.r3.u64;
   CheckValidPointer_825575C8(ctx, base);

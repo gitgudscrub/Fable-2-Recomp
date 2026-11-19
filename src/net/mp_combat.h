@@ -27,6 +27,11 @@ REXCVAR_DEFINE_INT32(mp_combat_diag, 0, "Multiplayer",
 
 DECLARE_REX_FUNC(sub_8268BD90);  // modify health (r3 health comp, f1 amount, r5 attacker)
 
+namespace fable2::net::enemies {  // mp_enemies.h
+inline bool is_copy(uint32_t thing);
+inline bool applying_own();
+}
+
 namespace fable2::net::combat {
 
 inline float load_f32(uint8_t* base, uint32_t a) {
@@ -122,6 +127,17 @@ extern "C" void sub_8268BD90(PPCContext& ctx, uint8_t* base) {
   const float before = ok ? load_f32(base, comp + 20) : 0.0f;
   const float amount = float(ctx.f1.f64);
   const uint32_t attacker = ctx.r5.u32;
+  // Copies of the host's enemies (mp_enemies.h): what they do does no damage
+  // (the host's enemy does the real hit), and nothing changes their health
+  // here but their death (step 3 will send hits on them to the host).
+  if (attacker && fable2::net::enemies::is_copy(attacker)) {
+    if (diag) REXLOG_INFO("[mpcombat] hit by enemy copy 0x{:08X} dropped ({:.2f})", attacker, amount);
+    return;
+  }
+  if (ok && fable2::net::enemies::is_copy(owner) && !fable2::net::enemies::applying_own()) {
+    if (diag) REXLOG_INFO("[mpcombat] hit on enemy copy 0x{:08X} dropped ({:.2f})", owner, amount);
+    return;
+  }
   uint32_t peer = 0;
   if (ok && puppet_slot_of(owner, &peer) >= 0) {
     // A co-op player's body: never change its health here. Damage goes to

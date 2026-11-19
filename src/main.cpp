@@ -24,6 +24,7 @@
 #include "mp_skel_diag.h"  // multiplayer puppet research (src/net)
 #include "mp_puppets.h"  // multiplayer: network layer + puppet heroes (src/net)
 #include "mp_combat.h"  // multiplayer: combat (src/net)
+#include "mp_enemies.h"  // multiplayer: the host's enemies (src/net)
 
 #include <rex/cvar.h>
 
@@ -36,6 +37,7 @@ void fable2_game_thread_lua_tick(PPCContext& ctx, uint8_t* base) {
   fable2::net::skeldiag::tick(ctx, base);
   fable2::net::puppets::tick(ctx, base);
   fable2::net::combat::tick(ctx, base);
+  fable2::net::enemies::tick(ctx, base);
 }
 
 // Host keyboard -> guest gamepad map (see src/input/keyboard_gamepad.h).

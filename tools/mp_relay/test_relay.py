@@ -246,6 +246,28 @@ class RelayV2Test(RelayTest):
         await self.pump()
         self.assertEqual(e.recv_all(), [])
 
+    async def test_enemies_checked_and_forwarded(self):
+        a, b = self.client(), self.client()
+        code = await self.host_session(a, 11)
+        b.send(join(13, code))
+        await self.pump()
+        b.recv_all()
+
+        def enemies(*ents, count=None):
+            body = b"".join(R.ENEMY.pack(*e) for e in ents)
+            n = len(ents) if count is None else count
+            return hdr(R.ENEMIES, 11) + struct.pack("<BBH", n, 0, 0) + body
+        good = (1, 0, 0, 0x6E5F42EF, 1.0, 2.0, 3.0, 0.0, 1.0, 900.0)
+        a.send(enemies())                                   # none near: fine
+        a.send(enemies(good, good))
+        a.send(enemies(good, count=2))                      # count/length mismatch
+        a.send(enemies((1, 0, 0, 0, 1.0, 2.0, 3.0, 0.0, 1.0, 9.0)))   # no record
+        a.send(enemies((1, 0, 0, 5, float("inf"), 2.0, 3.0, 0.0, 1.0, 9.0)))
+        a.send(enemies((1, 0, 0, 5, 1.0, 2.0, 3.0, 0.0, 0.0, 9.0)))   # bad facing
+        a.send(enemies(*([good] * 25)))                     # too many
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.ENEMIES, R.ENEMIES])
+
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()
         a.send(create(11, proto=1))

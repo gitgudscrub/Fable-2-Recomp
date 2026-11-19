@@ -38,13 +38,16 @@ HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ, HIT = 1, 2, 3, 4, 5, 6
+HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES = 1, 2, 3, 4, 5, 6, 7
 GAME_TYPES = {
     1: (HELLO, STATE, POSE),
     2: (HELLO, STATE, POSE, BYE, POSEQ),
-    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES),
 }
 MAX_HIT_DAMAGE = 500.0
+MAX_ENEMIES = 24
+ENEMY = struct.Struct("<HBBIffffff")  # id, flags, pad, record, x y z, qz qw, health
+assert ENEMY.size == 32
 # relay messages
 CREATE, JOIN, WELCOME, REFUSED = 16, 17, 18, 19
 
@@ -153,6 +156,24 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
             return False
         target, dmg, _ = struct.unpack_from("<IfI", data, 16)
         return target != 0 and math.isfinite(dmg) and 0.0 < dmg <= MAX_HIT_DAMAGE
+    if mtype == ENEMIES:
+        if n < 20:
+            return False
+        count = data[16]
+        if count > MAX_ENEMIES or n != 20 + count * ENEMY.size:
+            return False
+        for k in range(count):
+            _id, _fl, _pad, record, x, y, z, qz, qw, hp = ENEMY.unpack_from(data, 20 + k * ENEMY.size)
+            if record == 0:
+                return False
+            for v in (x, y, z):
+                if not math.isfinite(v) or abs(v) > MAX_COORD:
+                    return False
+            if not (math.isfinite(qz) and math.isfinite(qw) and 0.5 <= math.hypot(qz, qw) <= 1.5):
+                return False
+            if not math.isfinite(hp) or abs(hp) > 1.0e6:
+                return False
+        return True
     return False
 
 

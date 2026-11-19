@@ -29,6 +29,11 @@ def poseq(sender, count=48, first=0, bones=143, part=0, parts=1, layout=1):
             + b"\0" * (count * 14))
 
 
+def epose(sender, eid=3, count=40, first=0, bones=40, part=0, parts=1, layout=1):
+    return (hdr(R.EPOSE, sender) + struct.pack("<HHIHHHBBBB", eid, 0, 9, bones, first, count, part, parts, layout, 0)
+            + b"\0" * (count * (14 if layout else 24)))
+
+
 def create(sender, want="", proto=R.PROTO):
     return hdr(R.CREATE, sender, proto=proto) + want.encode().ljust(8, b"\0")
 
@@ -267,6 +272,22 @@ class RelayV2Test(RelayTest):
         a.send(enemies(*([good] * 25)))                     # too many
         await self.pump()
         self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.ENEMIES, R.ENEMIES])
+
+    async def test_enemy_poses_checked_and_forwarded(self):
+        a, b = self.client(), self.client()
+        code = await self.host_session(a, 11)
+        b.send(join(13, code))
+        await self.pump()
+        b.recv_all()
+        a.send(epose(11))
+        a.send(epose(11, layout=0))
+        a.send(epose(11, eid=0))                 # no enemy id
+        a.send(epose(11, layout=3))              # bad layout
+        a.send(epose(11, first=10))              # past the last bone
+        a.send(epose(11, part=1))                # part out of range
+        a.send(epose(11)[:-2])                   # bad length
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.EPOSE, R.EPOSE])
 
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()

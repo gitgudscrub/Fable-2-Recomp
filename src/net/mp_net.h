@@ -71,10 +71,12 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <random>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 REXCVAR_DEFINE_BOOL(mp_enable, false, "Multiplayer",
@@ -97,7 +99,7 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES
+constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
@@ -109,6 +111,7 @@ constexpr int kMaxHitsPerSec = 20;   // per sender; more are dropped
 constexpr size_t kMaxQueuedHits = 64;
 constexpr uint32_t kMaxEnemies = 24;       // per ENEMIES message (and copies drawn)
 constexpr float kMaxEnemyHealth = 1.0e6f;
+constexpr uint32_t kMaxEnemyPoses = 8;     // enemies whose pose is sent each round
 
 struct EnemyState {
   uint16_t id = 0;
@@ -119,8 +122,21 @@ struct EnemyState {
   float health = 0;
 };
 
+// One of the host's enemies: its pose (bone palettes per skeleton part).
+struct EnemyPose {
+  uint16_t id = 0;
+  uint32_t frame = 0;
+  uint8_t parts = 0;
+  std::array<std::vector<float>, kMaxParts> part;  // bone_count * 12 floats each
+};
+struct EnemyPosePart {  // one complete part as it arrived
+  uint16_t id = 0;
+  uint8_t part = 0;
+  std::vector<float> pose;
+};
+
 enum class Msg : uint8_t {
-  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7,
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
 enum class Refuse : uint8_t {
@@ -236,6 +252,19 @@ class Net {
     out = enemies_in_;
     at = enemies_in_at_;
     return true;
+  }
+  // Host (game thread): the enemy poses to send next.
+  void set_enemy_poses(std::vector<EnemyPose> v) {
+    std::lock_guard<std::mutex> l(enemies_m_);
+    epose_out_.swap(v);
+    epose_out_new_ = !epose_out_.empty();
+  }
+  // Others (game thread): enemy pose parts completed since the last call (newest only).
+  void take_enemy_poses(std::vector<EnemyPosePart>& out) {
+    out.clear();
+    std::lock_guard<std::mutex> l(enemies_m_);
+    for (auto& [key, pose] : epose_ready_) out.push_back({uint16_t(key >> 8), uint8_t(key & 0xFF), std::move(pose)});
+    epose_ready_.clear();
   }
   // Damage other games dealt to our hero since the last call (summed).
   float take_hits(int& count) {
@@ -406,6 +435,7 @@ class Net {
       }
       send_hits();
       send_enemies();
+      send_enemy_poses();
       if (now >= next_log) {
         next_log = now + std::chrono::seconds(10);
         int active = 0;
@@ -633,6 +663,92 @@ class Net {
     send_all(w);
   }
 
+  // --- enemy poses (EPOSE) ----------------------------------------------------
+  // id u16, reserved u16, frame u32, bones u16, first u16, count u16, part u8,
+  // parts u8, layout u8 (0 = 12 half floats per bone, 1/2 = POSEQ layouts),
+  // reserved u8, then the bones.
+  static int pick_layout(const std::vector<float>& pose, uint32_t bones) {
+    for (int l = 1; l <= 2; ++l) {
+      bool ok = true;
+      for (uint32_t b = 0; b < bones && ok; ++b) ok = is_rotation(&pose[b * 12], l);
+      if (ok) return l;
+    }
+    return 0;
+  }
+  static void write_bones(Writer& p, const std::vector<float>& pose, uint32_t first, uint32_t count, int layout) {
+    for (uint32_t b = first; b < first + count; ++b) {
+      const float* m = &pose[b * 12];
+      if (!layout) {
+        for (int k = 0; k < 12; ++k) p.u16(to_half(m[k]));
+        continue;
+      }
+      float q[4];
+      to_quat(m, layout, q);
+      for (float v : q) p.u16(to_half(v));
+      for (int k = 0; k < 3; ++k) p.u16(to_half(m[kPos[layout][k]]));
+    }
+  }
+  // Decodes `count` bones; false = a bad value (drop the packet).
+  static bool read_bones(Reader& r, int layout, uint32_t count, float* vals) {
+    for (uint32_t b = 0; b < count; ++b) {
+      float* m = &vals[b * 12];
+      if (!layout) {
+        for (int k = 0; k < 12; ++k) {
+          m[k] = from_half(r.u16());
+          if (!finite_in(m[k], 1000.0f)) return false;
+        }
+        continue;
+      }
+      float q[4], t[3];
+      for (float& v : q) v = from_half(r.u16());
+      for (float& v : t) v = from_half(r.u16());
+      for (float v : q)
+        if (!finite_in(v, 1.5f)) return false;
+      for (float v : t)
+        if (!finite_in(v, 1000.0f)) return false;
+      const float len = std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]);
+      if (len < 0.5f || len > 1.5f) return false;
+      for (float& v : q) v /= len;
+      from_quat(q, t, layout, m);
+    }
+    return r.ok;
+  }
+  void send_enemy_poses() {
+    std::vector<EnemyPose> v;
+    {
+      std::lock_guard<std::mutex> l(enemies_m_);
+      if (!epose_out_new_) return;
+      epose_out_new_ = false;
+      v.swap(epose_out_);
+    }
+    for (const auto& e : v) {
+      for (uint32_t part = 0; part < e.parts && part < kMaxParts; ++part) {
+        const std::vector<float>& pose = e.part[part];
+        const uint32_t bones = uint32_t(pose.size() / 12);
+        if (!bones || bones > kMaxBones || pose.size() % 12) continue;
+        const int layout = pick_layout(pose, bones);
+        for (uint32_t first = 0; first < bones; first += kBonesPerPacket) {
+          const uint32_t count = std::min(kBonesPerPacket, bones - first);
+          Writer p;
+          p.b.reserve(40 + count * 24);
+          header(p, Msg::EPose);
+          p.u16(e.id);
+          p.u16(0);
+          p.u32(e.frame);
+          p.u16(uint16_t(bones));
+          p.u16(uint16_t(first));
+          p.u16(uint16_t(count));
+          p.u8(uint8_t(part));
+          p.u8(e.parts);
+          p.u8(uint8_t(layout));
+          p.u8(0);
+          write_bones(p, pose, first, count, layout);
+          send_all(p);
+        }
+      }
+    }
+  }
+
   void parse_peers() {
     const std::string list = REXCVAR_GET(mp_peers);
     size_t i = 0;
@@ -774,9 +890,16 @@ class Net {
   // Stores decoded bones of one pose packet; publishes the pose when complete.
   void assemble(PeerState* p, uint32_t frame, uint16_t bones, uint16_t first, uint16_t count,
                 uint8_t part, uint8_t parts, const float* vals) {
-    PeerPart& pp = p->parts[part];
+    p->part_count = parts;
+    if (assemble_part(p->parts[part], frame, bones, first, count, vals))
+      stats_.poses.fetch_add(1, std::memory_order_relaxed);
+  }
+  // Adds bones to a part's pose being put together; true = it just completed
+  // (now in pp.pose).
+  static bool assemble_part(PeerPart& pp, uint32_t frame, uint16_t bones, uint16_t first, uint16_t count,
+                            const float* vals) {
     if (pp.asm_frame != frame || pp.asm_pose.size() != size_t(bones) * 12) {
-      if (pp.asm_frame && int32_t(frame - pp.asm_frame) < 0) return;  // older frame
+      if (pp.asm_frame && int32_t(frame - pp.asm_frame) < 0) return false;  // older frame
       pp.asm_frame = frame;
       pp.asm_pose.assign(size_t(bones) * 12, 0.0f);
       pp.asm_have.assign(bones, 0);
@@ -786,15 +909,13 @@ class Net {
     for (uint32_t b = first; b < uint32_t(first) + count; ++b) {
       if (!pp.asm_have[b]) { pp.asm_have[b] = 1; ++pp.asm_count; }
     }
-    p->part_count = parts;
-    if (pp.asm_count == bones) {  // complete: publish
-      pp.pose.swap(pp.asm_pose);
-      pp.frame = frame;
-      ++pp.version;
-      pp.asm_pose.clear();
-      pp.asm_count = 0;
-      stats_.poses.fetch_add(1, std::memory_order_relaxed);
-    }
+    if (pp.asm_count != bones) return false;
+    pp.pose.swap(pp.asm_pose);  // complete: publish
+    pp.frame = frame;
+    ++pp.version;
+    pp.asm_pose.clear();
+    pp.asm_count = 0;
+    return true;
   }
 
   // Finds the slot for a sender; only a HELLO may take a free one. Caller holds peers_m_.
@@ -972,6 +1093,37 @@ class Net {
         ++enemies_in_ver_;
         break;
       }
+      case Msg::EPose: {
+        const uint16_t id = r.u16();
+        r.u16();
+        const uint32_t frame = r.u32();
+        const uint16_t bones = r.u16(), first = r.u16(), count = r.u16();
+        const uint8_t part = r.u8(), parts = r.u8(), layout = r.u8();
+        r.u8();
+        if (!r.ok || id == 0 || bones == 0 || bones > kMaxBones || count == 0 || count > kBonesPerPacket ||
+            uint32_t(first) + count > bones || parts == 0 || parts > kMaxParts || part >= parts ||
+            layout > 2 || n != r.i + size_t(count) * (layout ? 14 : 24))
+          return false;
+        float vals[kBonesPerPacket * 12];
+        if (!read_bones(r, layout, count, vals) || r.i != n) return false;
+        if (REXCVAR_GET(mp_host)) break;  // the host has the real ones
+        const auto now = Clock::now();
+        std::lock_guard<std::mutex> el(enemies_m_);
+        auto it = epose_in_.find(id);
+        if (it == epose_in_.end()) {
+          if (epose_in_.size() >= kMaxEnemies * 2) {  // forget the longest silent one
+            auto old = epose_in_.begin();
+            for (auto j = epose_in_.begin(); j != epose_in_.end(); ++j)
+              if (j->second.heard < old->second.heard) old = j;
+            epose_in_.erase(old);
+          }
+          it = epose_in_.emplace(id, EnemyPoseIn{}).first;
+        }
+        it->second.heard = now;
+        PeerPart& pp = it->second.parts[part];
+        if (assemble_part(pp, frame, bones, first, count, vals)) epose_ready_[(uint32_t(id) << 8) | part] = pp.pose;
+        break;
+      }
       case Msg::Bye: {
         if (r.i != n) return false;
         REXLOG_INFO("[mpnet] peer {:08X} left", p->id);
@@ -992,6 +1144,14 @@ class Net {
   bool enemies_out_new_ = false;
   uint32_t enemies_in_ver_ = 0;
   Clock::time_point enemies_in_at_{};
+  struct EnemyPoseIn {
+    std::array<PeerPart, kMaxParts> parts;
+    Clock::time_point heard{};
+  };
+  std::vector<EnemyPose> epose_out_;
+  bool epose_out_new_ = false;
+  std::unordered_map<uint16_t, EnemyPoseIn> epose_in_;
+  std::map<uint32_t, std::vector<float>> epose_ready_;  // (id << 8 | part) -> pose
   std::mutex hits_m_;
   std::vector<std::pair<uint32_t, float>> hits_out_;
   float hits_in_ = 0.0f;

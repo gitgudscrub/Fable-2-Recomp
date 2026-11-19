@@ -10,6 +10,13 @@
 // (the host's enemy deals the real damage, see mp_combat.h); damage to a copy
 // is dropped for now (step 3 sends it to the host).
 //
+// Poses (step 2b): the host also sends (EPOSE) the bone palettes of its nearest
+// enemies, caught in the palette packer like our hero's. The other games draw
+// each copy with them, blended between arrivals like player puppets, so a copy
+// moves as the host's enemy does instead of by its own AI. A skeleton belongs
+// to the enemy (or copy) standing on it: the packer records every drawn
+// skeleton's world position (puppets::S().seen).
+//
 // Game internals used (all found from the Lua bindings):
 //   entity list: manager = *(*(*(*(*(0x83496920) + 12) + 88) + 4) + 0)
 //     node = *(manager + 8), next = *(node + 0), entity = *(node + 8);
@@ -39,6 +46,7 @@
 #include <cmath>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -50,6 +58,8 @@ REXCVAR_DEFINE_INT32(mp_enemy_diag, 0, "Multiplayer",
                      "1 = log enemy sync (copies made and removed, own enemies removed).");
 REXCVAR_DEFINE_DOUBLE(mp_enemy_range, 50.0, "Multiplayer",
                       "Host: send hostile creatures within this many metres of any player.");
+REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
+                     "Host: send the animation of this many of the nearest enemies (0-8).");
 
 DECLARE_REX_FUNC(sub_82391030);  // create entity from record id
 DECLARE_REX_FUNC(sub_82392FF8);  // destroy entity
@@ -193,7 +203,27 @@ struct Create {
   float pos[3];
 };
 
+struct CopyPose {  // the other players: a copy's newest pose from the host
+  std::array<std::vector<float>, kMaxParts> pose, prev;
+  std::array<Clock::time_point, kMaxParts> blend_start{}, arrived{};
+  std::array<float, kMaxParts> blend_len{};
+};
+struct CapPose {  // host: one enemy's pose caught in the packer
+  std::array<std::vector<float>, kMaxParts> part;
+  uint32_t frame = 0;
+};
+
 struct State {
+  // poses (packer hook + game thread)
+  std::mutex pm;
+  bool hosting = false;
+  std::unordered_map<uint32_t, std::pair<uint16_t, int>> skel_of;  // skel -> (enemy id, part)
+  std::unordered_map<uint16_t, uint8_t> parts_of;                  // enemy id -> parts matched
+  std::unordered_map<uint16_t, CapPose> cap;                       // host
+  std::unordered_map<uint16_t, uint32_t> sent_frame;               // host
+  std::unordered_map<uint16_t, CopyPose> cpose;                    // the others
+  uint32_t pose_writes = 0, pose_skips = 0, poses_in = 0;
+
   std::mutex m;  // guards copy_things (read from the health hook)
   std::unordered_set<uint32_t> copy_things;
   bool applying = false;  // our own health change on a copy (its death)
@@ -208,6 +238,7 @@ struct State {
   Clock::time_point list_at{};
   Clock::time_point next_own_scan{};
   Clock::time_point next_diag{};
+  Clock::time_point next_match{};
   // work for the script phase
   std::vector<Create> creates;
   std::vector<std::pair<uint32_t, uint32_t>> destroys;  // (thing, record)
@@ -285,6 +316,190 @@ inline std::vector<uint32_t> puppet_bodies() {
   return v;
 }
 
+// --- poses -----------------------------------------------------------------------
+
+struct Body {
+  uint16_t id;
+  float pos[3];
+};
+
+// Game thread: gives each drawn skeleton not owned by a player to the enemy (or
+// copy) standing on it; per enemy one skeleton of each size, largest first.
+inline void match_skeletons(uint8_t* base, const std::vector<Body>& bodies) {
+  std::vector<std::pair<uint32_t, puppets::Seen>> seen;
+  {
+    auto& ps = puppets::S();
+    std::lock_guard<std::mutex> l(ps.m);
+    const auto now = Clock::now();
+    for (const auto& [skel, k] : ps.seen)
+      if (now - k.t < puppets::kSeenKeep && !ps.owner.count(skel)) seen.push_back({skel, k});
+  }
+  struct Cand {
+    uint32_t bones;
+    float d2;
+    uint32_t skel;
+  };
+  std::unordered_map<uint16_t, std::vector<Cand>> by;
+  for (const auto& [skel, k] : seen) {
+    int best = -1;
+    float bd = 0.5f * 0.5f;
+    for (size_t i = 0; i < bodies.size(); ++i) {
+      const float dx = k.x - bodies[i].pos[0], dy = k.y - bodies[i].pos[1], dz = k.z - bodies[i].pos[2];
+      if (dz < -1.0f || dz > 2.5f) continue;
+      const float d2 = dx * dx + dy * dy;
+      if (d2 < bd) bd = d2, best = int(i);
+    }
+    if (best < 0) continue;
+    const uint32_t bones = puppets::skel_bones(base, skel);
+    if (bones) by[bodies[best].id].push_back({bones, bd, skel});
+  }
+  std::unordered_map<uint32_t, std::pair<uint16_t, int>> skel_of;
+  std::unordered_map<uint16_t, uint8_t> parts_of;
+  for (auto& [id, v] : by) {
+    std::sort(v.begin(), v.end(), [](const Cand& a, const Cand& b) {
+      return a.bones != b.bones ? a.bones > b.bones : a.d2 < b.d2;
+    });
+    int part = 0;
+    uint32_t last = 0;
+    for (const auto& c : v) {
+      if (c.bones == last) continue;  // a second one this size: someone else's
+      last = c.bones;
+      if (part >= int(kMaxParts)) break;
+      skel_of[c.skel] = {id, part++};
+    }
+    parts_of[id] = uint8_t(part);
+  }
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.pm);
+  s.skel_of.swap(skel_of);
+  s.parts_of.swap(parts_of);
+}
+
+inline float blend_at(const CopyPose& p, int part, Clock::time_point now) {
+  const float len = p.blend_len[part];
+  if (len <= 0.0f) return 1.0f;
+  return std::clamp(std::chrono::duration<float>(now - p.blend_start[part]).count() / len, 0.0f, 1.0f);
+}
+
+// Palette packer (render side): the host catches its enemies' poses; the
+// others draw copies with the host's.
+inline void on_pack(uint8_t* base, uint32_t skel, uint32_t vec) {
+  if (!REXCVAR_GET(mp_enable)) return;
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.pm);
+  const auto it = s.skel_of.find(skel);
+  if (it == s.skel_of.end()) return;
+  const uint16_t id = it->second.first;
+  const int my_part = it->second.second;
+  uint32_t b = 0;
+  const uint32_t n = puppets::vec_bones(base, vec, &b);
+  if (!n || !puppets::heap(base, b, n * 48)) return;
+  if (s.hosting) {
+    CapPose& c = s.cap[id];
+    auto& dst = c.part[my_part];
+    dst.resize(size_t(n) * 12);
+    for (uint32_t k = 0; k < n * 12; ++k) dst[k] = load_f32(base, b + k * 4);
+    if (my_part == 0) ++c.frame;
+    return;
+  }
+  const auto pit = s.cpose.find(id);
+  if (pit == s.cpose.end()) return;
+  const CopyPose& cp = pit->second;
+  // A copy may wear other gear than the host's enemy (its extra skeletons
+  // differ), so the host's part is the one with this bone count.
+  int part = -1;
+  for (int k = 0; k < int(kMaxParts) && part < 0; ++k) {
+    const int c = (my_part + k) % int(kMaxParts);
+    if (cp.pose[c].size() == size_t(n) * 12) part = c;
+  }
+  if (part < 0) {
+    if (!cp.pose[my_part].empty()) ++s.pose_skips;  // nothing this size: its own animation
+    return;
+  }
+  const auto& src = cp.pose[part];
+  if (!fable2::textappend::wr2(base, b, n * 48)) {
+    ++s.pose_skips;
+    return;
+  }
+  const auto& from = cp.prev[part];
+  const float a = blend_at(cp, part, Clock::now());
+  if (from.size() == src.size() && a < 1.0f) {
+    for (uint32_t k = 0; k < n * 12; ++k) puppets::store_f32(base, b + k * 4, from[k] + (src[k] - from[k]) * a);
+  } else {
+    for (uint32_t k = 0; k < n * 12; ++k) puppets::store_f32(base, b + k * 4, src[k]);
+  }
+  ++s.pose_writes;
+}
+
+// Host: the newest poses of the nearest enemies (ids nearest first) for sending.
+inline void host_poses(const std::vector<uint16_t>& ids) {
+  State& s = S();
+  const size_t want = size_t(std::clamp(REXCVAR_GET(mp_enemy_poses), 0, int(kMaxEnemyPoses)));
+  std::vector<EnemyPose> out;
+  {
+    std::lock_guard<std::mutex> l(s.pm);
+    s.hosting = true;
+    for (uint16_t id : ids) {
+      if (out.size() >= want) break;
+      const auto c = s.cap.find(id);
+      const auto pc = s.parts_of.find(id);
+      if (c == s.cap.end() || pc == s.parts_of.end() || !pc->second) continue;
+      if (s.sent_frame[id] == c->second.frame) continue;  // not drawn since
+      EnemyPose e;
+      e.id = id;
+      e.frame = c->second.frame;
+      e.parts = pc->second;
+      bool ok = true;
+      for (int k = 0; k < e.parts && ok; ++k) {
+        e.part[k] = c->second.part[k];
+        ok = !e.part[k].empty();
+      }
+      if (!ok) continue;
+      s.sent_frame[id] = e.frame;
+      out.push_back(std::move(e));
+    }
+    auto listed = [&](uint16_t id) { return std::find(ids.begin(), ids.end(), id) != ids.end(); };
+    for (auto it = s.cap.begin(); it != s.cap.end();) it = listed(it->first) ? std::next(it) : s.cap.erase(it);
+    for (auto it = s.sent_frame.begin(); it != s.sent_frame.end();)
+      it = listed(it->first) ? std::next(it) : s.sent_frame.erase(it);
+  }
+  Net::Get().set_enemy_poses(std::move(out));
+}
+
+// The others: take the host's newest poses (blend from what is on screen now).
+inline void take_poses(Clock::time_point now) {
+  static std::vector<EnemyPosePart> in;
+  Net::Get().take_enemy_poses(in);
+  if (in.empty()) return;
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.pm);
+  s.hosting = false;
+  for (auto& e : in) {
+    if (e.part >= kMaxParts || !s.copies.count(e.id)) continue;
+    CopyPose& p = s.cpose[e.id];
+    const int part = e.part;
+    auto& cur = p.pose[part];
+    auto& prev = p.prev[part];
+    const float a = blend_at(p, part, now);
+    if (cur.size() == e.pose.size() && prev.size() == e.pose.size() && a < 1.0f) {
+      for (size_t k = 0; k < cur.size(); ++k) prev[k] += (cur[k] - prev[k]) * a;
+    } else {
+      prev = cur;
+    }
+    const float gap = std::chrono::duration<float>(now - p.arrived[part]).count();
+    p.arrived[part] = now;
+    if (prev.size() != e.pose.size() || gap > 0.3f) {
+      p.blend_len[part] = 0.0f;
+    } else {
+      const float len = p.blend_len[part] > 0 ? p.blend_len[part] * 0.8f + gap * 0.2f : gap;
+      p.blend_len[part] = std::clamp(len, 0.01f, 0.2f);
+    }
+    p.blend_start[part] = now;
+    cur.swap(e.pose);
+    ++s.poses_in;
+  }
+}
+
 // --- host ----------------------------------------------------------------------
 
 inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time_point now) {
@@ -294,6 +509,10 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
   const std::vector<uint32_t> bodies = puppet_bodies();
   if (bodies.empty()) {  // nobody to send to
     s.tracks.clear();
+    std::lock_guard<std::mutex> l(s.pm);
+    s.skel_of.clear();
+    s.cap.clear();
+    s.sent_frame.clear();
     return;
   }
   // players: our hero and every puppet body
@@ -368,8 +587,26 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
   if (cands.size() > kMaxEnemies) cands.resize(kMaxEnemies);
   std::vector<EnemyState> list;
   list.reserve(cands.size());
-  for (const auto& c : cands) list.push_back(c.e);
+  std::vector<Body> where;
+  std::vector<uint16_t> ids;
+  for (const auto& c : cands) {
+    list.push_back(c.e);
+    where.push_back({c.e.id, {c.e.pos[0], c.e.pos[1], c.e.pos[2]}});
+    ids.push_back(c.e.id);
+  }
   Net::Get().set_enemies(std::move(list));
+  match_skeletons(base, where);
+  host_poses(ids);
+  if (REXCVAR_GET(mp_enemy_diag) && now >= s.next_diag) {
+    s.next_diag = now + std::chrono::seconds(3);
+    std::lock_guard<std::mutex> l(s.pm);
+    std::string parts;
+    for (const auto& [skel, ip] : s.skel_of)
+      parts += std::to_string(ip.first) + "p" + std::to_string(ip.second) + ":" +
+               std::to_string(puppets::skel_bones(base, skel)) + " ";
+    REXLOG_INFO("[mpenemy] host: {} enemies listed, skeletons [{}], {} poses caught", ids.size(), parts,
+                s.cap.size());
+  }
 }
 
 // --- the other players -----------------------------------------------------------
@@ -403,14 +640,20 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
     }
   }
   const bool host_here = s.list_ver != 0 && now - s.list_at < kHostSilence;
+  if (host_here) take_poses(now);
   if (!host_here) {
     // No host list (alone, or the host left): no copies, our own enemies run.
     if (!s.copies.empty()) {
       for (auto& [id, c] : s.copies)
         if (c.thing) s.destroys.push_back({c.thing, c.record});
       s.copies.clear();
-      std::lock_guard<std::mutex> l(s.m);
-      s.copy_things.clear();
+      {
+        std::lock_guard<std::mutex> l(s.m);
+        s.copy_things.clear();
+      }
+      std::lock_guard<std::mutex> l(s.pm);
+      s.skel_of.clear();
+      s.cpose.clear();
       REXLOG_INFO("[mpenemy] the host's enemy list stopped; removing the copies");
     }
     s.creates.clear();
@@ -496,6 +739,15 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
   }
   if (diag && now >= s.next_diag) {
     s.next_diag = now + std::chrono::seconds(3);
+    {
+      std::lock_guard<std::mutex> l(s.pm);
+      std::string parts;
+      for (const auto& [skel, ip] : s.skel_of)
+        parts += std::to_string(ip.first) + "p" + std::to_string(ip.second) + ":" +
+                 std::to_string(puppets::skel_bones(base, skel)) + " ";
+      REXLOG_INFO("[mpenemy] copy skeletons [{}] poses in {} writes {} skips {}", parts, s.poses_in,
+                  s.pose_writes, s.pose_skips);
+    }
     for (const auto& e : s.host_list) {
       const auto it = s.copies.find(e.id);
       const uint32_t tc = (it != s.copies.end() && it->second.thing) ? transform(base, it->second.thing) : 0;
@@ -516,10 +768,24 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
         forget_copy(s, c.thing);
       }
       if (diag) REXLOG_INFO("[mpenemy] copy {} no longer listed by the host", it->first);
+      {
+        std::lock_guard<std::mutex> l(s.pm);
+        s.cpose.erase(it->first);
+      }
       it = s.copies.erase(it);
     } else {
       ++it;
     }
+  }
+  // skeletons of the copies (each stands where we put it)
+  if (now >= s.next_match) {
+    s.next_match = now + std::chrono::milliseconds(100);
+    std::vector<Body> where;
+    for (const auto& [id, c] : s.copies) {
+      const uint32_t tc = c.thing ? transform(base, c.thing) : 0;
+      if (tc) where.push_back({id, {load_f32(base, tc + 0x70), load_f32(base, tc + 0x74), load_f32(base, tc + 0x78)}});
+    }
+    match_skeletons(base, where);
   }
   request_phase(s, now);
 }

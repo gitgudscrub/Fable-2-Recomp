@@ -52,6 +52,7 @@ DECLARE_REX_FUNC(CheckValidPointer_825575C8);  // Lua entity handle -> CThing*
 
 namespace fable2::net::enemies {
 inline void on_script_phase(PPCContext& ctx, uint8_t* base);  // mp_enemies.h
+inline void on_pack(uint8_t* base, uint32_t skel, uint32_t vec);  // mp_enemies.h
 }
 
 namespace fable2::net::puppets {
@@ -478,6 +479,7 @@ inline bool on_mark(PPCContext& ctx, uint8_t* base) {
 extern "C" void sub_82207A90(PPCContext& ctx, uint8_t* base) {
   fable2::net::skeldiag::on_pack(base, ctx.r3.u32, ctx.r4.u32);
   fable2::net::puppets::on_pack(base, ctx.r3.u32, ctx.r4.u32);
+  fable2::net::enemies::on_pack(base, ctx.r3.u32, ctx.r4.u32);
   __imp__sub_82207A90(ctx, base);
 }
 

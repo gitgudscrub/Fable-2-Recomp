@@ -38,11 +38,11 @@ HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES = 1, 2, 3, 4, 5, 6, 7
+HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE = 1, 2, 3, 4, 5, 6, 7, 8
 GAME_TYPES = {
     1: (HELLO, STATE, POSE),
     2: (HELLO, STATE, POSE, BYE, POSEQ),
-    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE),
 }
 MAX_HIT_DAMAGE = 500.0
 MAX_ENEMIES = 24
@@ -67,9 +67,10 @@ MAX_PARTS = 4
 MAX_COORD = 100000.0
 
 # per player: token buckets (packets/s, bytes/s); a normal player sends about
-# 130 packets and 110 KB per second at 30 Hz
-RATE_PACKETS = 400.0
-RATE_BYTES = 400_000.0
+# 130 packets and 110 KB per second at 30 Hz; the host adds up to ~150 packets
+# and ~100 KB of enemy poses
+RATE_PACKETS = 600.0
+RATE_BYTES = 600_000.0
 # per address: join/create attempts
 JOIN_BURST = 5
 JOIN_PER_SEC = 0.5
@@ -149,6 +150,15 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
         if not (0 < parts <= MAX_PARTS and part < parts and layout in (1, 2)):
             return False
         return n == 32 + count * 14
+    if mtype == EPOSE:
+        if n < 34:
+            return False
+        eid, _r, _frame, bones, first, count, part, parts, layout, _r2 = struct.unpack_from("<HHIHHHBBBB", data, 16)
+        if eid == 0 or not (0 < bones <= MAX_BONES and 0 < count <= BONES_PER_PACKET and first + count <= bones):
+            return False
+        if not (0 < parts <= MAX_PARTS and part < parts and layout in (0, 1, 2)):
+            return False
+        return n == 34 + count * (14 if layout else 24)
     if mtype == BYE:
         return n == 16
     if mtype == HIT:

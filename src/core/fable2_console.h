@@ -65,6 +65,10 @@ REXCVAR_DEFINE_STRING(console_dir, "", "Input",
                       "<game data root>\console. Give each running game its own folder when several "
                       "share one game data root.");
 
+REXCVAR_DEFINE_INT32(console_slot, 0, "Input",
+                     "Lua command files to use (0-3). Give a second game that shares this game "
+                     "data root its own slot (1-3) so it doesn't run the first game's Lua lines.");
+
 REXCVAR_DEFINE_BOOL(console_enabled, true, "Input",
                     "Developer command file transport (console\\in.txt / out.txt / state.txt "
                     "next to the game data). On by default; false or FABLE2_CONSOLE=0 turns it off.");
@@ -1622,13 +1626,26 @@ inline void write_state_file() {
 // game's Lua and corrupted the VM. RunScript is used once, to install the pump,
 // and even that goes to the game thread (f5lua::request_run): this hook runs on
 // the render thread, and the one direct install still crashed now and then.
+//
+// Two games that share a game data root (the co-op test) would read the same
+// console_run.lua and both run every line: give the second one --console_slot=1
+// (2, 3) and it uses console_pump_<slot>.lua / console_run_<slot>.lua. The game
+// only sees files that exist at startup (dir.manifest), so the slots are fixed.
+inline int console_slot() { return std::clamp(REXCVAR_GET(console_slot), 0, 3); }
+inline fs::path run_file() {
+  const int n = console_slot();
+  return S().root / "data" / "scripts" / "recomp" /
+         (n ? "console_run_" + std::to_string(n) + ".lua" : std::string("console_run.lua"));
+}
 inline void start_pump(PPCContext& ctx, uint8_t* base) {
   (void)ctx;
   (void)base;
   State& s = S();
   s.pump_requested = true;
   s.pump_req_time = Clock::now();
-  f5lua::request_run("scripts/recomp/console_pump.lua");
+  const int n = console_slot();
+  f5lua::request_run(n ? "scripts/recomp/console_pump_" + std::to_string(n) + ".lua"
+                       : std::string("scripts/recomp/console_pump.lua"));
 }
 
 // Hands one line to the pump: console_run.lua = `return <seq>, [==[line]==]`.
@@ -1639,7 +1656,7 @@ inline void dispatch_lua(const std::string& line) {
   // console_run.lua left by an earlier session.
   if (s.lua_seq == 0 || s.lua_seq > 9000000) s.lua_seq = static_cast<uint64_t>(std::time(nullptr)) % 10000 * 100;
   ++s.lua_seq;
-  const auto run = s.root / "data" / "scripts" / "recomp" / "console_run.lua";
+  const auto run = run_file();
   std::error_code ec;
   fs::create_directories(dir(), ec);
   const auto tmp = dir() / "run.tmp";

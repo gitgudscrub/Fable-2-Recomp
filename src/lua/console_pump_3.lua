@@ -1,0 +1,6 @@
+-- Console slot 3 (--console_slot=3): installs console_pump.lua reading
+-- console_run_3.lua, so games sharing one game data root don't run each
+-- other's console lines.
+rawset(_G, "__f2_run_file", "scripts/recomp/console_run_3.lua")
+local f = loadfile("scripts/recomp/console_pump.lua")
+if f then return f() end

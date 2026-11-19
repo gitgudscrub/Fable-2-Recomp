@@ -10,7 +10,7 @@
 -- new it runs console_cmds.lua with that line and reports "__f2 done <seq>".
 -- The host's cprint hook reads the "__f2 ..." markers.
 
-local RUN = "scripts/recomp/console_run.lua"
+local RUN = rawget(_G, "__f2_run_file") or "scripts/recomp/console_run.lua"  -- console_pump_<slot>.lua sets it
 local CMDS = "scripts/recomp/console_cmds.lua"
 
 local function current()

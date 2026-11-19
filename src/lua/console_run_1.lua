@@ -1,0 +1,2 @@
+-- Console slot 1 (--console_slot=1): like console_run.lua, for a second game
+-- sharing this game data root. It must exist at startup (dir.manifest).

@@ -372,13 +372,15 @@ inline uint16_t copy_id(uint32_t thing) {
   return it == s.copy_things.end() ? 0 : it->second;
 }
 
-// Named quest bosses (record ids, read from the game: spawned and logged with
-// mp_enemy_diag 2). They count as bosses whatever their health.
+// Named quest bosses (record ids, read from the game: spawned next to two
+// players and read off the "host: enemy N record X max Y" line, mp_enemy_diag 1;
+// the "made" lines also list parts such as weapons). They count as bosses
+// whatever their health.
 inline constexpr uint32_t kBossRecords[] = {
     0xA73A3791,  // CreatureVillagerScriptedBanditLeaderThag (400)
-    0x71D15C6F,  // CreatureVillagerScriptedBanditLeaderRipper (1200)
+    0x52097E88,  // CreatureVillagerScriptedBanditLeaderRipper (1200)
     0x44236634,  // CreatureBanditLeaderFairfaxQO800 (6000)
-    0x75EAFACE,  // CreatureCaptainDreadQO170 (4000)
+    0x686786B2,  // CreatureCaptainDreadQO170 (4000)
     0x55944007,  // CreatureHeadlessHollowMan (1000)
     0xC88CB480,  // CreatureQO815HollowmanLeader (4000)
     0xC940B5D1,  // CreatureHobbeLeaderQO270 (2500)
@@ -1268,25 +1270,45 @@ constexpr uint32_t kGenChaseRadius = 112;  // f32 (GetChaseRadius)
 constexpr auto kReinforceOnce = std::chrono::seconds(120);  // a generator's extra enemies: once per fight
 
 // Generator position and chase radius (false = not a usable dynamic generator).
+// A generator is a marker: its transform is the static marker class, which
+// keeps the position at +0x20 (creatures' transforms keep it at +0x70). When
+// the position can't be read, the host hero's is used (our script only asks
+// generators with creatures near the hero).
+constexpr uint32_t kMarkerTransformVt = 0x82007278;
 inline bool generator_at(uint8_t* base, uint32_t gen, float pos[3], float& r) {
   if (!puppets::heap(base, gen, kGenChaseRadius + 4) || !base[gen + kGenDynamic]) return false;
   const uint32_t owner = load_u32(base, gen + kGenOwner);
-  const uint32_t tc = (owner && puppets::heap(base, owner, 80)) ? transform(base, owner) : 0;
-  if (!tc) return false;
-  for (int k = 0; k < 3; ++k) pos[k] = load_f32(base, tc + 0x70 + 4 * k);
+  uint32_t c = 0, at = 0;
+  if (owner && puppets::heap(base, owner, 128)) {
+    c = load_u32(base, owner + 124);
+    if (puppets::heap(base, c, 0x80) && load_u32(base, c + 4) == owner && load_u32(base, c) == kMarkerTransformVt)
+      at = c + 0x20;
+    else if ((c = transform(base, owner)))
+      at = c + 0x70;
+  }
+  if (!at) {
+    const uint32_t hero = S().hero;
+    c = (hero && live(base, hero)) ? transform(base, hero) : 0;
+    if (!c) return false;
+    at = c + 0x70;
+  }
+  for (int k = 0; k < 3; ++k) pos[k] = load_f32(base, at + 4 * k);
+  if (!std::isfinite(pos[0]) || !std::isfinite(pos[1]) || !std::isfinite(pos[2])) return false;
   r = load_f32(base, gen + kGenChaseRadius);
   if (!std::isfinite(r) || r < 10.0f) r = 10.0f;
   r = std::min(r, 150.0f);
   return true;
 }
 
-// Host: (fighters, players) of the co-op fight at a generator: its locked,
-// living, scaled enemies within its chase radius, and the most players any of
-// them was scaled for.
+// Host: (fighters, players) of the co-op fight at a generator: its living
+// enemies scaled for 2+ players within its chase radius, and the most players
+// any of them was scaled for. (0, 1) unless at least one of them is in the
+// fight (locked): when the fight starts only the first enemy is.
 inline std::pair<int, int> fight_at(uint8_t* base, State& s, const float pos[3], float r) {
   int fighters = 0, n = 1;
+  bool fighting = false;
   for (const auto& [t, sc] : s.scaled) {
-    if (!sc.locked || sc.players < 2 || !live(base, t)) continue;
+    if (sc.players < 2 || !live(base, t)) continue;
     const uint32_t hc = component(base, t, kHealthType), tc = transform(base, t);
     if (!hc || !tc || !(load_f32(base, hc + 20) > 0.0f)) continue;
     const float dx = load_f32(base, tc + 0x70) - pos[0], dy = load_f32(base, tc + 0x74) - pos[1],
@@ -1294,7 +1316,9 @@ inline std::pair<int, int> fight_at(uint8_t* base, State& s, const float pos[3],
     if (dx * dx + dy * dy + dz * dz > r * r) continue;
     ++fighters;
     n = std::max(n, int(sc.players));
+    fighting = fighting || sc.locked;
   }
+  if (!fighting) return {0, 1};
   return {fighters, n};
 }
 
@@ -1359,6 +1383,9 @@ extern "C" void sub_82871DD8(PPCContext& ctx, uint8_t* base) {
   using namespace fable2::net::enemies;
   const uint32_t prev = S().spawning_gen;
   S().spawning_gen = ctx.r3.u32;
+  if (REXCVAR_GET(mp_enemy_diag) >= 2 && fable2::net::puppets::heap(base, ctx.r3.u32, 64))
+    REXLOG_INFO("[mpenemy] host: generator 0x{:08X} spawning ({})", ctx.r3.u32,
+                base[ctx.r3.u32 + kGenDynamic] ? "open-world" : "placed");
   __imp__sub_82871DD8(ctx, base);
   S().spawning_gen = prev;
 }

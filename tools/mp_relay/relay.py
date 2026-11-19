@@ -38,13 +38,13 @@ HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT = 1, 2, 3, 4, 5, 6, 7, 8, 9
+HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 GAME_TYPES = {
     1: (HELLO, STATE, POSE),
     2: (HELLO, STATE, POSE, BYE, POSEQ),
-    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED),
 }
-HOST_ONLY = (ENEMIES, EPOSE)  # only the session host runs enemies
+HOST_ONLY = (ENEMIES, EPOSE, ESEED)  # only the session host runs enemies
 TO_HOST = (EHIT,)              # hits on the host's enemies: for the host only
 MAX_HIT_DAMAGE = 500.0
 MAX_ENEMIES = 24
@@ -166,6 +166,10 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
             return False
         eid, _r, dmg = struct.unpack_from("<HHf", data, 16)
         return eid != 0 and math.isfinite(dmg) and 0.0 < dmg <= MAX_HIT_DAMAGE
+    if mtype == ESEED:  # count u8, pad u8 + u16, then {id u16, pad u16, seed u32}
+        if n < 20 or data[16] > MAX_ENEMIES or n != 20 + data[16] * 8:
+            return False
+        return all(struct.unpack_from("<H", data, 20 + k * 8)[0] != 0 for k in range(data[16]))
     if mtype == BYE:
         return n == 16
     if mtype == HIT:

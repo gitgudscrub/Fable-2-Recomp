@@ -34,6 +34,15 @@
 //     +28 max), 133 faction (+20 faction id). sub_822040D0(faction comp, other
 //     entity) == 4: hostile (Faction.IsMyEnemy).
 //
+// Gear (ESEED): creatures roll random looks when made (Hobbes' hats, armour and
+// weapons: extra skeletons), from the game's one random seed. The host notes the
+// seed just before each creature is made (our wrapper of the create native) and
+// sends it for every listed enemy; the others set that seed while they make the
+// copy, then put their own back, so the copy rolls the same gear. A copy waits
+// up to kSeedWait for its seed, then is made with whatever it rolls.
+//   seed: *(*(*(*(*(0x83496920) + 12) + 88) + 4) + 0x78), the object whose
+//     +0 is the entity manager; next = rotl(seed * 0x24A1 + 0x24DF, 19).
+//
 // No network data ever goes into Lua: the record id from the host is checked
 // against the game's own record table and given to the native create.
 #pragma once
@@ -86,6 +95,9 @@ constexpr auto kHostSilence = std::chrono::seconds(2);   // no list for this lon
 constexpr auto kMissingFor = std::chrono::seconds(1);    // copy not listed this long: remove it
 constexpr auto kDeadListed = std::chrono::seconds(5);    // host keeps listing a corpse this long
 constexpr auto kOwnScanEvery = std::chrono::milliseconds(500);
+constexpr auto kSeedEvery = std::chrono::seconds(1);     // host: resend the seeds
+constexpr auto kSeedWait = std::chrono::milliseconds(1500);  // copy: wait this long for its seed
+constexpr size_t kMaxBorn = 4096;                         // host: creation seeds kept
 
 // --- game access -------------------------------------------------------------
 
@@ -99,6 +111,16 @@ inline uint32_t entity_manager(uint8_t* base) {
 }
 
 inline bool live(uint8_t* base, uint32_t t) { return puppets::heap(base, t, 160) && (base[t + 144] & 0x40); }
+
+// Address of the game's random seed (0 = not there yet).
+inline uint32_t seed_slot(uint8_t* base) {
+  uint32_t a = load_u32(base, kWorldGlobal);
+  for (uint32_t off : {12u, 88u, 4u}) {
+    if (!puppets::heap(base, a, off + 4)) return 0;
+    a = load_u32(base, a + off);
+  }
+  return puppets::heap(base, a, 0x7C) ? a + 0x78 : 0;
+}
 
 inline uint32_t component(uint8_t* base, uint32_t t, uint32_t type) {
   const uint32_t b = load_u32(base, t + 72), e = load_u32(base, t + 76);
@@ -188,6 +210,7 @@ inline bool valid_record(uint8_t* base, uint32_t id) {
 struct Copy {
   uint32_t thing = 0;      // 0 = being made
   uint32_t record = 0;
+  Clock::time_point first_listed{};
   bool have_pos = false;
   float pos[3] = {};
   bool killed = false;     // the host's enemy died and so did the copy
@@ -198,6 +221,8 @@ struct Copy {
 struct Track {  // host: one of our enemies
   uint16_t id = 0;
   bool dead = false;
+  bool has_seed = false;
+  uint32_t seed = 0;  // the game's random seed when it was made
   Clock::time_point dead_since{};
 };
 
@@ -205,6 +230,8 @@ struct Create {
   uint16_t id;
   uint32_t record;
   float pos[3];
+  bool has_seed;
+  uint32_t seed;
 };
 
 struct CopyPose {  // the other players: a copy's newest pose from the host
@@ -228,6 +255,9 @@ struct State {
   std::unordered_map<uint16_t, CopyPose> cpose;                    // the others
   uint32_t pose_writes = 0, pose_skips = 0, poses_in = 0;
 
+  // creation seeds (the create wrapper, game thread)
+  std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> born;  // thing -> (seed, record)
+  std::unordered_map<uint32_t, uint32_t> born_after;                  // diag: thing -> seed after
   std::mutex m;  // guards copy_things (read from the health hook)
   std::unordered_map<uint32_t, uint16_t> copy_things;  // copy thing -> host's enemy id
   bool applying = false;  // our own health change on a copy (its death)
@@ -235,9 +265,13 @@ struct State {
   std::unordered_map<uint32_t, Track> tracks;  // thing -> track
   uint16_t next_id = 1;
   Clock::time_point next_send{};
+  Clock::time_point next_seeds{};
+  size_t seeds_listed = 0;  // ids with a seed in the last list sent
   // the other players
   std::unordered_map<uint16_t, Copy> copies;   // host id -> copy
   std::vector<EnemyState> host_list;
+  uint32_t seeds_ver = 0;
+  std::unordered_map<uint16_t, uint32_t> host_seeds;  // host id -> creation seed
   uint32_t list_ver = 0;
   Clock::time_point list_at{};
   Clock::time_point next_own_scan{};
@@ -273,6 +307,22 @@ inline void forget_copy(State& s, uint32_t thing) {
   s.copy_things.erase(thing);
 }
 
+// The create wrapper: a thing was made; `seed` was the random seed before.
+inline void note_born(uint8_t* base, uint32_t thing, uint32_t seed, uint32_t after) {
+  if (!REXCVAR_GET(mp_enable) || !REXCVAR_GET(mp_host) || !live(base, thing)) return;
+  State& s = S();
+  if (s.born.size() >= kMaxBorn) {  // forget the ones gone or reused
+    for (auto it = s.born.begin(); it != s.born.end();)
+      it = (!live(base, it->first) || load_u32(base, it->first + 28) != it->second.second) ? s.born.erase(it)
+                                                                                            : std::next(it);
+    if (s.born.size() >= kMaxBorn) s.born.clear();
+    for (auto it = s.born_after.begin(); it != s.born_after.end();)
+      it = s.born.count(it->first) ? std::next(it) : s.born_after.erase(it);
+  }
+  s.born[thing] = {seed, load_u32(base, thing + 28)};
+  if (REXCVAR_GET(mp_enemy_diag)) s.born_after[thing] = after;
+}
+
 inline void request_phase(State& s, Clock::time_point now) {
   if (s.creates.empty() && s.destroys.empty()) return;
   if (s.phase_requested && now - s.phase_req_at < std::chrono::seconds(2)) return;
@@ -303,7 +353,13 @@ inline void on_script_phase(PPCContext& ctx, uint8_t* base) {
     puppets::store_u32(base, scratch, uid);
     puppets::store_u32(base, scratch + 4, 0);
     puppets::store_u32(base, scratch + 8, 0);
+    // the host's seed while it is made (its random gear comes out the same)
+    const uint32_t slot = c.has_seed ? seed_slot(base) : 0;
+    const uint32_t own_seed = slot ? load_u32(base, slot) : 0;
+    if (slot) puppets::store_u32(base, slot, c.seed);
     const uint32_t t = guest_call(ctx, base, sub_82391030, c.record, scratch, scratch + 8, 1, 0, c.pos);
+    const uint32_t seed_after = slot ? load_u32(base, slot) : 0;
+    if (slot) puppets::store_u32(base, slot, own_seed);
     if (!live(base, t)) {
       REXLOG_WARN("[mpenemy] could not make a copy of record {:08X}", c.record);
       continue;
@@ -313,7 +369,9 @@ inline void on_script_phase(PPCContext& ctx, uint8_t* base) {
       std::lock_guard<std::mutex> l(s.m);
       s.copy_things[t] = c.id;
     }
-    if (diag) REXLOG_INFO("[mpenemy] copy {} (record {:08X}) made: 0x{:08X}", c.id, c.record, t);
+    if (diag)
+      REXLOG_INFO("[mpenemy] copy {} (record {:08X}) made: 0x{:08X}, {}", c.id, c.record, t,
+                  slot ? fmt::format("host's seed {:08X} (after {:08X})", c.seed, seed_after) : std::string("own seed"));
   }
   s.creates.clear();
 }
@@ -568,6 +626,14 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
       Track k;
       k.id = s.next_id++;
       if (s.next_id == 0) s.next_id = 1;
+      if (const auto b = s.born.find(t); b != s.born.end() && b->second.second == load_u32(base, t + 28)) {
+        k.has_seed = true;
+        k.seed = b->second.first;
+      }
+      if (REXCVAR_GET(mp_enemy_diag))
+        REXLOG_INFO("[mpenemy] host: enemy {} (0x{:08X}) listed, {}", k.id, t,
+                    k.has_seed ? fmt::format("made with seed {:08X} (after {:08X})", k.seed, s.born_after[t])
+                               : std::string("seed unknown"));
       tr = s.tracks.emplace(t, k).first;
     }
     Track& k = tr->second;
@@ -606,6 +672,24 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     ids.push_back(c.e.id);
   }
   Net::Get().set_enemies(std::move(list));
+  // creation seeds: once a second, and at once when a new one is listed
+  {
+    std::vector<EnemySeed> seeds;
+    for (const auto& c : cands) {
+      if (c.e.flags & 1) continue;
+      for (const auto& [t, k] : s.tracks)
+        if (k.id == c.e.id && k.has_seed) seeds.push_back({k.id, k.seed});
+    }
+    if (now >= s.next_seeds || seeds.size() != s.seeds_listed) {
+      s.next_seeds = now + kSeedEvery;
+      s.seeds_listed = seeds.size();
+      Net::Get().set_enemy_seeds(std::move(seeds));
+    }
+  }
+  for (auto it = s.born.begin(); it != s.born.end();)  // listed: no longer needed
+    it = s.tracks.count(it->first) ? s.born.erase(it) : std::next(it);
+  for (auto it = s.born_after.begin(); it != s.born_after.end();)
+    it = s.tracks.count(it->first) ? s.born_after.erase(it) : std::next(it);
   match_skeletons(base, where);
   host_poses(ids);
   if (REXCVAR_GET(mp_enemy_diag) && now >= s.next_diag) {
@@ -687,6 +771,14 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       s.list_at = at;
     }
   }
+  {
+    std::vector<EnemySeed> seeds;
+    if (Net::Get().take_enemy_seeds(s.seeds_ver, seeds))
+      for (const auto& e : seeds) s.host_seeds[e.id] = e.seed;
+    if (s.host_seeds.size() > 4 * kMaxEnemies)  // keep the listed ones
+      for (auto it = s.host_seeds.begin(); it != s.host_seeds.end();)
+        it = s.copies.count(it->first) ? std::next(it) : s.host_seeds.erase(it);
+  }
   const bool host_here = s.list_ver != 0 && now - s.list_at < kHostSilence;
   if (host_here) take_poses(now);
   if (!host_here) {
@@ -745,14 +837,19 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       }
       it = s.copies.emplace(e.id, Copy{}).first;
       it->second.record = e.record;
+      it->second.first_listed = now;
     }
     Copy& c = it->second;
     if (c.record != e.record) continue;  // the id now means another kind: let the old one expire
     c.last_listed = s.list_at;
     if (!c.thing) {
+      const auto seed = s.host_seeds.find(e.id);
+      const bool has_seed = seed != s.host_seeds.end();
+      if (!has_seed && now - c.first_listed < kSeedWait) continue;  // its seed may be on the way
       if (now - c.create_req > std::chrono::seconds(3)) {
         c.create_req = now;
-        s.creates.push_back({e.id, e.record, {e.pos[0], e.pos[1], e.pos[2]}});
+        s.creates.push_back(
+            {e.id, e.record, {e.pos[0], e.pos[1], e.pos[2]}, has_seed, has_seed ? seed->second : 0u});
       }
       continue;
     }
@@ -875,3 +972,13 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
 }
 
 }  // namespace fable2::net::enemies
+
+// The game's create-entity native: the host notes the random seed each thing
+// was made with (ESEED, above).
+extern "C" void sub_82391030(PPCContext& ctx, uint8_t* base) {
+  using namespace fable2::net::enemies;
+  const uint32_t slot = REXCVAR_GET(mp_host) ? seed_slot(base) : 0;
+  const uint32_t seed = slot ? load_u32(base, slot) : 0;
+  __imp__sub_82391030(ctx, base);
+  if (slot) note_born(base, ctx.r3.u32, seed, load_u32(base, slot));
+}

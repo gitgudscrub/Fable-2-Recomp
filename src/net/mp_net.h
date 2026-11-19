@@ -38,6 +38,12 @@
 //                    entity +28), x y z f32, facing qz qw f32, health f32. Sent by
 //                    the host 10 times a second: every hostile creature near a
 //                    player. The others draw copies of them (mp_enemies.h).
+// ESEED (10):       count u8 (0-24), reserved u8 + u16, then per enemy: id u16,
+//                    reserved u16, seed u32: the game's random seed just before
+//                    the host made that enemy. The others make its copy with the
+//                    same seed, so it rolls the same random gear (Hobbes' hats,
+//                    weapons). Sent by the host once a second and when new
+//                    enemies are listed; older games drop it (unknown type).
 // Poses go out at mp_pose_hz (default 20); the receiver blends between them.
 // Relay messages (game <-> relay; the relay's header sender is 0):
 //   CREATE  (16): wanted code char[8] (zeros = new; a host that lost the relay
@@ -99,7 +105,7 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE, EHIT
+constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE, EHIT, ESEED
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
@@ -129,6 +135,10 @@ struct EnemyPose {
   uint8_t parts = 0;
   std::array<std::vector<float>, kMaxParts> part;  // bone_count * 12 floats each
 };
+struct EnemySeed {  // the game's random seed when the host made enemy `id`
+  uint16_t id = 0;
+  uint32_t seed = 0;
+};
 struct EnemyHit {  // a player hit one of the host's enemies (its copy, in their world)
   uint32_t from = 0;  // player id
   uint16_t id = 0;    // the host's enemy id
@@ -141,7 +151,7 @@ struct EnemyPosePart {  // one complete part as it arrived
 };
 
 enum class Msg : uint8_t {
-  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8, EHit = 9,
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8, EHit = 9, ESeed = 10,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
 enum class Refuse : uint8_t {
@@ -270,6 +280,20 @@ class Net {
     ver = enemies_in_ver_;
     out = enemies_in_;
     at = enemies_in_at_;
+    return true;
+  }
+  // Host (game thread): the creation seeds of the listed enemies (sent at once).
+  void set_enemy_seeds(std::vector<EnemySeed> list) {
+    std::lock_guard<std::mutex> l(enemies_m_);
+    seeds_out_.swap(list);
+    seeds_out_new_ = true;
+  }
+  // Others (game thread): the host's newest seed list, if newer than `ver`.
+  bool take_enemy_seeds(uint32_t& ver, std::vector<EnemySeed>& out) {
+    std::lock_guard<std::mutex> l(enemies_m_);
+    if (seeds_in_ver_ == ver) return false;
+    ver = seeds_in_ver_;
+    out = seeds_in_;
     return true;
   }
   // Host (game thread): the enemy poses to send next.
@@ -455,6 +479,7 @@ class Net {
       send_hits();
       send_enemy_hits();
       send_enemies();
+      send_enemy_seeds();
       send_enemy_poses();
       if (now >= next_log) {
         next_log = now + std::chrono::seconds(10);
@@ -695,6 +720,28 @@ class Net {
       w.f32(e.qz);
       w.f32(e.qw);
       w.f32(e.health);
+    }
+    send_all(w);
+  }
+
+  void send_enemy_seeds() {
+    std::vector<EnemySeed> list;
+    {
+      std::lock_guard<std::mutex> l(enemies_m_);
+      if (!seeds_out_new_) return;
+      seeds_out_new_ = false;
+      list = seeds_out_;
+    }
+    if (list.size() > kMaxEnemies) list.resize(kMaxEnemies);
+    Writer w;
+    header(w, Msg::ESeed);
+    w.u8(uint8_t(list.size()));
+    w.u8(0);
+    w.u16(0);
+    for (const auto& e : list) {
+      w.u16(e.id);
+      w.u16(0);
+      w.u32(e.seed);
     }
     send_all(w);
   }
@@ -1145,6 +1192,25 @@ class Net {
         ++enemies_in_ver_;
         break;
       }
+      case Msg::ESeed: {
+        const uint32_t count = r.u8();
+        r.u8();
+        r.u16();
+        if (!r.ok || count > kMaxEnemies || n != r.i + count * 8) return false;
+        std::vector<EnemySeed> list(count);
+        for (auto& e : list) {
+          e.id = r.u16();
+          r.u16();
+          e.seed = r.u32();
+          if (e.id == 0) return false;
+        }
+        if (!r.ok || r.i != n) return false;
+        if (REXCVAR_GET(mp_host)) break;  // only the host runs the enemies
+        std::lock_guard<std::mutex> l(enemies_m_);
+        seeds_in_.swap(list);
+        ++seeds_in_ver_;
+        break;
+      }
       case Msg::EPose: {
         const uint16_t id = r.u16();
         r.u16();
@@ -1196,6 +1262,9 @@ class Net {
   bool enemies_out_new_ = false;
   uint32_t enemies_in_ver_ = 0;
   Clock::time_point enemies_in_at_{};
+  std::vector<EnemySeed> seeds_out_, seeds_in_;
+  bool seeds_out_new_ = false;
+  uint32_t seeds_in_ver_ = 0;
   struct EnemyPoseIn {
     std::array<PeerPart, kMaxParts> parts;
     Clock::time_point heard{};

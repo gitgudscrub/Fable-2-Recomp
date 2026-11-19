@@ -55,6 +55,16 @@
 // rise until the fight starts (the enemy is hurt or hurts a player), then it is
 // kept for that enemy. Its copies follow its health, so their bars show it.
 //
+// Reinforcements (host): extra enemies come only from open-world (dynamic)
+// creature generators, never quest ones, through the game's own
+// CreatureGenerator.CreateReinforcements (sub_82873360). When a fight with 2+
+// players starts, the host runs scripts/recomp/mp_reinforce.lua, which asks each
+// dynamic generator with creatures near the hero for -1 reinforcements (a count
+// the game never uses). The hook turns that into fighters x mp_scale_reinforce x
+// (players - 1), rounded up, for a generator whose creatures are in that fight,
+// once per fight; -1 makes nothing anywhere else. When the game itself asks a
+// generator for reinforcements (rare), the count grows the same way.
+//
 // No network data ever goes into Lua: the record id from the host is checked
 // against the game's own record table and given to the native create.
 #pragma once
@@ -91,6 +101,8 @@ REXCVAR_DEFINE_DOUBLE(mp_scale_damage, 0.1, "Multiplayer",
                       "Host: extra enemy damage per player after the first (0.1 = +10%).");
 REXCVAR_DEFINE_DOUBLE(mp_scale_radius, 30.0, "Multiplayer",
                       "Host: players this many metres from an enemy count for its fight.");
+REXCVAR_DEFINE_DOUBLE(mp_scale_reinforce, 0.5, "Multiplayer",
+                      "Host: extra reinforcements per player after the first, on open-world generators.");
 REXCVAR_DEFINE_DOUBLE(mp_scale_test_hit, 0.0, "Multiplayer",
                       "Test (host): the first scaled enemy deals this much damage to the first co-op body, once.");
 REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
@@ -98,6 +110,7 @@ REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
 
 DECLARE_REX_FUNC(sub_82391030);  // create entity from record id
 DECLARE_REX_FUNC(sub_82392FF8);  // destroy entity
+DECLARE_REX_FUNC(sub_82873360);  // CreatureGenerator.CreateReinforcements (r3 generator, r4 lua_State)
 DECLARE_REX_FUNC(sub_822040D0);  // faction relation (r3 faction comp, r4 other entity) -> 4 = hostile
 
 namespace fable2::net::enemies {
@@ -293,6 +306,9 @@ struct State {
   std::unordered_map<uint32_t, uint16_t> copy_things;  // copy thing -> host's enemy id
   std::unordered_map<uint32_t, Scale> scaled;          // host: enemy thing -> its scaling
   uint32_t hero = 0;                                   // host: our hero (for the health hook)
+  std::unordered_map<uint32_t, Clock::time_point> reinforced;  // host: generator -> last extra enemies
+  bool fight_started = false;                          // host: a 2+ player fight just locked
+  Clock::time_point next_reinforce_run{};
   bool applying = false;  // our own health change on a copy (its death)
   // host
   std::unordered_map<uint32_t, Track> tracks;  // thing -> track
@@ -352,6 +368,7 @@ inline double enemy_damage_mult(uint32_t attacker) {
   std::lock_guard<std::mutex> l(s.m);
   const auto it = s.scaled.find(attacker);
   if (it == s.scaled.end()) return 1.0;
+  if (!it->second.locked && it->second.players >= 2) s.fight_started = true;
   it->second.locked = true;
   return damage_mult(it->second.players);
 }
@@ -653,6 +670,7 @@ inline void scale_enemy(uint8_t* base, uint32_t t, uint32_t hc, uint16_t id, con
   const bool hurt = std::isfinite(max) && max > 0.0f && health < max - 0.01f;
   if (hurt && !fresh) {  // its fight started before more players came
     sc.locked = true;
+    if (sc.players >= 2) s.fight_started = true;
     return;
   }
   if (n > sc.players && std::isfinite(health) && health > 0.0f && max > 0.0f && std::isfinite(max) &&
@@ -665,7 +683,10 @@ inline void scale_enemy(uint8_t* base, uint32_t t, uint32_t hc, uint16_t id, con
                   n, health, max, health * f, max * f);
     sc.players = uint8_t(n);
   }
-  if (hurt) sc.locked = true;
+  if (hurt) {
+    sc.locked = true;
+    if (sc.players >= 2) s.fight_started = true;
+  }
 }
 
 inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time_point now) {
@@ -806,6 +827,23 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     it = s.tracks.count(it->first) ? s.born.erase(it) : std::next(it);
   for (auto it = s.born_after.begin(); it != s.born_after.end();)
     it = s.tracks.count(it->first) ? s.born_after.erase(it) : std::next(it);
+  // a co-op fight started: ask nearby open-world generators for extra enemies
+  {
+    bool run = false;
+    {
+      std::lock_guard<std::mutex> l(s.m);
+      if (s.fight_started && now >= s.next_reinforce_run && REXCVAR_GET(mp_scale) &&
+          REXCVAR_GET(mp_scale_reinforce) > 0.0) {
+        s.fight_started = false;
+        s.next_reinforce_run = now + std::chrono::seconds(3);
+        run = true;
+      }
+    }
+    if (run) {
+      if (REXCVAR_GET(mp_enemy_diag)) REXLOG_INFO("[mpenemy] host: a co-op fight started, asking for reinforcements");
+      fable2::f5lua::request_run("scripts/recomp/mp_reinforce.lua");
+    }
+  }
   if (const double test = REXCVAR_GET(mp_scale_test_hit); test > 0.0) {
     REXCVAR_SET(mp_scale_test_hit, 0.0);
     uint32_t enemy = 0;
@@ -1141,7 +1179,96 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
     guest_tick(ctx, base, hero, now, dt);
 }
 
+// Creature generator (the object behind the Lua CreatureGenerator calls).
+constexpr uint32_t kGenOwner = 4;          // the generator's thing
+constexpr uint32_t kGenDynamic = 63;       // u8: an open-world generator (IsDynamic)
+constexpr uint32_t kGenChaseRadius = 112;  // f32 (GetChaseRadius)
+
+constexpr auto kReinforceOnce = std::chrono::seconds(120);  // a generator's extra enemies: once per fight
+
+// Generator position and chase radius (false = not a usable dynamic generator).
+inline bool generator_at(uint8_t* base, uint32_t gen, float pos[3], float& r) {
+  if (!puppets::heap(base, gen, kGenChaseRadius + 4) || !base[gen + kGenDynamic]) return false;
+  const uint32_t owner = load_u32(base, gen + kGenOwner);
+  const uint32_t tc = (owner && puppets::heap(base, owner, 80)) ? transform(base, owner) : 0;
+  if (!tc) return false;
+  for (int k = 0; k < 3; ++k) pos[k] = load_f32(base, tc + 0x70 + 4 * k);
+  r = load_f32(base, gen + kGenChaseRadius);
+  if (!std::isfinite(r) || r < 10.0f) r = 10.0f;
+  r = std::min(r, 150.0f);
+  return true;
+}
+
+// Host: (fighters, players) of the co-op fight at a generator: its locked,
+// living, scaled enemies within its chase radius, and the most players any of
+// them was scaled for.
+inline std::pair<int, int> fight_at(uint8_t* base, State& s, const float pos[3], float r) {
+  int fighters = 0, n = 1;
+  for (const auto& [t, sc] : s.scaled) {
+    if (!sc.locked || sc.players < 2 || !live(base, t)) continue;
+    const uint32_t hc = component(base, t, kHealthType), tc = transform(base, t);
+    if (!hc || !tc || !(load_f32(base, hc + 20) > 0.0f)) continue;
+    const float dx = load_f32(base, tc + 0x70) - pos[0], dy = load_f32(base, tc + 0x74) - pos[1],
+                dz = load_f32(base, tc + 0x78) - pos[2];
+    if (dx * dx + dy * dy + dz * dz > r * r) continue;
+    ++fighters;
+    n = std::max(n, int(sc.players));
+  }
+  return {fighters, n};
+}
+
+// Host: how many a generator makes when asked for `asked` (-1 = our script's
+// ask). Returns `asked` to leave it alone.
+inline int reinforcements_for(uint8_t* base, uint32_t gen, int asked) {
+  if (!REXCVAR_GET(mp_enable) || !REXCVAR_GET(mp_host) || !REXCVAR_GET(mp_scale)) return asked;
+  float pos[3], r;
+  if (!generator_at(base, gen, pos, r)) return asked;  // quest / placed generator
+  const double per = std::clamp(REXCVAR_GET(mp_scale_reinforce), 0.0, 2.0);
+  State& s = S();
+  std::lock_guard<std::mutex> l(s.m);
+  const auto [fighters, n] = fight_at(base, s, pos, r);
+  const auto now = Clock::now();
+  int total = asked;
+  if (asked < 0) {  // our script: extra enemies once per fight
+    const auto rf = s.reinforced.find(gen);
+    if (fighters == 0 || n < 2 || (rf != s.reinforced.end() && now - rf->second < kReinforceOnce)) return asked;
+    total = std::clamp(int(std::ceil(fighters * per * (n - 1) - 1e-6)), 0, 8);
+    if (total == 0) return asked;
+    s.reinforced[gen] = now;
+    if (s.reinforced.size() > 256)
+      for (auto it = s.reinforced.begin(); it != s.reinforced.end();)
+        it = now - it->second > kReinforceOnce ? s.reinforced.erase(it) : std::next(it);
+  } else {  // the game's own call for help
+    if (n < 2) return asked;
+    total = std::clamp(int(std::ceil(asked * (1.0 + per * (n - 1)) - 1e-6)), asked, asked + 8);
+  }
+  if (REXCVAR_GET(mp_enemy_diag))
+    REXLOG_INFO("[mpenemy] host: generator 0x{:08X} ({} fighting, {} players, radius {:.0f} m) asked for {}: "
+                "making {}", gen, fighters, n, r, asked, total);
+  return total;
+}
+
 }  // namespace fable2::net::enemies
+
+// CreatureGenerator.CreateReinforcements(level, count) (Lua binding): the host
+// sets `count` for the players in the fight (above).
+extern "C" void sub_82873360(PPCContext& ctx, uint8_t* base) {
+  using namespace fable2::net::enemies;
+  const uint32_t gen = ctx.r3.u32, L = ctx.r4.u32;
+  // lua_State: +12 base, +8 top; TValue = {f32 value, i32 type (3 = number)}
+  if (REXCVAR_GET(mp_host) && fable2::net::puppets::heap(base, L, 16)) {
+    const uint32_t b = load_u32(base, L + 12), top = load_u32(base, L + 8);
+    if (top >= b && top - b == 16 && fable2::net::puppets::heap(base, b, 16) && load_u32(base, b + 12) == 3) {
+      const float asked = load_f32(base, b + 8);
+      if (std::isfinite(asked) && asked >= -1.0f && asked <= 64.0f && asked != 0.0f) {
+        const int a = int(asked), total = reinforcements_for(base, gen, a);
+        if (total != a && fable2::textappend::wr2(base, b + 8, 4))
+          fable2::net::puppets::store_f32(base, b + 8, float(total));
+      }
+    }
+  }
+  __imp__sub_82873360(ctx, base);
+}
 
 // The game's create-entity native: the host notes the random seed each thing
 // was made with (ESEED, above).

@@ -472,6 +472,7 @@ class Fable2App : public rex::ReXApp {
     seed_cvar("mp_scale_health", std::to_string(cfg.mp_health_per_player));
     seed_cvar("mp_scale_damage", std::to_string(cfg.mp_damage_per_player));
     seed_cvar("mp_scale_radius", std::to_string(cfg.mp_scale_radius));
+    seed_cvar("mp_scale_reinforce", std::to_string(cfg.mp_reinforcements_per_player));
     // NOTE: the hero/dog readback fix (readback_resolve_force_addresses) is a
     // GPU-PLUGIN cvar, so it is seeded in OnPostSetup() (after the plugin is
     // loaded) rather than here - see plans/hero-dog-texture-readback.md.

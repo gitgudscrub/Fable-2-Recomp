@@ -425,6 +425,12 @@ damage_per_player = 0.1
 # Scale Radius: players this many metres from an enemy count for its fight.
 # Default: 30
 scale_radius = 30
+
+# Reinforcements Per Player: when enemies from an open-world spawner call for
+# help, extra reinforcements for each player after the first (0.5 = half as
+# many again per extra player, rounded up). Quest fights never change.
+# Default: 0.5
+reinforcements_per_player = 0.5
 )TOML_EOF";
 
 std::string_view TypeName(toml::node_type t) {
@@ -686,6 +692,9 @@ bool Load(const std::filesystem::path& path) {
                                              values.mp_damage_per_player);
     values.mp_scale_radius = Read<double>(mp_table, "multiplayer", "scale_radius", "number",
                                         values.mp_scale_radius);
+    values.mp_reinforcements_per_player =
+        Read<double>(mp_table, "multiplayer", "reinforcements_per_player", "number",
+                     values.mp_reinforcements_per_player);
   }
 
   g_values = values;

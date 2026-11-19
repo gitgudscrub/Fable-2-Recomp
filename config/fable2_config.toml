@@ -393,3 +393,9 @@ damage_per_player = 0.1
 # Scale Radius: players this many metres from an enemy count for its fight.
 # Default: 30
 scale_radius = 30
+
+# Reinforcements Per Player: when enemies from an open-world spawner call for
+# help, extra reinforcements for each player after the first (0.5 = half as
+# many again per extra player, rounded up). Quest fights never change.
+# Default: 0.5
+reinforcements_per_player = 0.5

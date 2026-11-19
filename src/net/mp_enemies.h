@@ -54,8 +54,12 @@
 // (within mp_scale_radius) and more damage against the players. The count may
 // rise until the fight starts (the enemy is hurt or hurts a player), then it is
 // kept for that enemy. Its copies follow its health, so their bars show it.
-// Bosses (base max health of at least mp_scale_boss_health) scale health only:
-// they don't hit harder.
+// Bosses scale health only: they don't hit harder. A boss is one of the named
+// quest bosses (kBossRecords, e.g. Thag), or an enemy with at least
+// mp_scale_boss_health max health (before scaling) that no open-world (dynamic)
+// generator made (open-world trolls are not bosses). The host learns which
+// generator made a creature by wrapping the generator's spawn function
+// (sub_82871DD8) and CreateReinforcements: creatures made inside them are noted.
 //
 // Kill rewards: the game gives a kill's experience (and kill credit) only to
 // the hero that lands the killing blow. So every player within mp_scale_radius
@@ -120,7 +124,8 @@ REXCVAR_DEFINE_INT32(mp_enemy_poses, 6, "Multiplayer",
 
 DECLARE_REX_FUNC(sub_82391030);  // create entity from record id
 DECLARE_REX_FUNC(sub_82392FF8);  // destroy entity
-DECLARE_REX_FUNC(sub_82873360);  // CreatureGenerator.CreateReinforcements (r3 generator, r4 lua_State)
+DECLARE_REX_FUNC(sub_82873360);
+DECLARE_REX_FUNC(sub_82871DD8);  // creature generator: spawn one creature (r3 generator)  // CreatureGenerator.CreateReinforcements (r3 generator, r4 lua_State)
 DECLARE_REX_FUNC(sub_822040D0);  // faction relation (r3 faction comp, r4 other entity) -> 4 = hostile
 
 namespace fable2::net::enemies {
@@ -278,6 +283,7 @@ struct Scale {  // host: one enemy's encounter scaling
   uint32_t record = 0;
   uint8_t players = 1;  // the count its health was raised for
   float base_max = 0.0f;  // its max health before scaling
+  bool boss = false;      // health scaling only
   bool locked = false;  // the fight started: the count is kept
 };
 
@@ -317,6 +323,8 @@ struct State {
   std::unordered_map<uint32_t, uint16_t> copy_things;  // copy thing -> host's enemy id
   std::unordered_map<uint32_t, Scale> scaled;          // host: enemy thing -> its scaling
   uint32_t hero = 0;                                   // host: our hero (for the health hook)
+  uint32_t spawning_gen = 0;                           // host: generator spawning right now (game thread)
+  std::unordered_map<uint32_t, uint32_t> open_world;   // host: thing -> record, made by a dynamic generator
   std::unordered_map<uint32_t, Clock::time_point> reinforced;  // host: generator -> last extra enemies
   bool fight_started = false;                          // host: a 2+ player fight just locked
   Clock::time_point next_reinforce_run{};
@@ -364,6 +372,24 @@ inline uint16_t copy_id(uint32_t thing) {
   return it == s.copy_things.end() ? 0 : it->second;
 }
 
+// Named quest bosses (record ids, read from the game: spawned and logged with
+// mp_enemy_diag 2). They count as bosses whatever their health.
+inline constexpr uint32_t kBossRecords[] = {
+    0xA73A3791,  // CreatureVillagerScriptedBanditLeaderThag (400)
+    0x71D15C6F,  // CreatureVillagerScriptedBanditLeaderRipper (1200)
+    0x44236634,  // CreatureBanditLeaderFairfaxQO800 (6000)
+    0x75EAFACE,  // CreatureCaptainDreadQO170 (4000)
+    0x55944007,  // CreatureHeadlessHollowMan (1000)
+    0xC88CB480,  // CreatureQO815HollowmanLeader (4000)
+    0xC940B5D1,  // CreatureHobbeLeaderQO270 (2500)
+    0x20711439,  // CreatureBansheeQueen (3000)
+};
+inline bool is_boss_record(uint32_t record) {
+  for (uint32_t r : kBossRecords)
+    if (r == record) return true;
+  return false;
+}
+
 inline double health_mult(int players) {
   return 1.0 + std::clamp(REXCVAR_GET(mp_scale_health), 0.0, 4.0) * (std::clamp(players, 1, 4) - 1);
 }
@@ -381,7 +407,7 @@ inline double enemy_damage_mult(uint32_t attacker) {
   if (it == s.scaled.end()) return 1.0;
   if (!it->second.locked && it->second.players >= 2) s.fight_started = true;
   it->second.locked = true;
-  if (it->second.base_max >= float(REXCVAR_GET(mp_scale_boss_health))) return 1.0;  // a boss: health only
+  if (it->second.boss) return 1.0;  // health only
   return damage_mult(it->second.players);
 }
 inline bool is_our_hero(uint32_t thing) {
@@ -409,6 +435,15 @@ inline void note_born(uint8_t* base, uint32_t thing, uint32_t seed, uint32_t aft
   }
   s.born[thing] = {seed, load_u32(base, thing + 28)};
   if (REXCVAR_GET(mp_enemy_diag)) s.born_after[thing] = after;
+  const uint32_t gen = s.spawning_gen;
+  const bool dynamic = gen && puppets::heap(base, gen, 64) && base[gen + 63];
+  if (dynamic) {
+    std::lock_guard<std::mutex> l(s.m);
+    if (s.open_world.size() < kMaxBorn) s.open_world[thing] = load_u32(base, thing + 28);
+  }
+  if (REXCVAR_GET(mp_enemy_diag) >= 2)
+    REXLOG_INFO("[mpenemy] host: made 0x{:08X} record {:08X}{}", thing, load_u32(base, thing + 28),
+                gen ? (dynamic ? " by an open-world generator" : " by a placed generator") : "");
 }
 
 inline void request_phase(State& s, Clock::time_point now) {
@@ -680,6 +715,13 @@ inline void scale_enemy(uint8_t* base, uint32_t t, uint32_t hc, uint16_t id, con
     sc = Scale{record, 1, false};
     const float m = load_f32(base, hc + 28);
     sc.base_max = std::isfinite(m) ? m : 0.0f;
+    const auto ow = s.open_world.find(t);
+    const bool open_world = ow != s.open_world.end() && ow->second == record;
+    sc.boss = is_boss_record(record) ||
+              (!open_world && sc.base_max >= float(REXCVAR_GET(mp_scale_boss_health)));
+    if (REXCVAR_GET(mp_enemy_diag))
+      REXLOG_INFO("[mpenemy] host: enemy {} record {:08X} max {:.0f}{}{}", id, record, sc.base_max,
+                  open_world ? ", open-world" : "", sc.boss ? ": a boss (health only)" : "");
   }
   if (sc.locked) return;
   const float health = load_f32(base, hc + 20), max = load_f32(base, hc + 28);
@@ -733,6 +775,9 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     for (auto it = s.scaled.begin(); it != s.scaled.end();)  // gone, or the slot reused
       it = (live(base, it->first) && load_u32(base, it->first + 28) == it->second.record) ? std::next(it)
                                                                                         : s.scaled.erase(it);
+    for (auto it = s.open_world.begin(); it != s.open_world.end();)
+      it = (live(base, it->first) && load_u32(base, it->first + 28) == it->second) ? std::next(it)
+                                                                                 : s.open_world.erase(it);
   }
 
   struct Cand {
@@ -1303,7 +1348,19 @@ extern "C" void sub_82873360(PPCContext& ctx, uint8_t* base) {
       }
     }
   }
+  const uint32_t prev = S().spawning_gen;
+  S().spawning_gen = gen;  // what it makes came from this generator
   __imp__sub_82873360(ctx, base);
+  S().spawning_gen = prev;
+}
+
+// A creature generator spawning one of its creatures (r3 = the generator).
+extern "C" void sub_82871DD8(PPCContext& ctx, uint8_t* base) {
+  using namespace fable2::net::enemies;
+  const uint32_t prev = S().spawning_gen;
+  S().spawning_gen = ctx.r3.u32;
+  __imp__sub_82871DD8(ctx, base);
+  S().spawning_gen = prev;
 }
 
 // The game's create-entity native: the host notes the random seed each thing

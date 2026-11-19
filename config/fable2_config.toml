@@ -401,5 +401,7 @@ scale_radius = 30
 reinforcements_per_player = 0.5
 
 # Boss Health: enemies with at least this much health (before scaling) count
-# as bosses. Bosses get the extra health but don't hit harder. Default: 1000
+# as bosses, except ones from open-world spawners (such as trolls in the
+# wild). The story bosses (Thag, the Banshee Queen and others) always count.
+# Bosses get the extra health but don't hit harder. Default: 1000
 boss_health = 1000

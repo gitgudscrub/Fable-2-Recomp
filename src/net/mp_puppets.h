@@ -64,6 +64,11 @@ constexpr float kGraveX = -9000.0f;          // bodies to remove are parked here
 constexpr uint32_t kTransformVtbl = 0x820071C0;
 constexpr int kHero = -1;                    // skeleton owner id for our hero
 constexpr auto kSpawnRetry = std::chrono::seconds(5);
+// After a body vanishes or our hero changes (usually a level change), wait
+// before spawning: creating an entity while the level loads crashes the game.
+constexpr auto kSpawnSettle = std::chrono::seconds(10);
+constexpr auto kLongGap = std::chrono::milliseconds(250);   // a frame gap this long = not steady
+constexpr auto kSteadyFor = std::chrono::seconds(2);        // steady this long before a spawn
 constexpr auto kSeenKeep = std::chrono::milliseconds(200);
 
 struct Seen {
@@ -96,6 +101,9 @@ struct State {
   std::deque<int> pending;                    // slots waiting for their spawned body
   Clock::time_point last_tick{};
   bool logged_hero = false;
+  uint32_t last_hero = 0;
+  Clock::time_point no_spawn_until{};         // level change: hold spawns until then
+  Clock::time_point steady_since{};           // frames have come steadily since then
   uint32_t pose_writes = 0, pose_skips = 0;   // puppet palettes written / size mismatch
   Clock::time_point next_log{};
   bool cleanup_due = false;                   // a body was parked: run the cleanup script
@@ -293,6 +301,12 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
   State& s = S();
   const auto now = Clock::now();
   if (now - s.last_tick < std::chrono::milliseconds(8)) return;
+  // a long gap between ticks: loading (or a hitch); spawns wait for steady frames
+  if (s.last_tick != Clock::time_point{} && now - s.last_tick > kLongGap) {
+    if (now - s.last_tick > std::chrono::seconds(1))
+      REXLOG_INFO("[mppup] no frames for {} ms", std::chrono::duration_cast<std::chrono::milliseconds>(now - s.last_tick).count());
+    s.steady_since = now;
+  }
   const float dt = std::min(0.1f, std::chrono::duration<float>(now - s.last_tick).count());
   s.last_tick = now;
 
@@ -309,6 +323,13 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
     std::lock_guard<std::mutex> ll(net.local().m);
     net.local().valid = false;
     return;
+  }
+  if (hero != s.last_hero) {
+    if (s.last_hero) {
+      REXLOG_INFO("[mppup] our hero changed (0x{:08X} -> 0x{:08X}): holding spawns", s.last_hero, hero);
+      s.no_spawn_until = now + kSpawnSettle;
+    }
+    s.last_hero = hero;
   }
   float hp[3];
   for (int k = 0; k < 3; ++k) hp[k] = ta::load_f32(base, ht + 0x70 + 4 * k);
@@ -335,9 +356,11 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
     tc[i] = thing ? transform_of(base, thing) : 0;
     if (thing && !tc[i]) {  // body gone (level change, killed...)
       std::lock_guard<std::mutex> l(s.m);
-      REXLOG_INFO("[mppup] slot {}: puppet body 0x{:08X} is gone", i, thing);
+      REXLOG_INFO("[mppup] slot {}: puppet body 0x{:08X} is gone; spawns held {} s", i, thing,
+                  std::chrono::duration_cast<std::chrono::seconds>(kSpawnSettle).count());
       p.thing = 0;
       p.have_pos = false;
+      s.no_spawn_until = now + kSpawnSettle;  // most likely a level change
     }
     if (!active) {  // the player left (BYE or timeout)
       if (tc[i] || p.spawning) retire(ctx, base, i, tc[i], "the player left");
@@ -356,6 +379,7 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
       tc[i] = 0;
     }
     if (!tc[i]) {
+      if (now < s.no_spawn_until || now - s.steady_since < kSteadyFor) continue;
       if (!p.spawning || now - p.spawn_req > kSpawnRetry) {
         std::lock_guard<std::mutex> l(s.m);
         p.spawning = true;

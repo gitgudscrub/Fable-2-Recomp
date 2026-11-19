@@ -43,6 +43,13 @@
 //   seed: *(*(*(*(*(0x83496920) + 12) + 88) + 4) + 0x78), the object whose
 //     +0 is the entity manager; next = rotl(seed * 0x24A1 + 0x24DF, 19).
 //
+// Health and kill credit: a copy's health follows the host's enemy (ENEMIES
+// carries it), so the game's own health bars show it. When another player's hit
+// kills the host's enemy, the host names that player (EKILL); in their world the
+// copy dies with their hero as the attacker, so they get the kill (slayer stats,
+// rewards). In the other worlds it dies with no attacker. A copy waits up to
+// kKillWait for the killer's name before it dies.
+//
 // No network data ever goes into Lua: the record id from the host is checked
 // against the game's own record table and given to the native create.
 #pragma once
@@ -98,6 +105,7 @@ constexpr auto kOwnScanEvery = std::chrono::milliseconds(500);
 constexpr auto kSeedEvery = std::chrono::seconds(1);     // host: resend the seeds
 constexpr auto kSeedWait = std::chrono::milliseconds(1500);  // copy: wait this long for its seed
 constexpr size_t kMaxBorn = 4096;                         // host: creation seeds kept
+constexpr auto kKillWait = std::chrono::milliseconds(250);  // copy: wait this long for its killer
 
 // --- game access -------------------------------------------------------------
 
@@ -214,6 +222,7 @@ struct Copy {
   bool have_pos = false;
   float pos[3] = {};
   bool killed = false;     // the host's enemy died and so did the copy
+  Clock::time_point dead_seen{};  // when the host first listed it dead
   Clock::time_point last_listed{};
   Clock::time_point create_req{};
 };
@@ -223,6 +232,7 @@ struct Track {  // host: one of our enemies
   bool dead = false;
   bool has_seed = false;
   uint32_t seed = 0;  // the game's random seed when it was made
+  uint32_t killer = 0;  // the player whose hit killed it (0 = not another player)
   Clock::time_point dead_since{};
 };
 
@@ -271,6 +281,8 @@ struct State {
   std::unordered_map<uint16_t, Copy> copies;   // host id -> copy
   std::vector<EnemyState> host_list;
   uint32_t seeds_ver = 0;
+  uint32_t kills_ver = 0;
+  std::unordered_map<uint16_t, uint32_t> host_kills;  // host id -> killer player id
   std::unordered_map<uint16_t, uint32_t> host_seeds;  // host id -> creation seed
   uint32_t list_ver = 0;
   Clock::time_point list_at{};
@@ -672,6 +684,16 @@ inline void host_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::time
     ids.push_back(c.e.id);
   }
   Net::Get().set_enemies(std::move(list));
+  // kill credit: who killed the dead ones still listed
+  {
+    std::vector<EnemyKill> kills;
+    for (const auto& c : cands) {
+      if (!(c.e.flags & 1)) continue;
+      for (const auto& [t, k] : s.tracks)
+        if (k.id == c.e.id && k.killer) kills.push_back({k.id, k.killer});
+    }
+    Net::Get().set_enemy_kills(std::move(kills));
+  }
   // creation seeds: once a second, and at once when a new one is listed
   {
     std::vector<EnemySeed> seeds;
@@ -721,10 +743,20 @@ inline void change_health(PPCContext& ctx, uint8_t* base, uint32_t hc, double am
   ctx = saved;
 }
 
-inline void kill_copy(PPCContext& ctx, uint8_t* base, uint32_t thing) {
+inline void kill_copy(PPCContext& ctx, uint8_t* base, uint32_t thing, uint32_t attacker) {
   const uint32_t hc = component(base, thing, kHealthType);
   if (!hc || !(load_f32(base, hc + 20) > 0.0f)) return;
-  change_health(ctx, base, hc, -double(load_f32(base, hc + 20)) - 1.0, 0);
+  change_health(ctx, base, hc, -double(load_f32(base, hc + 20)) - 1.0, attacker);
+}
+
+// A copy's health follows the host's enemy (only its death goes through the game).
+inline void sync_health(uint8_t* base, uint32_t thing, float health) {
+  const uint32_t hc = component(base, thing, kHealthType);
+  if (!hc || !(health > 0.0f)) return;
+  const float max = load_f32(base, hc + 28);
+  const float v = (max > 0.0f && std::isfinite(max)) ? std::min(health, max) : health;
+  if (std::fabs(load_f32(base, hc + 20) - v) > 0.01f && fable2::textappend::wr2(base, hc + 20, 4))
+    puppets::store_f32(base, hc + 20, v);
 }
 
 // Host: the hits the other players dealt to copies of our enemies.
@@ -754,6 +786,7 @@ inline void apply_enemy_hits(PPCContext& ctx, uint8_t* base) {
     if (body && !live(base, body)) body = 0;
     const float before = load_f32(base, hc + 20);
     change_health(ctx, base, hc, -double(h.dmg), body);
+    if (!(load_f32(base, hc + 20) > 0.0f)) s.tracks[thing].killer = h.from;  // their kill
     if (diag)
       REXLOG_INFO("[mpenemy] enemy {} hit by {:08X} for {:.1f}: health {:.1f} -> {:.1f}", h.id, h.from, h.dmg,
                   before, load_f32(base, hc + 20));
@@ -778,6 +811,14 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
     if (s.host_seeds.size() > 4 * kMaxEnemies)  // keep the listed ones
       for (auto it = s.host_seeds.begin(); it != s.host_seeds.end();)
         it = s.copies.count(it->first) ? std::next(it) : s.host_seeds.erase(it);
+  }
+  {
+    std::vector<EnemyKill> kills;
+    if (Net::Get().take_enemy_kills(s.kills_ver, kills))
+      for (const auto& e : kills) s.host_kills[e.id] = e.killer;
+    if (s.host_kills.size() > 4 * kMaxEnemies)
+      for (auto it = s.host_kills.begin(); it != s.host_kills.end();)
+        it = s.copies.count(it->first) ? std::next(it) : s.host_kills.erase(it);
   }
   const bool host_here = s.list_ver != 0 && now - s.list_at < kHostSilence;
   if (host_here) take_poses(now);
@@ -876,10 +917,19 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       puppets::store_f32(base, tc + 0xE8, e.qz);
       puppets::store_f32(base, tc + 0xEC, e.qw);
     }
+    if (!(e.flags & 1) && !c.killed) sync_health(base, c.thing, e.health);
     if ((e.flags & 1) && !c.killed) {
-      c.killed = true;
-      kill_copy(ctx, base, c.thing);
-      if (diag) REXLOG_INFO("[mpenemy] copy {} died with the host's enemy", e.id);
+      if (c.dead_seen == Clock::time_point{}) c.dead_seen = now;
+      const auto k = s.host_kills.find(e.id);
+      if (k != s.host_kills.end() || now - c.dead_seen >= kKillWait) {
+        const bool ours = k != s.host_kills.end() && k->second == Net::Get().self_id();
+        c.killed = true;
+        kill_copy(ctx, base, c.thing, ours ? hero : 0);
+        if (diag)
+          REXLOG_INFO("[mpenemy] copy {} died with the host's enemy{}", e.id,
+                      ours ? " (our kill)"
+                           : (k != s.host_kills.end() ? fmt::format(" (killed by {:08X})", k->second) : std::string()));
+      }
     }
   }
   if (diag && now >= s.next_diag) {
@@ -898,10 +948,13 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
       const uint32_t tc = (it != s.copies.end() && it->second.thing) ? transform(base, it->second.thing) : 0;
       if (!tc) continue;
       const float x = load_f32(base, tc + 0x70), y = load_f32(base, tc + 0x74), z = load_f32(base, tc + 0x78);
-      REXLOG_INFO("[mpenemy] copy {}: host at {:.2f} {:.2f} {:.2f}, copy at {:.2f} {:.2f} {:.2f} (off {:.2f} m)", e.id,
-                  e.pos[0], e.pos[1], e.pos[2], x, y, z,
+      const uint32_t hc = component(base, it->second.thing, kHealthType);
+      REXLOG_INFO("[mpenemy] copy {}: host at {:.2f} {:.2f} {:.2f}, copy at {:.2f} {:.2f} {:.2f} (off {:.2f} m); "
+                  "health host {:.1f} copy {:.1f}",
+                  e.id, e.pos[0], e.pos[1], e.pos[2], x, y, z,
                   std::sqrt((x - e.pos[0]) * (x - e.pos[0]) + (y - e.pos[1]) * (y - e.pos[1]) +
-                            (z - e.pos[2]) * (z - e.pos[2])));
+                            (z - e.pos[2]) * (z - e.pos[2])),
+                  e.health, hc ? load_f32(base, hc + 20) : -1.0f);
     }
   }
   // copies the host no longer lists

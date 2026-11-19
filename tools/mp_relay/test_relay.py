@@ -334,6 +334,27 @@ class RelayV2Test(RelayTest):
         self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.ESEED])
         self.assertEqual(a.recv_all(), [])
 
+    async def test_enemy_kills_checked_host_only(self):
+        a, b = self.client(), self.client()
+        code = await self.host_session(a, 11)
+        b.send(join(13, code))
+        await self.pump()
+        a.recv_all(), b.recv_all()
+
+        def ekill(sender, enemies):
+            body = struct.pack("<BBH", len(enemies), 0, 0)
+            for eid, killer in enemies:
+                body += struct.pack("<HHI", eid, 0, killer)
+            return hdr(R.EKILL, sender) + body
+        a.send(ekill(11, [(3, 13), (4, 13)]))
+        a.send(ekill(11, [(3, 0)]))                # no killer
+        a.send(ekill(11, [(0, 13)]))               # no enemy
+        a.send(ekill(11, [(3, 13)])[:-1])          # bad length
+        b.send(ekill(13, [(3, 13)]))               # not the host
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.EKILL])
+        self.assertEqual(a.recv_all(), [])
+
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()
         a.send(create(11, proto=1))

@@ -129,8 +129,8 @@ extern "C" void sub_8268BD90(PPCContext& ctx, uint8_t* base) {
   const float amount = float(ctx.f1.f64);
   const uint32_t attacker = ctx.r5.u32;
   // Copies of the host's enemies (mp_enemies.h): what they do does no damage
-  // (the host's enemy does the real hit), and nothing changes their health
-  // here but their death: damage to a copy goes to the host's enemy (EHIT).
+  // (the host's enemy does the real hit). Damage to a copy goes to the host's
+  // enemy (EHIT); here it never takes the copy below 1 health.
   if (attacker && fable2::net::enemies::is_copy(attacker)) {
     if (diag) REXLOG_INFO("[mpcombat] hit by enemy copy 0x{:08X} dropped ({:.2f})", attacker, amount);
     return;
@@ -139,6 +139,14 @@ extern "C" void sub_8268BD90(PPCContext& ctx, uint8_t* base) {
     if (const uint16_t id = fable2::net::enemies::copy_id(owner)) {
       if (amount < 0.0f) fable2::net::Net::Get().queue_enemy_hit(id, -amount);
       if (diag) REXLOG_INFO("[mpcombat] hit on enemy copy {} (0x{:08X}) for {:.2f}: sent to the host", id, owner, amount);
+      // The game still sees the hit (its reaction and the experience orbs it
+      // gives), but the copy keeps at least 1 health: only the host's enemy
+      // dying kills it. Its health is set to the host's again next tick.
+      if (amount < 0.0f && before > 1.0f) {
+        ctx.f1.f64 = std::max(double(amount), 1.0 - double(before));
+        __imp__sub_8268BD90(ctx, base);
+        ctx.f1.f64 = amount;
+      }
       return;
     }
   }

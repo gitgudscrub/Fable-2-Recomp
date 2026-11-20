@@ -219,6 +219,34 @@
     </Style>
 
     <!-- Edition ribbon choices -->
+    <!-- Region chips under the Classic / Modern comparison -->
+    <Style x:Key="CompareChip" TargetType="RadioButton">
+      <Setter Property="GroupName" Value="CompareRegion" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Margin" Value="4,4" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="RadioButton">
+            <Border x:Name="Bg" Background="{DynamicResource Pill}" BorderBrush="{DynamicResource GoldLine}"
+                    BorderThickness="1" CornerRadius="15" Padding="14,5">
+              <TextBlock x:Name="Label" Text="{TemplateBinding Content}" FontSize="14" Foreground="{DynamicResource Ivory}" />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsChecked" Value="True">
+                <Setter TargetName="Bg" Property="Background" Value="{StaticResource GoldFill}" />
+                <Setter TargetName="Label" Property="Foreground" Value="{StaticResource GoldInk}" />
+              </Trigger>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldHi}" />
+              </Trigger>
+              <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="Bg" Property="BorderBrush" Value="{DynamicResource GoldHi}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style x:Key="EditionChoice" TargetType="RadioButton">
       <Setter Property="GroupName" Value="Edition" />
       <Setter Property="Cursor" Value="Hand" />
@@ -934,6 +962,14 @@
 
       <!-- Corner tools -->
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,16,0">
+        <Button x:Name="CompareButton" Style="{StaticResource ToolPill}" Click="OpenCompareClicked"
+                AutomationProperties.Name="Compare Classic and Modern">
+          <StackPanel Orientation="Horizontal">
+            <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource GoldHi}" StrokeThickness="1.5"
+                  Data="M3,5 H21 V19 H3 Z M12,2 V22 M9,12 L7,10 M9,12 L7,14 M15,12 L17,10 M15,12 L17,14" />
+            <TextBlock Text="Compare" Margin="8,0,0,0" VerticalAlignment="Center" />
+          </StackPanel>
+        </Button>
         <Button Style="{StaticResource ToolPill}" Click="OpenSettingsClicked" AutomationProperties.Name="Settings">
           <StackPanel Orientation="Horizontal">
             <Path Width="18" Height="18" Stretch="Uniform" Stroke="{DynamicResource GoldHi}" StrokeThickness="1.5"
@@ -949,6 +985,56 @@
           </StackPanel>
         </Button>
       </StackPanel>
+
+      <!-- Classic / Modern comparison: the same spot in both looks, a divider to drag between them -->
+      <Grid x:Name="CompareHost" Visibility="Collapsed" Panel.ZIndex="12" Background="#FF050D09">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+          <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Margin="28,44,28,10">
+          <StackPanel>
+            <TextBlock Text="Classic and Modern" FontFamily="{StaticResource Display}" FontSize="26"
+                       Foreground="{DynamicResource GoldHi}" />
+            <TextBlock x:Name="CompareCaption" FontSize="14" Foreground="{DynamicResource SageDim}" Margin="0,2,0,0"
+                       Text="Drag the line, or use the arrow keys. Classic is the Original edition; Modern is Project Sparrow." />
+          </StackPanel>
+          <Button Style="{StaticResource ToolPill}" HorizontalAlignment="Right" VerticalAlignment="Top"
+                  Click="CloseCompareClicked" AutomationProperties.Name="Close the comparison">
+            <TextBlock Text="Close" Margin="4,0,0,0" />
+          </Button>
+        </Grid>
+        <Viewbox Grid.Row="1" Stretch="Uniform" Margin="28,0">
+          <Grid x:Name="CompareStage" Width="1600" Height="900" Cursor="SizeWE" Background="Black" ClipToBounds="True"
+                MouseLeftButtonDown="CompareStageMouseDown" MouseMove="CompareStageMouseMove"
+                MouseLeftButtonUp="CompareStageMouseUp">
+            <Image x:Name="CompareModern" Stretch="UniformToFill" />
+            <Image x:Name="CompareClassic" Stretch="UniformToFill">
+              <Image.Clip>
+                <RectangleGeometry x:Name="CompareClip" Rect="0,0,800,900" />
+              </Image.Clip>
+            </Image>
+            <Canvas IsHitTestVisible="False">
+              <Rectangle x:Name="CompareLine" Width="4" Height="900" Fill="{DynamicResource GoldHi}" Canvas.Left="798" />
+              <Border x:Name="CompareHandle" Width="56" Height="56" CornerRadius="28" Canvas.Left="772" Canvas.Top="422"
+                      Background="#E6071410" BorderBrush="{DynamicResource GoldHi}" BorderThickness="3">
+                <Path Stretch="Uniform" Margin="12" Stroke="{DynamicResource GoldHi}" StrokeThickness="3"
+                      Data="M8,4 L2,10 L8,16 M16,4 L22,10 L16,16" />
+              </Border>
+            </Canvas>
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20" Padding="14,6" CornerRadius="6"
+                    Background="#B3071410" IsHitTestVisible="False">
+              <TextBlock Text="CLASSIC" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource Ivory}" />
+            </Border>
+            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="20" Padding="14,6" CornerRadius="6"
+                    Background="#B3071410" IsHitTestVisible="False">
+              <TextBlock Text="MODERN" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource GoldHi}" />
+            </Border>
+          </Grid>
+        </Viewbox>
+        <WrapPanel x:Name="CompareRegions" Grid.Row="2" HorizontalAlignment="Center" Margin="28,12,28,22" />
+      </Grid>
 
       <!-- Toast -->
       <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="16,0,16,96"

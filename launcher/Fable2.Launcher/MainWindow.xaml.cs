@@ -36,6 +36,7 @@ public partial class MainWindow : Window
         _home = LauncherHome.ForCurrentUser();
         _toastTimer.Tick += (_, _) => { _toastTimer.Stop(); Toast.Visibility = Visibility.Collapsed; };
         PreviewKeyDown += WindowPreviewKeyDown;
+        BuildCompareRegions();
         StateChanged += (_, _) => Root.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
 
         foreach (var option in Constants.GraphicsOptions.FrameLimits)
@@ -114,6 +115,8 @@ public partial class MainWindow : Window
                 scroll.Start();
             }
             if (Environment.GetCommandLineArgs().Contains("--preview=play") && _state == LauncherState.Ready) LaunchGame();
+            // --preview=compare opens the Classic / Modern comparison (for screenshots).
+            if (Environment.GetCommandLineArgs().Contains("--preview=compare")) OpenCompareClicked(this, new RoutedEventArgs());
         };
         Closing += (_, _) =>
         {
@@ -1186,6 +1189,7 @@ public partial class MainWindow : Window
     {
         if (_activeKeyField is null)
         {
+            if (CompareHost.Visibility == Visibility.Visible) { CompareKeyDown(e); return; }
             if (e.Key == Key.Escape && _pageOpen) { ClosePage(); e.Handled = true; }
             return;
         }

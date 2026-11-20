@@ -149,6 +149,10 @@ constexpr auto kSeedEvery = std::chrono::seconds(1);     // host: resend the see
 constexpr auto kSeedWait = std::chrono::milliseconds(1500);  // copy: wait this long for its seed
 constexpr size_t kMaxBorn = 4096;                         // host: creation seeds kept
 constexpr auto kKillWait = std::chrono::milliseconds(250);  // copy: wait this long for its killer
+constexpr auto kSyncCheckEvery = std::chrono::seconds(5);   // desync check: compare copies with the host's list
+constexpr auto kSyncSettle = std::chrono::seconds(4);       // a copy younger than this is not checked yet
+constexpr float kSyncHealthSlack = 1.0f;                    // health may differ this much (it follows 10x a second)
+constexpr float kSyncPosSlack = 2.0f;                       // metres
 
 // --- game access -------------------------------------------------------------
 
@@ -347,6 +351,11 @@ struct State {
   Clock::time_point next_own_scan{};
   Clock::time_point next_diag{};
   Clock::time_point next_match{};
+  // desync check (the other players)
+  Clock::time_point next_sync{};
+  Clock::time_point sync_logged{};
+  bool sync_ok = true;
+  uint32_t sync_bad_checks = 0;
   // work for the script phase
   std::vector<Create> creates;
   std::vector<std::pair<uint32_t, uint32_t>> destroys;  // (thing, record)
@@ -1212,6 +1221,58 @@ inline void guest_tick(PPCContext& ctx, uint8_t* base, uint32_t hero, Clock::tim
     } else {
       ++it;
     }
+  }
+  // Desync check: every few seconds compare our copies with the host's newest
+  // list (the host's world is the truth). Logs one line when it goes out of or
+  // back into sync, and the differences while it stays out (at most every 30 s).
+  if (now >= s.next_sync) {
+    s.next_sync = now + kSyncCheckEvery;
+    int checked = 0;
+    std::vector<std::string> diffs;
+    for (const auto& e : s.host_list) {
+      const auto it = s.copies.find(e.id);
+      const bool host_dead = (e.flags & 1) != 0;
+      if (it == s.copies.end()) {
+        if (!host_dead) diffs.push_back(fmt::format("enemy {} has no copy", e.id));
+        continue;
+      }
+      const Copy& c = it->second;
+      if (now - c.first_listed < kSyncSettle) continue;
+      ++checked;
+      if (!c.thing) {
+        if (!host_dead) diffs.push_back(fmt::format("enemy {} not made yet", e.id));
+        continue;
+      }
+      const uint32_t hc = component(base, c.thing, kHealthType);
+      const float hp = hc ? load_f32(base, hc + 20) : -1.0f;
+      if (host_dead != c.killed && !(host_dead && now - c.dead_seen < kKillWait + std::chrono::seconds(1)))
+        diffs.push_back(fmt::format("enemy {} {} for the host, {} here", e.id, host_dead ? "dead" : "alive",
+                                    c.killed ? "dead" : "alive"));
+      else if (!host_dead && std::fabs(hp - e.health) > kSyncHealthSlack)
+        diffs.push_back(fmt::format("enemy {} health {:.0f} for the host, {:.0f} here", e.id, e.health, hp));
+      if (!host_dead) {
+        if (const uint32_t tc = transform(base, c.thing)) {
+          const float dx = load_f32(base, tc + 0x70) - e.pos[0], dy = load_f32(base, tc + 0x74) - e.pos[1],
+                      dz = load_f32(base, tc + 0x78) - e.pos[2];
+          const float off = std::sqrt(dx * dx + dy * dy + dz * dz);
+          if (off > kSyncPosSlack) diffs.push_back(fmt::format("enemy {} {:.1f} m from the host's", e.id, off));
+        }
+      }
+    }
+    const bool ok = diffs.empty();
+    if (!ok) ++s.sync_bad_checks;
+    if (ok != s.sync_ok || (!ok && now - s.sync_logged >= std::chrono::seconds(30))) {
+      s.sync_logged = now;
+      if (ok) {
+        REXLOG_INFO("[mpsync] back in sync with the host ({} enemies)", checked);
+      } else {
+        std::string list;
+        for (size_t i = 0; i < diffs.size() && i < 6; ++i) list += (i ? "; " : "") + diffs[i];
+        if (diffs.size() > 6) list += fmt::format("; and {} more", diffs.size() - 6);
+        REXLOG_WARN("[mpsync] out of sync with the host ({} of {} enemies differ): {}", diffs.size(), checked, list);
+      }
+    }
+    s.sync_ok = ok;
   }
   // test: hit the first copy as our hero (through the game's health change and
   // our hook, as a real hit would be)

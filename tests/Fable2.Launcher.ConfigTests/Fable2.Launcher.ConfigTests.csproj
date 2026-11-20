@@ -19,6 +19,7 @@
     <Compile Include="..\..\launcher\Fable2.Launcher\UpdateSignature.cs" Link="UpdateSignature.cs" />
     <Compile Include="..\..\launcher\Fable2.Launcher\LauncherHome.cs" Link="LauncherHome.cs" />
     <Compile Include="..\..\launcher\Fable2.Launcher\Editions.cs" Link="Editions.cs" />
+    <Compile Include="..\..\launcher\Fable2.Launcher\SaveBackups.cs" Link="SaveBackups.cs" />
     <Compile Include="..\..\launcher\Fable2.Launcher\Constants\GraphicsOptions.cs" Link="GraphicsOptions.cs" />
     <Compile Include="..\..\constants\GameVersions.cs" Link="GameVersions.cs" />
     <!-- Disc reference lists for "Check game files" (made with x360extract, manifest option). -->

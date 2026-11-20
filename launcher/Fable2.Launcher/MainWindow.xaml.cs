@@ -571,6 +571,9 @@ public partial class MainWindow : Window
             }
             _home.SyncScripts();
             Directory.CreateDirectory(_home.DataFolder);
+            // Keep the last few copies of the saves; a failed copy never blocks play.
+            try { SaveBackups.BackUp(_home.SavesFolder, _home.DataFolder, DateTime.Now); }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) { }
             var startInfo = new ProcessStartInfo
             {
                 FileName = plan.Executable,
@@ -833,6 +836,7 @@ public partial class MainWindow : Window
             + (LauncherHome.IsInside(_home.GameFolder, _home.DataFolder)
                 ? "The game files (about 7 GB) are in there too. "
                 : $"The game files are read from {_home.GameFolder}. ")
+            + $"Each time you play, a copy of your saves goes to {SaveBackups.FolderName} in there (the last {SaveBackups.Keep} are kept). "
             + "Updates never touch this folder.";
         Toggle(FolderPanel);
     }

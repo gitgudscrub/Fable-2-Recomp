@@ -522,6 +522,29 @@ advanced.SparrowRenderer = false;
         if (args.Contains("--expect-german-goty", StringComparer.OrdinalIgnoreCase))
             Require(compatibility.Label == "German GOTY detected", "German GOTY profile was not recognized");
     }
+
+    // Save backups: copy before launch, skip when unchanged, keep the newest few.
+    {
+        string data = Path.Combine(testDirectory, "backup-data");
+        string saves = Path.Combine(data, "saves");
+        Require(SaveBackups.BackUp(saves, data, DateTime.Now) is null, "backup of a missing saves folder");
+        Directory.CreateDirectory(Path.Combine(saves, "Hero000"));
+        File.WriteAllText(Path.Combine(saves, "Hero000", "mainsave.bin"), "one");
+        var t = new DateTime(2026, 11, 20, 10, 0, 0);
+        string? first = SaveBackups.BackUp(saves, data, t);
+        Require(first is not null && File.ReadAllText(Path.Combine(first, "Hero000", "mainsave.bin")) == "one", "first backup missing");
+        Require(SaveBackups.BackUp(saves, data, t.AddMinutes(1)) is null, "unchanged saves were backed up again");
+        for (int i = 0; i < 7; i++)
+        {
+            File.WriteAllText(Path.Combine(saves, "Hero000", "mainsave.bin"), "v" + i);
+            File.SetLastWriteTimeUtc(Path.Combine(saves, "Hero000", "mainsave.bin"), t.AddHours(i + 1));
+            Require(SaveBackups.BackUp(saves, data, t.AddMinutes(10 + i), keep: 3) is not null, $"backup {i} skipped");
+        }
+        List<string> kept = SaveBackups.List(data);
+        Require(kept.Count == 3, $"expected 3 backups kept, found {kept.Count}");
+        Require(File.ReadAllText(Path.Combine(kept[0], "Hero000", "mainsave.bin")) == "v6", "newest backup is not first");
+        Console.WriteLine("Save backups passed.");
+    }
 }
 finally
 {

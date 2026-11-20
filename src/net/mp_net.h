@@ -49,6 +49,11 @@
 //                    that another player's hit killed. That player's copy dies
 //                    with their own hero as the attacker (kill credit). Sent by
 //                    the host each round while those corpses are listed.
+// LOOKS (12):       count u8 (0-24), reserved u8 + u16, then count x record u32
+//                    (non-zero, sorted, no repeats): the record ids of what this
+//                    player's hero wears. Sent when it changes and every 2 s.
+//                    Receivers check each record against their own game data
+//                    (a wearable item) before their puppet wears it (mp_looks.h).
 // Poses go out at mp_pose_hz (default 20); the receiver blends between them.
 // Relay messages (game <-> relay; the relay's header sender is 0):
 //   CREATE  (16): wanted code char[8] (zeros = new; a host that lost the relay
@@ -110,7 +115,7 @@ REXCVAR_DEFINE_STRING(mp_join, "", "Multiplayer", "With mp_relay: invite code of
 namespace fable2::net {
 
 constexpr uint32_t kMagic = 0x504D3246;  // "F2MP" read as little-endian u32
-constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL
+constexpr uint8_t kProto = 3;  // 2: BYE, POSEQ; 3: HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL, LOOKS
 constexpr int kMaxPeers = 3;              // 4-player co-op: us + 3
 constexpr uint32_t kMaxBones = 256;
 constexpr uint32_t kMaxParts = 4;          // skeletons per body
@@ -123,6 +128,8 @@ constexpr size_t kMaxQueuedHits = 64;
 constexpr uint32_t kMaxEnemies = 24;       // per ENEMIES message (and copies drawn)
 constexpr float kMaxEnemyHealth = 1.0e6f;
 constexpr uint32_t kMaxEnemyPoses = 8;     // enemies whose pose is sent each round
+constexpr uint32_t kMaxLooks = 24;         // worn items per LOOKS message
+constexpr auto kLooksEvery = std::chrono::seconds(2);
 
 struct EnemyState {
   uint16_t id = 0;
@@ -160,7 +167,7 @@ struct EnemyPosePart {  // one complete part as it arrived
 };
 
 enum class Msg : uint8_t {
-  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8, EHit = 9, ESeed = 10, EKill = 11,
+  Hello = 1, State = 2, Pose = 3, Bye = 4, PoseQ = 5, Hit = 6, Enemies = 7, EPose = 8, EHit = 9, ESeed = 10, EKill = 11, Looks = 12,
   Create = 16, Join = 17, Welcome = 18, Refused = 19
 };
 enum class Refuse : uint8_t {
@@ -208,6 +215,10 @@ struct Local {
   // per skeleton part: bone_count * 12 floats (3x4 per bone), host order
   std::array<std::vector<float>, kMaxParts> parts;
   uint32_t part_count = 0;
+  // what our hero wears (record ids, sorted); sent as LOOKS
+  bool looks_known = false;
+  bool looks_dirty = false;
+  std::vector<uint32_t> looks;
 };
 
 // One skeleton of a peer's body.
@@ -239,6 +250,9 @@ struct PeerState {
   int hits_in_window = 0;
   Clock::time_point ehit_window{};  // EHIT rate limit
   int ehits_in_window = 0;
+  // LOOKS: what this player wears (record ids, sorted); bumps on change
+  std::vector<uint32_t> looks;
+  uint32_t looks_ver = 0;
 };
 
 struct Stats {
@@ -378,6 +392,26 @@ class Net {
     return true;
   }
 
+  // Game thread: what our hero wears now (record ids, sorted, no repeats).
+  void set_local_looks(std::vector<uint32_t> looks) {
+    if (looks.size() > kMaxLooks) looks.resize(kMaxLooks);
+    std::lock_guard<std::mutex> l(local_.m);
+    if (local_.looks_known && local_.looks == looks) return;
+    local_.looks.swap(looks);
+    local_.looks_known = true;
+    local_.looks_dirty = true;
+  }
+  // Game side: a peer's worn records if they changed since `ver` (0 = never seen).
+  bool peer_looks(int slot, uint32_t& ver, std::vector<uint32_t>& out) {
+    std::lock_guard<std::mutex> l(peers_m_);
+    if (slot < 0 || slot >= kMaxPeers || !peers_[slot].active) return false;
+    const PeerState& p = peers_[slot];
+    if (p.looks_ver == ver) return false;
+    ver = p.looks_ver;
+    out = p.looks;
+    return true;
+  }
+
   // Starts the thread once when mp_enable is on (called every game tick).
   void ensure_started() {
     if (started_ || !REXCVAR_GET(mp_enable)) return;
@@ -499,6 +533,7 @@ class Net {
         if (pose_due) next_pose_ = now + std::chrono::microseconds(1000000 / pose_hz);
         send_hero(pose_due);
       }
+      send_looks(now);
       send_hits();
       send_enemy_hits();
       send_enemy_kills();  // before the list that marks them dead
@@ -912,6 +947,24 @@ class Net {
     }
   }
 
+  void send_looks(Clock::time_point now) {
+    std::vector<uint32_t> looks;
+    {
+      std::lock_guard<std::mutex> l(local_.m);
+      if (!local_.looks_known || (!local_.looks_dirty && now < next_looks_)) return;
+      local_.looks_dirty = false;
+      looks = local_.looks;
+    }
+    next_looks_ = now + kLooksEvery;
+    Writer w;
+    header(w, Msg::Looks);
+    w.u8(uint8_t(looks.size()));
+    w.u8(0);
+    w.u16(0);
+    for (uint32_t rec : looks) w.u32(rec);
+    send_all(w);
+  }
+
   void send_hello() {
     uint16_t bones = 0;
     {
@@ -1239,6 +1292,23 @@ class Net {
         ++enemies_in_ver_;
         break;
       }
+      case Msg::Looks: {
+        const uint32_t count = r.u8();
+        r.u8();
+        r.u16();
+        if (!r.ok || count > kMaxLooks || n != r.i + count * 4) return false;
+        std::vector<uint32_t> looks(count);
+        for (uint32_t& rec : looks)
+          if ((rec = r.u32()) == 0) return false;
+        if (!r.ok || r.i != n) return false;
+        for (size_t k = 1; k < looks.size(); ++k)
+          if (looks[k] <= looks[k - 1]) return false;  // sorted, no repeats
+        if (looks != p->looks) {
+          p->looks.swap(looks);
+          ++p->looks_ver;
+        }
+        break;
+      }
       case Msg::EKill: {
         const uint32_t count = r.u8();
         r.u8();
@@ -1353,6 +1423,7 @@ class Net {
   std::array<std::vector<float>, kMaxParts> pose_tx_;
   uint32_t last_pose_sent_ = 0;
   Clock::time_point next_pose_{};
+  Clock::time_point next_looks_{};
   std::array<int, kMaxParts> last_layout_ = [] { std::array<int, kMaxParts> a; a.fill(-1); return a; }();
   uint32_t self_id_ = 0;
   uint32_t seq_ = 0;

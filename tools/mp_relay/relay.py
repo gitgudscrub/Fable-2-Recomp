@@ -38,16 +38,17 @@ HEADER = struct.Struct("<IBBHII")  # magic, proto, type, flags, sender, seq
 assert HEADER.size == 16
 
 # game messages (forwarded)
-HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL, LOOKS = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
 GAME_TYPES = {
     1: (HELLO, STATE, POSE),
     2: (HELLO, STATE, POSE, BYE, POSEQ),
-    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL),
+    3: (HELLO, STATE, POSE, BYE, POSEQ, HIT, ENEMIES, EPOSE, EHIT, ESEED, EKILL, LOOKS),
 }
 HOST_ONLY = (ENEMIES, EPOSE, ESEED, EKILL)  # only the session host runs enemies
 TO_HOST = (EHIT,)              # hits on the host's enemies: for the host only
 MAX_HIT_DAMAGE = 500.0
 MAX_ENEMIES = 24
+MAX_LOOKS = 24  # worn item records per player
 ENEMY = struct.Struct("<HBBIffffff")  # id, flags, pad, record, x y z, qz qw, health
 assert ENEMY.size == 32
 # relay messages
@@ -175,6 +176,11 @@ def check_game_packet(mtype: int, data: bytes) -> bool:
             return False
         return all(eid != 0 and killer != 0
                    for eid, _p, killer in (struct.unpack_from("<HHI", data, 20 + k * 8) for k in range(data[16])))
+    if mtype == LOOKS:  # count u8, pad u8 + u16, then records u32: nonzero, ascending, no repeats
+        if n < 20 or data[16] > MAX_LOOKS or n != 20 + data[16] * 4:
+            return False
+        recs = struct.unpack_from("<%dI" % data[16], data, 20)
+        return all(r != 0 for r in recs) and all(a < b for a, b in zip(recs, recs[1:]))
     if mtype == BYE:
         return n == 16
     if mtype == HIT:

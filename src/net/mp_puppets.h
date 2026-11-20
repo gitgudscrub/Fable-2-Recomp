@@ -210,9 +210,19 @@ inline void on_pack(uint8_t* base, uint32_t skel, uint32_t vec) {
   const auto p = s.puppet_skel.find(skel);
   if (p == s.puppet_skel.end()) return;
   const Puppet& pp = s.pup[p->second.first];
-  const int part = p->second.second;
+  // The puppet wears the player's clothes (mp_looks.h), but its skeletons may
+  // not line up one for one with the player's first kMaxParts (a coat it has
+  // not put on yet, or one past the sent parts), so the player's part is the
+  // one with this bone count. None: the skeleton keeps its own animation.
+  const int my_part = p->second.second;
+  int part = -1;
+  for (int k = 0; k < int(kMaxParts) && part < 0; ++k) {
+    const int c = (my_part + k) % int(kMaxParts);
+    if (pp.pose[c].size() == size_t(n) * 12) part = c;
+  }
+  if (part < 0) return;
   const auto& src = pp.pose[part];
-  if (src.size() != size_t(n) * 12 || !ta::wr2(base, b, n * 48)) {
+  if (!ta::wr2(base, b, n * 48)) {
     ++s.pose_skips;
     return;
   }
@@ -285,8 +295,8 @@ inline void match_skeletons(uint8_t* base, const float hero_pos[3],
   for (auto& [bones, skel] : by[0]) s.hero_parts.push_back(skel);
   s.puppet_skel.clear();
   for (int i = 0; i < kMaxPeers; ++i)
-    for (size_t k = 0; k < by[i + 1].size() && k < kMaxParts; ++k)
-      s.puppet_skel[by[i + 1][k].second] = {i, int(k)};
+    for (size_t k = 0; k < by[i + 1].size(); ++k)  // all of them: matched by bone count
+      s.puppet_skel[by[i + 1][k].second] = {i, int(std::min<size_t>(k, kMaxParts - 1))};
 }
 
 // Parks a body that is no longer needed out of the world (the cleanup script

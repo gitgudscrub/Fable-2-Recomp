@@ -355,6 +355,27 @@ class RelayV2Test(RelayTest):
         self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.EKILL])
         self.assertEqual(a.recv_all(), [])
 
+    async def test_looks_checked_any_sender(self):
+        a, b = self.client(), self.client()
+        code = await self.host_session(a, 11)
+        b.send(join(13, code))
+        await self.pump()
+        a.recv_all(), b.recv_all()
+
+        def looks(sender, recs):
+            return hdr(R.LOOKS, sender) + struct.pack("<BBH", len(recs), 0, 0) + b"".join(
+                struct.pack("<I", r) for r in recs)
+        b.send(looks(13, [0x343BEC09, 0x98110472, 0xFF10B197]))  # a joiner's looks: fine
+        a.send(looks(11, []))                                   # wears nothing: fine
+        a.send(looks(11, [5, 0]))                               # empty record
+        a.send(looks(11, [7, 5]))                               # not ascending
+        a.send(looks(11, [5, 5]))                               # repeat
+        a.send(looks(11, [5, 7])[:-1])                          # bad length
+        a.send(looks(11, list(range(1, 26))))                   # too many
+        await self.pump()
+        self.assertEqual([t for t, *_ in parse(a.recv_all())], [R.LOOKS])
+        self.assertEqual([t for t, *_ in parse(b.recv_all())], [R.LOOKS])
+
     async def test_version_mismatch_refused(self):
         a, b = self.client(), self.client()
         a.send(create(11, proto=1))

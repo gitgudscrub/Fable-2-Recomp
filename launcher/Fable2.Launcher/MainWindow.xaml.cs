@@ -595,6 +595,12 @@ public partial class MainWindow : Window
             try { File.Delete(CoopStatusFile); } catch (IOException) { }
             Process? game = Process.Start(startInfo);
             _gameLaunched = true;
+            // Crash catcher: a hidden watcher saves a report if the game ends abnormally.
+            if (game is not null)
+            {
+                try { CrashWatch.StartFor(game, _version, _home.Settings.Edition); }
+                catch (Exception exception) when (exception is IOException or System.ComponentModel.Win32Exception) { }
+            }
             if (coop.Count == 0 || !StayInTrayFor(game)) Close();
         }
         catch (Exception exception)

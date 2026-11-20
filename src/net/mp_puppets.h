@@ -70,6 +70,12 @@ constexpr auto kSpawnSettle = std::chrono::seconds(10);
 constexpr auto kLongGap = std::chrono::milliseconds(250);   // a frame gap this long = not steady
 constexpr auto kSteadyFor = std::chrono::seconds(2);        // steady this long before a spawn
 constexpr auto kSeenKeep = std::chrono::milliseconds(200);
+// A peer's main bone count must stay changed this long before its body is
+// remade (e.g. child -> adult), so a brief glitch never respawns it.
+constexpr auto kBodyChangeFor = std::chrono::seconds(2);
+// Retired bodies are parked again until they are gone (a body parked right
+// after it was made can be put back by the game).
+constexpr auto kRetiredKeep = std::chrono::seconds(30);
 
 struct Seen {
   float x, y, z;
@@ -80,6 +86,8 @@ struct Puppet {
   uint32_t thing = 0;      // CThing* of the body (0 = none)
   uint32_t peer_id = 0;    // peer the body was made for
   uint16_t body_bones = 0; // main bone count of the body we asked for
+  uint16_t new_bones = 0;  // a different count the peer now reports...
+  Clock::time_point new_bones_since{};  // ...since then
   Clock::time_point spawn_req{};
   bool spawning = false;
   bool have_pos = false;
@@ -99,6 +107,7 @@ struct State {
   std::unordered_map<uint32_t, std::pair<int, int>> puppet_skel;  // skel -> (slot, part)
   std::array<Puppet, kMaxPeers> pup;
   std::deque<int> pending;                    // slots waiting for their spawned body
+  std::vector<std::pair<uint32_t, Clock::time_point>> retired;  // parked bodies not yet gone
   Clock::time_point last_tick{};
   bool logged_hero = false;
   uint32_t last_hero = 0;
@@ -236,11 +245,17 @@ inline void match_skeletons(uint8_t* base, const float hero_pos[3],
     const float dx = k.x - p[0], dy = k.y - p[1], dz = k.z - p[2];
     return dx * dx + dy * dy < 0.35f * 0.35f && dz > -0.5f && dz < 2.0f;
   };
-  // keep owned skeletons that are still seen near their owner
+  // An owned skeleton stays its owner's while it is seen within reach: an
+  // adult's body skeleton swings well away from the transform in attacks, and
+  // losing it would make its head the main part for a moment.
+  auto in_reach = [](const Seen& k, const float* p) {
+    const float dx = k.x - p[0], dy = k.y - p[1], dz = k.z - p[2];
+    return dx * dx + dy * dy < 1.5f * 1.5f && dz > -1.0f && dz < 2.5f;
+  };
   for (auto it = s.owner.begin(); it != s.owner.end();) {
     const auto sk = s.seen.find(it->first);
     const float* op = owner_pos(it->second);
-    it = (sk == s.seen.end() || !op || !is_near(sk->second, op)) ? s.owner.erase(it) : std::next(it);
+    it = (sk == s.seen.end() || !op || !in_reach(sk->second, op)) ? s.owner.erase(it) : std::next(it);
   }
   // give unowned skeletons to whoever stands there (our hero first). A body has
   // at most one skeleton of each size, so a puppet standing on our hero (same
@@ -283,6 +298,7 @@ inline void retire(PPCContext& ctx, uint8_t* base, int slot, uint32_t tc, const 
   if (tc) {
     set_position(ctx, base, tc, kGraveX - 10.0f * slot, 0.0f, 0.0f);
     s.cleanup_due = true;
+    if (p.thing && s.retired.size() < 64) s.retired.push_back({p.thing, Clock::now()});
     REXLOG_INFO("[mppup] slot {}: removing puppet body 0x{:08X} ({})", slot, p.thing, why);
   } else {
     REXLOG_INFO("[mppup] slot {}: cancelling the body being made ({})", slot, why);
@@ -374,9 +390,16 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
       p.peer_id = v.id;
     }
     if (tc[i] && p.body_bones != v.bone_count) {  // e.g. child -> adult: new body
-      REXLOG_INFO("[mppup] slot {}: peer now has {} bones, body has {}", i, v.bone_count, p.body_bones);
-      retire(ctx, base, i, tc[i], "the player's body changed");
-      tc[i] = 0;
+      if (p.new_bones != v.bone_count) {
+        p.new_bones = v.bone_count;
+        p.new_bones_since = now;
+      } else if (now - p.new_bones_since >= kBodyChangeFor) {
+        REXLOG_INFO("[mppup] slot {}: peer now has {} bones, body has {}", i, v.bone_count, p.body_bones);
+        retire(ctx, base, i, tc[i], "the player's body changed");
+        tc[i] = 0;
+      }
+    } else {
+      p.new_bones = 0;
     }
     if (!tc[i]) {
       if (now < s.no_spawn_until || now - s.steady_since < kSteadyFor) continue;
@@ -449,6 +472,22 @@ inline void tick(PPCContext& ctx, uint8_t* base) {
   }
 
   std::lock_guard<std::mutex> l(s.m);
+  // Park retired bodies again until the cleanup script has removed them.
+  for (auto it = s.retired.begin(); it != s.retired.end();) {
+    const uint32_t thing = it->first;
+    bool in_use = false;
+    for (const Puppet& q : s.pup) in_use = in_use || q.thing == thing;
+    const uint32_t rtc = in_use ? 0 : transform_of(base, thing);
+    if (!rtc || now - it->second > kRetiredKeep) {
+      it = s.retired.erase(it);
+      continue;
+    }
+    if (ta::load_f32(base, rtc + 0x70) > -8000.0f) {
+      set_position(ctx, base, rtc, kGraveX - 50.0f, 0.0f, 0.0f);
+      s.cleanup_due = true;
+    }
+    ++it;
+  }
   if (s.cleanup_due && now >= s.next_cleanup) {
     s.cleanup_due = false;
     s.next_cleanup = now + std::chrono::seconds(1);

@@ -985,10 +985,10 @@ class Net {
       for (uint32_t b = 0; b < bones && ok; ++b) ok = is_rotation(&pose[b * 12], l);
       if (ok) layout = l;
     }
-    if (layout != last_layout_) {
-      last_layout_ = layout;
-      REXLOG_INFO("[mpnet] pose format: {}", layout ? (layout == 1 ? "compact (rows of 4)" : "compact (rows of 3)")
-                                                    : "full matrices");
+    if (part < kMaxParts && layout != last_layout_[part]) {  // per part: an adult's head is never compact
+      last_layout_[part] = layout;
+      REXLOG_INFO("[mpnet] pose format (part {}): {}", part,
+                  layout ? (layout == 1 ? "compact (rows of 4)" : "compact (rows of 3)") : "full matrices");
     }
     if (!layout) return false;
     for (uint32_t first = 0; first < bones; first += kBonesPerPacket) {
@@ -1353,7 +1353,7 @@ class Net {
   std::array<std::vector<float>, kMaxParts> pose_tx_;
   uint32_t last_pose_sent_ = 0;
   Clock::time_point next_pose_{};
-  int last_layout_ = -1;
+  std::array<int, kMaxParts> last_layout_ = [] { std::array<int, kMaxParts> a; a.fill(-1); return a; }();
   uint32_t self_id_ = 0;
   uint32_t seq_ = 0;
   bool started_ = false;

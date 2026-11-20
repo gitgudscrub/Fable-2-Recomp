@@ -12,6 +12,16 @@ $root = 'E:\Fable 2\Fable-2-Recomp'          # game data root (console\ lives he
 $s = Join-Path $env:TEMP 'fable2-bench'   # screenshots go here
 New-Item -ItemType Directory -Force $s | Out-Null
 $fpsLog = Join-Path $Build 'fps_meter.log'
+# No hero save to Continue: start a New Game instead (same spot: the young hero
+# by the fire with Rose). New Game writes a new save, so the saves folder is
+# backed up first and put back at the end.
+$saves = Join-Path $Build 'saves'
+$newGame = -not (Get-ChildItem (Join-Path $saves 'B13EBABEBABEBABE') -Recurse -Filter 'mainsave.bin' -ErrorAction SilentlyContinue)
+$savesBackup = $null
+if ($newGame) {
+  $savesBackup = Join-Path $env:TEMP ("fable2-bench-saves-" + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+  if (Test-Path $saves) { Copy-Item $saves $savesBackup -Recurse } else { New-Item -ItemType Directory -Force $savesBackup | Out-Null }
+}
 
 function Send-Console([string[]]$lines) {
   $in = Join-Path $root 'console\in.txt'
@@ -63,8 +73,17 @@ try {
   # creating a new save (New Game would, after the character cards).
   # Continue then shows the save cards; A picks the first (every save starts
   # right after character creation).
-  Send-Console @('pad A 120', 'wait 5s', 'pad Down 60', 'wait 2s', 'pad A 60', 'wait 3s', 'pad A 60')
-  if (-not (Wait-Log 'FinishedTransitioningToGame' $hud 120)) { throw "game not entered" }
+  if ($newGame) {
+    # Title A, New Game (first item), then the boy's card twice and confirm.
+    Send-Console @('pad A 120'); Start-Sleep 6
+    Send-Console @('pad A 60'); Start-Sleep 12
+    Send-Console @('pad Left 60'); Start-Sleep 3; Send-Console @('pad A 90'); Start-Sleep 4
+    Send-Console @('pad Left 60'); Start-Sleep 3; Send-Console @('pad A 90'); Start-Sleep 8
+    Send-Console @('pad A 90')
+  } else {
+    Send-Console @('pad A 120', 'wait 5s', 'pad Down 60', 'wait 2s', 'pad A 60', 'wait 3s', 'pad A 60')
+  }
+  if (-not (Wait-Log 'FinishedTransitioningToGame' $hud $(if ($newGame) { 300 } else { 120 }))) { throw "game not entered" }
   $tInGame = Get-Date
   # The opening cutscene runs at 30 FPS; Start skips it. Then wait until the
   # frame rate stays clearly above 30 for 3 checks in a row (~6 s): player in
@@ -83,6 +102,10 @@ try {
   }
   if (-not $control) { throw "still in a 30 FPS scene after 240 s" }
   "[{0}] in control {1:N0} s after the HUD loaded" -f $Label, ((Get-Date) - $tInGame).TotalSeconds
+  # Same view every run: put the hero at a fixed spot by the fire, facing a fixed
+  # way, and reset the camera behind them (the camera's start angle varies).
+  Send-Console @('lua local h=GetPlayerHero() h:SetPosition(CVector3(201.3, 91.7, 52.83)) pcall(Physics.SetFacingVector, h, CVector3(0, 1, 0)) Debug.ReloadCameras()')
+  Start-Sleep 3
   Start-Sleep $SettleSec
 
   # Measure: frames logged during the window (one fps_meter line per frame).
@@ -121,5 +144,10 @@ public static class WB {
   "[{0}] avg {1:N1} FPS  median {2:N1}  1% low {3:N1}  ({4} frames / {5:N0} s)  gpu_errors {6}" -f $Label, $avg, $med, $p1, $window.Count, $secs, $errs
 } finally {
   if (-not $script:p.HasExited) { $script:p.CloseMainWindow() | Out-Null; if (-not $script:p.WaitForExit(15000)) { $script:p.Kill() } }
+  if ($savesBackup) {
+    Remove-Item $saves -Recurse -Force -ErrorAction SilentlyContinue
+    Copy-Item $savesBackup $saves -Recurse
+    Remove-Item $savesBackup -Recurse -Force
+  }
 }
 

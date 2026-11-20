@@ -20,6 +20,10 @@ the ReXGlue SDK. Goals: stable/fast PC build -> custom multiplayer ->
 
 &#x20; manifest name changes.
 
+- After every SDK bump (new thirdparty/rexglue-sdk commit), build Release and run
+  `powershell -NoProfile -ExecutionPolicy Bypass -File toolsenchench_sdk.ps1`
+  (about 10 min, needs the PC to itself), then post its last line to the
+  Command Hub as a fable update. Results: out/bench/sdk_results.jsonl.
 \- Full clean build compiles \~291 generated TUs. Do not clean unless asked.
 
 

@@ -16,6 +16,10 @@ class PackageReleaseTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
+        # coop.json comes from the release PC's home folder; keep it out so the file lists are the same everywhere.
+        real_coop_config = packager.coop_config
+        packager.coop_config = lambda: None
+        self.addCleanup(setattr, packager, "coop_config", real_coop_config)
         self.base = Path(temp.name)
         self.root, self.build = self.base / "repo", self.base / "build"
         self.launcher = self.base / "launcher/Fable2Launcher.exe"
@@ -41,6 +45,8 @@ class PackageReleaseTests(unittest.TestCase):
             self.build / "data/scripts/quests/quest.lua": "game script",
             self.build / "data/scripts/recomp/F5.lua": "recomp script",
             self.build / "shaders/replace/water.dxbc": "compiled shader",
+            self.build / "shaders/sparrow_replace/water.dxbc": "sparrow shader",
+            self.build / "shaders/sparrow_replace/character_materials.txt": "materials",
         }.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
@@ -58,6 +64,7 @@ class PackageReleaseTests(unittest.TestCase):
         self.assertEqual(names, {f"Fable 2 1.6.0/{name}" for name in (
             "fable_2.exe", "rexruntime.dll", "rexgpu-xenos.dll", "fable2_build.json", "Fable2Launcher.exe",
             "README.md", "fable2_config.toml", "shader_prebuild.txt", "shaders/replace/water.dxbc",
+            "shaders/sparrow_replace/water.dxbc", "shaders/sparrow_replace/character_materials.txt",
             "data/scripts/recomp/F5.lua")})
         self.assertEqual(config, "repo config")
         self.assertEqual(readme, "player readme")
@@ -109,6 +116,8 @@ class VelopackPackagingTests(PackageReleaseTests):
         self.assertEqual(set(staged), {"fable_2.exe", "rexruntime.dll", "rexgpu-xenos.dll", "fable2_build.json",
                                        "Fable2Launcher.exe", "README.md", "fable2_config.toml", "shader_prebuild.txt",
                                        "shaders/replace/water.dxbc",
+                                       "shaders/sparrow_replace/water.dxbc",
+                                       "shaders/sparrow_replace/character_materials.txt",
                                        "data/scripts/recomp/F5.lua"})
         self.assertEqual(json.loads((stage / "fable2_build.json").read_text())["version"], "1.8.0")
         self.assertFalse((stage / "default.xex").exists())

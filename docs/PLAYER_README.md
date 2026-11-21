@@ -29,6 +29,9 @@ Italy, Russia and Spain.
 
 Every setting can also be changed on its own under **Settings** and **Controls**.
 
+**Compare** (on the main screen) shows the same places side by side in the
+Classic and Modern look. Drag across the picture to slide between them.
+
 ## Controls
 
 A controller works straight away. On keyboard and mouse the default keys are:
@@ -49,11 +52,31 @@ A controller works straight away. On keyboard and mouse the default keys are:
 
 Change them under **Controls** in the launcher.
 
+## Co-op (experimental)
+
+Up to 4 players. Each of you plays your own game and sees the others in your
+world, wearing their own clothes. The host's enemies show up for everyone, so
+you can fight side by side; hits from every player count, and everyone nearby
+gets the kill and its experience. Fights get tougher the more of you there are.
+Shared quests and loot come later.
+
+Open **Co-op** in the launcher:
+
+- **Friends**: make an account to add friends by username, see when they're
+  playing and invite them with one click.
+- **Play together**: one player picks **Host**, the others pick **Join** and
+  type the 6-letter invite code shown in the host's game window title.
+  Everyone needs the same version of Project Sparrow.
+
 ## Your files
 
 `%LOCALAPPDATA%\ProjectSparrow-Data` holds your saves, settings, logs and the
 game files. **Help → Change data folder** moves it, for example to a bigger
 drive. Uninstalling Project Sparrow leaves this folder alone.
+
+Your saves are backed up each time you click **Play** (only when something
+changed). The last 5 backups are kept in `save-backups` inside the data folder;
+**Help → Open save folder** opens your saves.
 
 ## Updates
 
@@ -65,6 +88,13 @@ Choose **Stable** or **Beta** under **Updates**. Portable copies don't update.
 
 - **Help → Check game files** compares your game files with the original disc.
 - **Help → Report a problem** collects your logs and settings for a bug report.
+  Nothing is uploaded; you attach the zip yourself.
+- If the game crashes, a crash report is saved to `crash-reports` in the data
+  folder and the launcher offers to start a GitHub issue. Your saves are never
+  in it.
+- **Help → Record performance logs** (on by default) records frame rate,
+  stutters and slow shader builds so problems can be found and fixed. The logs
+  stay on your PC until you send them.
 - Co-op problems show a notice at the top of the screen with a code like
   **CO-104**. Please include the code when you report it. All the codes:
   https://github.com/gitgudscrub/Fable-2-Recomp/blob/master/docs/COOP_ERRORS.md

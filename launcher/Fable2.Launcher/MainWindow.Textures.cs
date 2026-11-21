@@ -54,7 +54,7 @@ public partial class MainWindow
         if (complete)
         {
             TexturesStatusText.Text = $"Version {manifest.Version} installed ({size}). You're up to date.";
-            TexturesHintText.Text = "Shows at a render scale of 2× or more. F8 in game switches between Modern and Classic.";
+            TexturesHintText.Text = "Most visible at a render scale of 2× or more. F8 in game switches between Modern and Classic.";
             TexturesDownloadButton.Visibility = Visibility.Collapsed;
         }
         else if (installedSomething && missing is not null)
@@ -70,7 +70,7 @@ public partial class MainWindow
         {
             TexturesStatusText.Text = $"Version {manifest.Version}: {size} in {manifest.Parts.Count} parts.";
             TexturesHintText.Text = "Sharper, more detailed textures for the whole game, drawn with a key from your own game files. "
-                                    + "Shows at a render scale of 2× or more; skip it on a weaker PC.";
+                                    + "Most visible at a render scale of 2× or more; skip it on a weaker PC.";
             TexturesDownloadButton.Content = "Download";
         }
     }

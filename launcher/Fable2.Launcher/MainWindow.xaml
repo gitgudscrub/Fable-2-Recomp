@@ -1191,7 +1191,7 @@
                                 Checked="SettingChanged" Unchecked="SettingChanged" />
                       <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="Ultra lighting" Style="{StaticResource PageText}" />
-                        <TextBlock Text="Light shafts, sharper sun shadows, deeper contrast. About 6% slower; Modern graphics only"
+                        <TextBlock Text="Light shafts, sharper sun shadows, deeper contrast. About 6% slower; Enhanced and Project Sparrow only"
                                    Style="{StaticResource PageHint}" TextWrapping="Wrap" />
                       </StackPanel>
                     </DockPanel>
@@ -1435,7 +1435,7 @@
                             VerticalAlignment="Center" Click="ClosePageClicked" />
                   </Grid>
                   <TextBlock Style="{StaticResource PageHint}" FontSize="14.5" Margin="0,0,0,8" TextWrapping="Wrap"
-                             Text="Experimental. Up to 4 players: each of you plays your own game and sees the others walking around in your world. Fighting together, shared quests and loot come later." />
+                             Text="Experimental. Up to 4 players: each of you plays your own game and sees the others in your world, wearing their own clothes. The host's enemies show up for everyone, so you can fight side by side, and fights get tougher the more of you there are. Shared quests and loot come later." />
 
                   <!-- Friends (needs the friends service; hidden without one) -->
                   <StackPanel x:Name="FriendsSection">
@@ -1538,7 +1538,7 @@
                   <Button Style="{StaticResource PageLink}" Click="ReportToggleClicked">
                     <StackPanel>
                       <TextBlock Text="Report a problem" FontSize="16" />
-                      <TextBlock Text="Bundle logs and settings, then open a GitHub issue" Style="{StaticResource PageHint}" />
+                      <TextBlock Text="Bundle logs and settings, then open a GitHub issue. If the game crashes, a report is saved for you" Style="{StaticResource PageHint}" />
                     </StackPanel>
                   </Button>
                   <Border x:Name="ReportPanel" Visibility="Collapsed" Margin="0,10,0,4" Padding="14,12" CornerRadius="6"
@@ -1585,7 +1585,10 @@
                     </StackPanel>
                   </Border>
                   <Button Style="{StaticResource PageLink}" Click="OpenSavesClicked">
-                    <TextBlock Text="Open save folder" FontSize="16" />
+                    <StackPanel>
+                      <TextBlock Text="Open save folder" FontSize="16" />
+                      <TextBlock Text="Your saves are backed up each time you play, and the last 5 backups are kept" Style="{StaticResource PageHint}" />
+                    </StackPanel>
                   </Button>
                   <Button Style="{StaticResource PageLink}" Click="FolderToggleClicked">
                     <StackPanel>

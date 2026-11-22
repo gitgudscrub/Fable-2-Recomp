@@ -38,6 +38,7 @@
 #include <deque>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -601,6 +602,13 @@ inline bool run_gui_command(const std::string& name, const std::vector<std::stri
 //--- Host commands ----------------------------------------------------------
 
 // Returns true when the line was a host command (handled here), false to run it in Lua.
+// Commands owned by other modules (e.g. `rec` / `play` in fable2_replay.h).
+// Gets the command's words; returns true when it handled the command.
+inline std::function<bool(const std::vector<std::string>&)>& ExtraCommands() {
+  static std::function<bool(const std::vector<std::string>&)> f;
+  return f;
+}
+
 inline bool run_host_command(const std::string& line, uint8_t* base) {
   State& s = S();
   auto W = split_words(line);  // not const: `pad p2` drops its player word
@@ -608,6 +616,7 @@ inline bool run_host_command(const std::string& line, uint8_t* base) {
   std::string name = W[0];
   for (auto& c : name) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
+  if (auto& extra = ExtraCommands(); extra && extra(W)) return true;
   if (name == "echo") {
     const size_t p = line.find_first_of(" \t");
     out("echo", p == std::string::npos ? "" : line.substr(p + 1));

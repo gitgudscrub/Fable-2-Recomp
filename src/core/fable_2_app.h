@@ -170,6 +170,10 @@ class Fable2App : public rex::ReXApp {
             system->window(), 0, &fable2::console::PadStoreN(u),
             &fable2::console::PadEnabled(),
             rex::input::DeviceId{(1ull << 62) + static_cast<uint64_t>(u)}, u));
+      // Input recorder (`rec` / `play`, src/core/fable2_replay.h): watches
+      // player 1's merged input and replays recordings through its own pad.
+      system->AddDriver(std::make_unique<fable2::replay::ReplayDriver>(system->window(), 0));
+      system->SetStateObserver(&fable2::replay::on_input_state);
 #ifdef FABLE2_REMOTE_CONTROL
       // Remote (AI) pad: driven over localhost TCP by an external harness
       // (src/input/remote_control_server.h). OR-merges with the pads above; not

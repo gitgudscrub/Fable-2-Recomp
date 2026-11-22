@@ -6,6 +6,7 @@
 // pulls in keyboard_gamepad.h, which calls fable2::f5lua::poll_f5() per frame).
 #include "fable2_f5_lua.h"
 #include "fable2_console.h"  // opt-in developer command line
+#include "fable2_replay.h"  // input recorder for comparison videos (rec / play)
 
 #include "fable_2_app.h"
 #include "fps_meter.h"
@@ -40,6 +41,20 @@ void fable2_game_thread_lua_tick(PPCContext& ctx, uint8_t* base) {
   fable2::net::combat::tick(ctx, base);
   fable2::net::enemies::tick(ctx, base);
   fable2::net::looks::tick(ctx, base);
+  // Input recorder: hero position for drift checks, F10, end of a replay.
+  if (fable2::replay::wants_hero()) {
+    const uint64_t save_r3 = ctx.r3.u64;
+    sub_8222F1B0(ctx, base);  // GetPlayerHero native
+    const uint32_t hero = ctx.r3.u32;
+    ctx.r3.u64 = save_r3;
+    if (const uint32_t ht = hero ? fable2::net::puppets::transform_of(base, hero) : 0) {
+      namespace ta = fable2::textappend;
+      fable2::replay::on_hero(ta::load_f32(base, ht + 0x70), ta::load_f32(base, ht + 0x74),
+                              ta::load_f32(base, ht + 0x78), ta::load_f32(base, ht + 0xE8),
+                              ta::load_f32(base, ht + 0xEC));
+    }
+  }
+  fable2::replay::game_tick();
 }
 
 // Host keyboard -> guest gamepad map (see src/input/keyboard_gamepad.h).
